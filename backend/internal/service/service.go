@@ -1,0 +1,483 @@
+package service
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log"
+	"hub-hrms/backend/internal/config"
+	"hub-hrms/backend/internal/models"
+	"hub-hrms/backend/internal/repository"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
+)
+
+var (
+	ErrInvalidCredentials = errors.New("invalid credentials")
+	ErrUserNotFound       = errors.New("user not found")
+	ErrEmployeeNotFound   = errors.New("employee not found")
+	ErrUnauthorized       = errors.New("unauthorized")
+)
+
+type Services struct {
+	Auth       AuthService
+	Employee   EmployeeService
+	Onboarding OnboardingService
+	Timesheet  TimesheetService
+	PTO        PTOService
+	Benefits   BenefitsService
+	Payroll    PayrollService
+}
+
+func NewServices(repos *repository.Repositories, cfg *config.Config) *Services {
+	return &Services{
+		Auth:       NewAuthService(repos, cfg),
+		Employee:   NewEmployeeService(repos),
+		Onboarding: NewOnboardingService(repos),
+		Timesheet:  NewTimesheetService(repos),
+		PTO:        NewPTOService(repos),
+		Benefits:   NewBenefitsService(repos),
+		Payroll:    NewPayrollService(repos),
+	}
+}
+
+// AuthService handles authentication and authorization
+type AuthService interface {
+	Login(ctx context.Context, req *models.LoginRequest) (*models.LoginResponse, error)
+	ValidateToken(tokenString string) (*jwt.Token, error)
+	HashPassword(password string) (string, error)
+	CheckPassword(hashedPassword, password string) error
+	GenerateToken(userID uuid.UUID, email, role string) (string, error)
+}
+
+type authService struct {
+	repos *repository.Repositories
+	cfg   *config.Config
+}
+
+func NewAuthService(repos *repository.Repositories, cfg *config.Config) AuthService {
+	return &authService{repos: repos, cfg: cfg}
+}
+
+func (s *authService) Login(ctx context.Context, req *models.LoginRequest) (*models.LoginResponse, error) {
+	user, err := s.repos.User.GetByEmail(ctx, req.Email)
+	if err != nil {
+		log.Printf("Email not found %s...", req.Email)
+		return nil, ErrInvalidCredentials
+	}
+
+	if err := s.CheckPassword(user.PasswordHash, req.Password); err != nil {
+		log.Printf("Password not match hash %s <--> pwd %s...", user.PasswordHash, req.Password)
+		return nil, ErrInvalidCredentials
+	}
+
+	token, err := s.GenerateToken(user.ID, user.Email, user.Role)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate token: %w", err)
+	}
+
+	response := &models.LoginResponse{
+		Token: token,
+		User:  *user,
+	}
+
+	if user.EmployeeID != nil {
+		employee, err := s.repos.Employee.GetByID(ctx, *user.EmployeeID)
+		if err == nil {
+			response.Employee = employee
+		}
+	}
+
+	return response, nil
+}
+
+func (s *authService) GenerateToken(userID uuid.UUID, email, role string) (string, error) {
+	claims := jwt.MapClaims{
+		"user_id": userID.String(),
+		"email":   email,
+		"role":    role,
+		"exp":     time.Now().Add(24 * time.Hour).Unix(),
+		"iat":     time.Now().Unix(),
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(s.cfg.JWTSecret))
+}
+
+func (s *authService) ValidateToken(tokenString string) (*jwt.Token, error) {
+	return jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method")
+		}
+		return []byte(s.cfg.JWTSecret), nil
+	})
+}
+
+func (s *authService) HashPassword(password string) (string, error) {
+	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	return string(bytes), err
+}
+
+func (s *authService) CheckPassword(hashedPassword, password string) error {
+	return bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password))
+}
+
+// EmployeeService handles employee operations
+type EmployeeService interface {
+	Create(ctx context.Context, employee *models.Employee) error
+	GetByID(ctx context.Context, id uuid.UUID) (*models.Employee, error)
+	List(ctx context.Context, filters map[string]interface{}) ([]*models.Employee, error)
+	Update(ctx context.Context, employee *models.Employee) error
+}
+
+type employeeService struct {
+	repos *repository.Repositories
+}
+
+func NewEmployeeService(repos *repository.Repositories) EmployeeService {
+	return &employeeService{repos: repos}
+}
+
+func (s *employeeService) Create(ctx context.Context, employee *models.Employee) error {
+	return s.repos.Employee.Create(ctx, employee)
+}
+
+func (s *employeeService) GetByID(ctx context.Context, id uuid.UUID) (*models.Employee, error) {
+	return s.repos.Employee.GetByID(ctx, id)
+}
+
+func (s *employeeService) List(ctx context.Context, filters map[string]interface{}) ([]*models.Employee, error) {
+	return s.repos.Employee.List(ctx, filters)
+}
+
+func (s *employeeService) Update(ctx context.Context, employee *models.Employee) error {
+	return s.repos.Employee.Update(ctx, employee)
+}
+
+// OnboardingService handles onboarding operations
+type OnboardingService interface {
+	CreateTask(ctx context.Context, task *models.OnboardingTask) error
+	GetTasksByEmployee(ctx context.Context, employeeID uuid.UUID) ([]*models.OnboardingTask, error)
+	UpdateTask(ctx context.Context, task *models.OnboardingTask) error
+	CreateOnboardingPlan(ctx context.Context, employeeID uuid.UUID, department string) error
+}
+
+type onboardingService struct {
+	repos *repository.Repositories
+}
+
+func NewOnboardingService(repos *repository.Repositories) OnboardingService {
+	return &onboardingService{repos: repos}
+}
+
+func (s *onboardingService) CreateTask(ctx context.Context, task *models.OnboardingTask) error {
+	return s.repos.Onboarding.CreateTask(ctx, task)
+}
+
+func (s *onboardingService) GetTasksByEmployee(ctx context.Context, employeeID uuid.UUID) ([]*models.OnboardingTask, error) {
+	return s.repos.Onboarding.GetTasksByEmployee(ctx, employeeID)
+}
+
+func (s *onboardingService) UpdateTask(ctx context.Context, task *models.OnboardingTask) error {
+	if task.Status == "completed" && task.CompletedAt == nil {
+		now := time.Now()
+		task.CompletedAt = &now
+	}
+	return s.repos.Onboarding.UpdateTask(ctx, task)
+}
+
+func (s *onboardingService) CreateOnboardingPlan(ctx context.Context, employeeID uuid.UUID, department string) error {
+	// Default onboarding tasks
+	tasks := []models.OnboardingTask{
+		{
+			EmployeeID:        employeeID,
+			TaskName:          "Complete I-9 Form",
+			Description:       strPtr("Complete employment eligibility verification"),
+			Category:          strPtr("HR Documents"),
+			Status:            "pending",
+			DueDate:           timePtr(time.Now().AddDate(0, 0, 3)),
+			DocumentsRequired: true,
+		},
+		{
+			EmployeeID:  employeeID,
+			TaskName:    "Setup Direct Deposit",
+			Description: strPtr("Provide bank account information for payroll"),
+			Category:    strPtr("Payroll"),
+			Status:      "pending",
+			DueDate:     timePtr(time.Now().AddDate(0, 0, 7)),
+		},
+		{
+			EmployeeID:  employeeID,
+			TaskName:    "Complete Benefits Enrollment",
+			Description: strPtr("Select health insurance and other benefits"),
+			Category:    strPtr("Benefits"),
+			Status:      "pending",
+			DueDate:     timePtr(time.Now().AddDate(0, 0, 30)),
+		},
+		{
+			EmployeeID:  employeeID,
+			TaskName:    "IT Account Setup",
+			Description: strPtr("Receive email, system access credentials"),
+			Category:    strPtr("IT"),
+			Status:      "pending",
+			DueDate:     timePtr(time.Now().AddDate(0, 0, 1)),
+		},
+		{
+			EmployeeID:  employeeID,
+			TaskName:    "Review Employee Handbook",
+			Description: strPtr("Read and acknowledge company policies"),
+			Category:    strPtr("HR Documents"),
+			Status:      "pending",
+			DueDate:     timePtr(time.Now().AddDate(0, 0, 7)),
+		},
+	}
+
+	for _, task := range tasks {
+		if err := s.repos.Onboarding.CreateTask(ctx, &task); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// TimesheetService handles timesheet operations
+type TimesheetService interface {
+	ClockIn(ctx context.Context, req *models.ClockInRequest) (*models.Timesheet, error)
+	ClockOut(ctx context.Context, req *models.ClockOutRequest) (*models.Timesheet, error)
+	GetByEmployee(ctx context.Context, employeeID uuid.UUID, filters map[string]interface{}) ([]*models.Timesheet, error)
+	ApproveTimesheet(ctx context.Context, timesheetID, approverID uuid.UUID) error
+}
+
+type timesheetService struct {
+	repos *repository.Repositories
+}
+
+func NewTimesheetService(repos *repository.Repositories) TimesheetService {
+	return &timesheetService{repos: repos}
+}
+
+func (s *timesheetService) ClockIn(ctx context.Context, req *models.ClockInRequest) (*models.Timesheet, error) {
+	timesheet := &models.Timesheet{
+		EmployeeID:  req.EmployeeID,
+		ClockIn:     time.Now(),
+		ProjectCode: req.ProjectCode,
+		Status:      "draft",
+	}
+	
+	if err := s.repos.Timesheet.Create(ctx, timesheet); err != nil {
+		return nil, err
+	}
+	
+	return timesheet, nil
+}
+
+func (s *timesheetService) ClockOut(ctx context.Context, req *models.ClockOutRequest) (*models.Timesheet, error) {
+	timesheet, err := s.repos.Timesheet.GetByID(ctx, req.TimesheetID)
+	if err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
+	timesheet.ClockOut = &now
+	timesheet.BreakMinutes = req.BreakMinutes
+	timesheet.Notes = req.Notes
+
+	// Calculate total hours
+	duration := now.Sub(timesheet.ClockIn)
+	hours := duration.Hours() - float64(req.BreakMinutes)/60.0
+	timesheet.TotalHours = &hours
+
+	if err := s.repos.Timesheet.Update(ctx, timesheet); err != nil {
+		return nil, err
+	}
+
+	return timesheet, nil
+}
+
+func (s *timesheetService) GetByEmployee(ctx context.Context, employeeID uuid.UUID, filters map[string]interface{}) ([]*models.Timesheet, error) {
+	return s.repos.Timesheet.GetByEmployee(ctx, employeeID, filters)
+}
+
+func (s *timesheetService) ApproveTimesheet(ctx context.Context, timesheetID, approverID uuid.UUID) error {
+	timesheet, err := s.repos.Timesheet.GetByID(ctx, timesheetID)
+	if err != nil {
+		return err
+	}
+
+	timesheet.Status = "approved"
+	timesheet.ApprovedBy = &approverID
+	now := time.Now()
+	timesheet.ApprovedAt = &now
+
+	return s.repos.Timesheet.Update(ctx, timesheet)
+}
+
+// PTOService handles PTO operations
+type PTOService interface {
+	GetBalance(ctx context.Context, employeeID uuid.UUID) (*models.PTOBalance, error)
+	CreateRequest(ctx context.Context, employeeID uuid.UUID, req *models.PTORequestCreate) (*models.PTORequest, error)
+	ReviewRequest(ctx context.Context, requestID, reviewerID uuid.UUID, review *models.PTORequestReview) error
+	GetRequestsByEmployee(ctx context.Context, employeeID uuid.UUID) ([]*models.PTORequest, error)
+}
+
+type ptoService struct {
+	repos *repository.Repositories
+}
+
+func NewPTOService(repos *repository.Repositories) PTOService {
+	return &ptoService{repos: repos}
+}
+
+func (s *ptoService) GetBalance(ctx context.Context, employeeID uuid.UUID) (*models.PTOBalance, error) {
+	return s.repos.PTO.GetBalance(ctx, employeeID)
+}
+
+func (s *ptoService) CreateRequest(ctx context.Context, employeeID uuid.UUID, req *models.PTORequestCreate) (*models.PTORequest, error) {
+	request := &models.PTORequest{
+		EmployeeID:    employeeID,
+		PTOType:       req.PTOType,
+		StartDate:     req.StartDate,
+		EndDate:       req.EndDate,
+		DaysRequested: req.DaysRequested,
+		Reason:        req.Reason,
+		Status:        "pending",
+	}
+
+	if err := s.repos.PTO.CreateRequest(ctx, request); err != nil {
+		return nil, err
+	}
+
+	return request, nil
+}
+
+func (s *ptoService) ReviewRequest(ctx context.Context, requestID, reviewerID uuid.UUID, review *models.PTORequestReview) error {
+	request, err := s.repos.PTO.GetRequestByID(ctx, requestID)
+	if err != nil {
+		return err
+	}
+
+	request.Status = review.Status
+	request.ReviewedBy = &reviewerID
+	now := time.Now()
+	request.ReviewedAt = &now
+	request.ReviewNotes = review.ReviewNotes
+
+	if err := s.repos.PTO.UpdateRequest(ctx, request); err != nil {
+		return err
+	}
+
+	// If approved, deduct from balance
+	if review.Status == "approved" {
+		balance, err := s.repos.PTO.GetBalance(ctx, request.EmployeeID)
+		if err != nil {
+			return err
+		}
+
+		switch request.PTOType {
+		case "vacation":
+			balance.VacationDays -= request.DaysRequested
+		case "sick":
+			balance.SickDays -= request.DaysRequested
+		case "personal":
+			balance.PersonalDays -= request.DaysRequested
+		}
+
+		return s.repos.PTO.UpdateBalance(ctx, balance)
+	}
+
+	return nil
+}
+
+func (s *ptoService) GetRequestsByEmployee(ctx context.Context, employeeID uuid.UUID) ([]*models.PTORequest, error) {
+	return s.repos.PTO.GetRequestsByEmployee(ctx, employeeID)
+}
+
+// BenefitsService handles benefits operations
+type BenefitsService interface {
+	ListPlans(ctx context.Context) ([]*models.BenefitPlan, error)
+	Enroll(ctx context.Context, employeeID uuid.UUID, req *models.EnrollmentCreate) (*models.BenefitEnrollment, error)
+	GetEnrollmentsByEmployee(ctx context.Context, employeeID uuid.UUID) ([]*models.BenefitEnrollment, error)
+}
+
+type benefitsService struct {
+	repos *repository.Repositories
+}
+
+func NewBenefitsService(repos *repository.Repositories) BenefitsService {
+	return &benefitsService{repos: repos}
+}
+
+func (s *benefitsService) ListPlans(ctx context.Context) ([]*models.BenefitPlan, error) {
+	return s.repos.Benefits.ListPlans(ctx, true)
+}
+
+func (s *benefitsService) Enroll(ctx context.Context, employeeID uuid.UUID, req *models.EnrollmentCreate) (*models.BenefitEnrollment, error) {
+	enrollment := &models.BenefitEnrollment{
+		EmployeeID:     employeeID,
+		PlanID:         req.PlanID,
+		EnrollmentDate: time.Now(),
+		EffectiveDate:  req.EffectiveDate,
+		Status:         "active",
+		Dependents:     req.Dependents,
+	}
+
+	if err := s.repos.Benefits.CreateEnrollment(ctx, enrollment); err != nil {
+		return nil, err
+	}
+
+	return enrollment, nil
+}
+
+func (s *benefitsService) GetEnrollmentsByEmployee(ctx context.Context, employeeID uuid.UUID) ([]*models.BenefitEnrollment, error) {
+	return s.repos.Benefits.GetEnrollmentsByEmployee(ctx, employeeID)
+}
+
+// PayrollService handles payroll operations
+type PayrollService interface {
+	ListPeriods(ctx context.Context) ([]*models.PayrollPeriod, error)
+	GetPayStubsByEmployee(ctx context.Context, employeeID uuid.UUID) ([]*models.PayStub, error)
+	ProcessPayroll(ctx context.Context, periodID, processedBy uuid.UUID) error
+}
+
+type payrollService struct {
+	repos *repository.Repositories
+}
+
+func NewPayrollService(repos *repository.Repositories) PayrollService {
+	return &payrollService{repos: repos}
+}
+
+func (s *payrollService) ListPeriods(ctx context.Context) ([]*models.PayrollPeriod, error) {
+	return s.repos.Payroll.ListPeriods(ctx, nil)
+}
+
+func (s *payrollService) GetPayStubsByEmployee(ctx context.Context, employeeID uuid.UUID) ([]*models.PayStub, error) {
+	return s.repos.Payroll.GetPayStubsByEmployee(ctx, employeeID)
+}
+
+func (s *payrollService) ProcessPayroll(ctx context.Context, periodID, processedBy uuid.UUID) error {
+	period, err := s.repos.Payroll.GetPeriodByID(ctx, periodID)
+	if err != nil {
+		return err
+	}
+
+	period.Status = "processed"
+	period.ProcessedBy = &processedBy
+	now := time.Now()
+	period.ProcessedAt = &now
+
+	return s.repos.Payroll.UpdatePeriod(ctx, period)
+}
+
+// Helper functions
+func strPtr(s string) *string {
+	return &s
+}
+
+func timePtr(t time.Time) *time.Time {
+	return &t
+}

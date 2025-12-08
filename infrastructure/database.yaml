@@ -1,0 +1,78 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'RDS PostgreSQL database for HR application'
+
+Parameters:
+  Environment:
+    Type: String
+    Default: dev
+    AllowedValues:
+      - dev
+      - prod
+
+  DBPassword:
+    Type: String
+    NoEcho: true
+    Description: Database master password
+    MinLength: 8
+
+  DBInstanceClass:
+    Type: String
+    Default: db.t4g.micro
+    Description: Database instance class
+
+Resources:
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group for HR database
+      SubnetIds:
+        - Fn::ImportValue: !Sub '${Environment}-PrivateSubnet1'
+        - Fn::ImportValue: !Sub '${Environment}-PrivateSubnet2'
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-hr-db-subnet-group'
+
+  DBInstance:
+    Type: AWS::RDS::DBInstance
+    DeletionPolicy: Snapshot
+    Properties:
+      DBInstanceIdentifier: !Sub '${Environment}-hr-db'
+      Engine: postgres
+      EngineVersion: '15.5'
+      DBInstanceClass: !Ref DBInstanceClass
+      AllocatedStorage: 20
+      StorageType: gp3
+      StorageEncrypted: true
+      MasterUsername: postgres
+      MasterUserPassword: !Ref DBPassword
+      DBName: hrapp
+      VPCSecurityGroups:
+        - Fn::ImportValue: !Sub '${Environment}-RDSSecurityGroup'
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      BackupRetentionPeriod: 7
+      PreferredBackupWindow: '03:00-04:00'
+      PreferredMaintenanceWindow: 'sun:04:00-sun:05:00'
+      EnableCloudwatchLogsExports:
+        - postgresql
+      Tags:
+        - Key: Name
+          Value: !Sub '${Environment}-hr-db'
+
+Outputs:
+  DBEndpoint:
+    Description: Database endpoint
+    Value: !GetAtt DBInstance.Endpoint.Address
+    Export:
+      Name: !Sub '${Environment}-DBEndpoint'
+
+  DBPort:
+    Description: Database port
+    Value: !GetAtt DBInstance.Endpoint.Port
+    Export:
+      Name: !Sub '${Environment}-DBPort'
+
+  DBName:
+    Description: Database name
+    Value: hrapp
+    Export:
+      Name: !Sub '${Environment}-DBName'
