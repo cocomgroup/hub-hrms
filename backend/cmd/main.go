@@ -155,6 +155,7 @@ func setupRouter(services *service.Services, cfg *config.Config) *chi.Mux {
 		api.RegisterAuthRoutes(r, services)
 		api.RegisterEmployeeRoutes(r, services)
 		api.RegisterOnboardingRoutes(r, services)
+		api.RegisterWorkflowRoutes(r, services)
 		api.RegisterTimesheetRoutes(r, services)
 		api.RegisterPTORoutes(r, services)
 		api.RegisterBenefitsRoutes(r, services)
@@ -191,6 +192,7 @@ func runMigrations() error {
 		createPTOTables,
 		createBenefitsTables,
 		createPayrollTables,
+		createWorkflowTables,
 	}
 
 	for i, migration := range migrations {
@@ -406,4 +408,103 @@ CREATE TABLE IF NOT EXISTS pay_stubs (
 
 CREATE INDEX IF NOT EXISTS idx_pay_stubs_employee_id ON pay_stubs(employee_id);
 CREATE INDEX IF NOT EXISTS idx_pay_stubs_period_id ON pay_stubs(payroll_period_id);
+`
+
+const createWorkflowTables = `
+-- Workflow system tables
+CREATE TABLE IF NOT EXISTS onboarding_workflows (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+    template_name VARCHAR(100) NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'active',
+    current_stage VARCHAR(100) NOT NULL DEFAULT 'pre-boarding',
+    progress_percentage INTEGER DEFAULT 0,
+    started_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    expected_completion TIMESTAMP WITH TIME ZONE,
+    actual_completion TIMESTAMP WITH TIME ZONE,
+    created_by UUID REFERENCES employees(id),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS workflow_steps (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workflow_id UUID NOT NULL REFERENCES onboarding_workflows(id) ON DELETE CASCADE,
+    step_order INTEGER NOT NULL,
+    step_name VARCHAR(255) NOT NULL,
+    step_type VARCHAR(50) NOT NULL,
+    stage VARCHAR(100) NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'pending',
+    description TEXT,
+    dependencies JSONB DEFAULT '[]',
+    assigned_to UUID REFERENCES employees(id),
+    integration_type VARCHAR(50),
+    integration_config JSONB,
+    due_date TIMESTAMP WITH TIME ZONE,
+    started_at TIMESTAMP WITH TIME ZONE,
+    completed_at TIMESTAMP WITH TIME ZONE,
+    completed_by UUID REFERENCES employees(id),
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS workflow_integrations (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workflow_id UUID NOT NULL REFERENCES onboarding_workflows(id) ON DELETE CASCADE,
+    step_id UUID NOT NULL REFERENCES workflow_steps(id) ON DELETE CASCADE,
+    integration_type VARCHAR(50) NOT NULL,
+    external_id VARCHAR(255),
+    status VARCHAR(50) NOT NULL DEFAULT 'pending',
+    request_payload JSONB,
+    response_payload JSONB,
+    error_message TEXT,
+    retry_count INTEGER DEFAULT 0,
+    max_retries INTEGER DEFAULT 3,
+    last_attempt_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS workflow_exceptions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workflow_id UUID NOT NULL REFERENCES onboarding_workflows(id) ON DELETE CASCADE,
+    step_id UUID REFERENCES workflow_steps(id) ON DELETE SET NULL,
+    exception_type VARCHAR(100) NOT NULL,
+    severity VARCHAR(20) NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    description TEXT,
+    resolution_status VARCHAR(50) NOT NULL DEFAULT 'open',
+    assigned_to UUID REFERENCES employees(id),
+    resolved_at TIMESTAMP WITH TIME ZONE,
+    resolved_by UUID REFERENCES employees(id),
+    resolution_notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS workflow_documents (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    workflow_id UUID NOT NULL REFERENCES onboarding_workflows(id) ON DELETE CASCADE,
+    step_id UUID REFERENCES workflow_steps(id) ON DELETE SET NULL,
+    document_name VARCHAR(255) NOT NULL,
+    document_type VARCHAR(50) NOT NULL,
+    s3_key VARCHAR(500),
+    file_type VARCHAR(20),
+    file_size INTEGER,
+    status VARCHAR(50) DEFAULT 'pending',
+    uploaded_by UUID REFERENCES employees(id),
+    uploaded_at TIMESTAMP WITH TIME ZONE,
+    metadata JSONB DEFAULT '{}',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_workflows_employee ON onboarding_workflows(employee_id);
+CREATE INDEX IF NOT EXISTS idx_workflows_status ON onboarding_workflows(status);
+CREATE INDEX IF NOT EXISTS idx_workflow_steps_workflow ON workflow_steps(workflow_id);
+CREATE INDEX IF NOT EXISTS idx_workflow_steps_status ON workflow_steps(status);
+CREATE INDEX IF NOT EXISTS idx_workflow_integrations_workflow ON workflow_integrations(workflow_id);
+CREATE INDEX IF NOT EXISTS idx_workflow_exceptions_workflow ON workflow_exceptions(workflow_id);
+CREATE INDEX IF NOT EXISTS idx_workflow_documents_workflow ON workflow_documents(workflow_id);
 `

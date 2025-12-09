@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"database/sql"
 	"hub-hrms/backend/internal/models"
 
 	"github.com/google/uuid"
@@ -12,6 +13,7 @@ type Repositories struct {
 	User        UserRepository
 	Employee    EmployeeRepository
 	Onboarding  OnboardingRepository
+	Workflow    WorkflowRepository
 	Timesheet   TimesheetRepository
 	PTO         PTORepository
 	Benefits    BenefitsRepository
@@ -23,6 +25,7 @@ func NewRepositories(db *pgxpool.Pool) *Repositories {
 		User:        NewUserRepository(db),
 		Employee:    NewEmployeeRepository(db),
 		Onboarding:  NewOnboardingRepository(db),
+		Workflow:    NewWorkflowRepository(db),
 		Timesheet:   NewTimesheetRepository(db),
 		PTO:         NewPTORepository(db),
 		Benefits:    NewBenefitsRepository(db),
@@ -180,17 +183,56 @@ func (r *employeeRepository) Create(ctx context.Context, employee *models.Employ
 		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 		RETURNING id, created_at, updated_at
 	`
+	
+	// Convert empty strings to NULL for nullable fields
+	var phone, dept, pos, empType, addr, city, state, zip, country, ecName, ecPhone interface{}
+	if employee.Phone != "" {
+		phone = employee.Phone
+	}
+	if employee.Department != "" {
+		dept = employee.Department
+	}
+	if employee.Position != "" {
+		pos = employee.Position
+	}
+	if employee.EmploymentType != "" {
+		empType = employee.EmploymentType
+	}
+	if employee.StreetAddress != "" {
+		addr = employee.StreetAddress
+	}
+	if employee.City != "" {
+		city = employee.City
+	}
+	if employee.State != "" {
+		state = employee.State
+	}
+	if employee.ZipCode != "" {
+		zip = employee.ZipCode
+	}
+	if employee.Country != "" {
+		country = employee.Country
+	}
+	if employee.EmergencyContactName != "" {
+		ecName = employee.EmergencyContactName
+	}
+	if employee.EmergencyContactPhone != "" {
+		ecPhone = employee.EmergencyContactPhone
+	}
+	
 	return r.db.QueryRow(ctx, query,
-		employee.FirstName, employee.LastName, employee.Email, employee.Phone,
-		employee.DateOfBirth, employee.HireDate, employee.Department, employee.Position,
-		employee.ManagerID, employee.EmploymentType, employee.Status, employee.StreetAddress,
-		employee.City, employee.State, employee.ZipCode, employee.Country,
-		employee.EmergencyContactName, employee.EmergencyContactPhone,
+		employee.FirstName, employee.LastName, employee.Email, phone,
+		employee.DateOfBirth, employee.HireDate, dept, pos,
+		employee.ManagerID, empType, employee.Status, addr,
+		city, state, zip, country,
+		ecName, ecPhone,
 	).Scan(&employee.ID, &employee.CreatedAt, &employee.UpdatedAt)
 }
 
 func (r *employeeRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.Employee, error) {
 	employee := &models.Employee{}
+	var phone, dept, pos, empType, addr, city, state, zip, country, ecName, ecPhone sql.NullString
+	
 	query := `
 		SELECT id, first_name, last_name, email, phone, date_of_birth, hire_date,
 			department, position, manager_id, employment_type, status,
@@ -200,17 +242,37 @@ func (r *employeeRepository) GetByID(ctx context.Context, id uuid.UUID) (*models
 	`
 	err := r.db.QueryRow(ctx, query, id).Scan(
 		&employee.ID, &employee.FirstName, &employee.LastName, &employee.Email,
-		&employee.Phone, &employee.DateOfBirth, &employee.HireDate, &employee.Department,
-		&employee.Position, &employee.ManagerID, &employee.EmploymentType, &employee.Status,
-		&employee.StreetAddress, &employee.City, &employee.State, &employee.ZipCode,
-		&employee.Country, &employee.EmergencyContactName, &employee.EmergencyContactPhone,
+		&phone, &employee.DateOfBirth, &employee.HireDate, &dept,
+		&pos, &employee.ManagerID, &empType, &employee.Status,
+		&addr, &city, &state, &zip,
+		&country, &ecName, &ecPhone,
 		&employee.CreatedAt, &employee.UpdatedAt,
 	)
-	return employee, err
+	
+	if err != nil {
+		return nil, err
+	}
+	
+	// Convert NullString to string
+	employee.Phone = phone.String
+	employee.Department = dept.String
+	employee.Position = pos.String
+	employee.EmploymentType = empType.String
+	employee.StreetAddress = addr.String
+	employee.City = city.String
+	employee.State = state.String
+	employee.ZipCode = zip.String
+	employee.Country = country.String
+	employee.EmergencyContactName = ecName.String
+	employee.EmergencyContactPhone = ecPhone.String
+	
+	return employee, nil
 }
 
 func (r *employeeRepository) GetByEmail(ctx context.Context, email string) (*models.Employee, error) {
 	employee := &models.Employee{}
+	var phone, dept, pos, empType, addr, city, state, zip, country, ecName, ecPhone sql.NullString
+	
 	query := `
 		SELECT id, first_name, last_name, email, phone, date_of_birth, hire_date,
 			department, position, manager_id, employment_type, status,
@@ -220,13 +282,31 @@ func (r *employeeRepository) GetByEmail(ctx context.Context, email string) (*mod
 	`
 	err := r.db.QueryRow(ctx, query, email).Scan(
 		&employee.ID, &employee.FirstName, &employee.LastName, &employee.Email,
-		&employee.Phone, &employee.DateOfBirth, &employee.HireDate, &employee.Department,
-		&employee.Position, &employee.ManagerID, &employee.EmploymentType, &employee.Status,
-		&employee.StreetAddress, &employee.City, &employee.State, &employee.ZipCode,
-		&employee.Country, &employee.EmergencyContactName, &employee.EmergencyContactPhone,
+		&phone, &employee.DateOfBirth, &employee.HireDate, &dept,
+		&pos, &employee.ManagerID, &empType, &employee.Status,
+		&addr, &city, &state, &zip,
+		&country, &ecName, &ecPhone,
 		&employee.CreatedAt, &employee.UpdatedAt,
 	)
-	return employee, err
+	
+	if err != nil {
+		return nil, err
+	}
+	
+	// Convert NullString to string
+	employee.Phone = phone.String
+	employee.Department = dept.String
+	employee.Position = pos.String
+	employee.EmploymentType = empType.String
+	employee.StreetAddress = addr.String
+	employee.City = city.String
+	employee.State = state.String
+	employee.ZipCode = zip.String
+	employee.Country = country.String
+	employee.EmergencyContactName = ecName.String
+	employee.EmergencyContactPhone = ecPhone.String
+	
+	return employee, nil
 }
 
 func (r *employeeRepository) List(ctx context.Context, filters map[string]interface{}) ([]*models.Employee, error) {
@@ -254,17 +334,33 @@ func (r *employeeRepository) List(ctx context.Context, filters map[string]interf
 	var employees []*models.Employee
 	for rows.Next() {
 		employee := &models.Employee{}
+		var phone, dept, pos, empType, addr, city, state, zip, country, ecName, ecPhone sql.NullString
+		
 		err := rows.Scan(
 			&employee.ID, &employee.FirstName, &employee.LastName, &employee.Email,
-			&employee.Phone, &employee.DateOfBirth, &employee.HireDate, &employee.Department,
-			&employee.Position, &employee.ManagerID, &employee.EmploymentType, &employee.Status,
-			&employee.StreetAddress, &employee.City, &employee.State, &employee.ZipCode,
-			&employee.Country, &employee.EmergencyContactName, &employee.EmergencyContactPhone,
+			&phone, &employee.DateOfBirth, &employee.HireDate, &dept,
+			&pos, &employee.ManagerID, &empType, &employee.Status,
+			&addr, &city, &state, &zip,
+			&country, &ecName, &ecPhone,
 			&employee.CreatedAt, &employee.UpdatedAt,
 		)
 		if err != nil {
 			return nil, err
 		}
+		
+		// Convert NullString to string
+		employee.Phone = phone.String
+		employee.Department = dept.String
+		employee.Position = pos.String
+		employee.EmploymentType = empType.String
+		employee.StreetAddress = addr.String
+		employee.City = city.String
+		employee.State = state.String
+		employee.ZipCode = zip.String
+		employee.Country = country.String
+		employee.EmergencyContactName = ecName.String
+		employee.EmergencyContactPhone = ecPhone.String
+		
 		employees = append(employees, employee)
 	}
 
@@ -282,12 +378,49 @@ func (r *employeeRepository) Update(ctx context.Context, employee *models.Employ
 		WHERE id = $19
 		RETURNING updated_at
 	`
+	
+	// Convert empty strings to NULL for nullable fields
+	var phone, dept, pos, empType, addr, city, state, zip, country, ecName, ecPhone interface{}
+	if employee.Phone != "" {
+		phone = employee.Phone
+	}
+	if employee.Department != "" {
+		dept = employee.Department
+	}
+	if employee.Position != "" {
+		pos = employee.Position
+	}
+	if employee.EmploymentType != "" {
+		empType = employee.EmploymentType
+	}
+	if employee.StreetAddress != "" {
+		addr = employee.StreetAddress
+	}
+	if employee.City != "" {
+		city = employee.City
+	}
+	if employee.State != "" {
+		state = employee.State
+	}
+	if employee.ZipCode != "" {
+		zip = employee.ZipCode
+	}
+	if employee.Country != "" {
+		country = employee.Country
+	}
+	if employee.EmergencyContactName != "" {
+		ecName = employee.EmergencyContactName
+	}
+	if employee.EmergencyContactPhone != "" {
+		ecPhone = employee.EmergencyContactPhone
+	}
+	
 	return r.db.QueryRow(ctx, query,
-		employee.FirstName, employee.LastName, employee.Email, employee.Phone,
-		employee.DateOfBirth, employee.HireDate, employee.Department, employee.Position,
-		employee.ManagerID, employee.EmploymentType, employee.Status, employee.StreetAddress,
-		employee.City, employee.State, employee.ZipCode, employee.Country,
-		employee.EmergencyContactName, employee.EmergencyContactPhone, employee.ID,
+		employee.FirstName, employee.LastName, employee.Email, phone,
+		employee.DateOfBirth, employee.HireDate, dept, pos,
+		employee.ManagerID, empType, employee.Status, addr,
+		city, state, zip, country,
+		ecName, ecPhone, employee.ID,
 	).Scan(&employee.UpdatedAt)
 }
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"hub-hrms/backend/internal/config"
 	"hub-hrms/backend/internal/models"
 	"hub-hrms/backend/internal/repository"
@@ -26,6 +25,7 @@ type Services struct {
 	Auth       AuthService
 	Employee   EmployeeService
 	Onboarding OnboardingService
+	Workflow   WorkflowService
 	Timesheet  TimesheetService
 	PTO        PTOService
 	Benefits   BenefitsService
@@ -37,6 +37,7 @@ func NewServices(repos *repository.Repositories, cfg *config.Config) *Services {
 		Auth:       NewAuthService(repos, cfg),
 		Employee:   NewEmployeeService(repos),
 		Onboarding: NewOnboardingService(repos),
+		Workflow:   NewWorkflowService(repos),
 		Timesheet:  NewTimesheetService(repos),
 		PTO:        NewPTOService(repos),
 		Benefits:   NewBenefitsService(repos),
@@ -65,12 +66,10 @@ func NewAuthService(repos *repository.Repositories, cfg *config.Config) AuthServ
 func (s *authService) Login(ctx context.Context, req *models.LoginRequest) (*models.LoginResponse, error) {
 	user, err := s.repos.User.GetByEmail(ctx, req.Email)
 	if err != nil {
-		log.Printf("Email not found %s...", req.Email)
 		return nil, ErrInvalidCredentials
 	}
 
 	if err := s.CheckPassword(user.PasswordHash, req.Password); err != nil {
-		log.Printf("Password not match hash %s <--> pwd %s...", user.PasswordHash, req.Password)
 		return nil, ErrInvalidCredentials
 	}
 
@@ -161,6 +160,7 @@ func (s *employeeService) Update(ctx context.Context, employee *models.Employee)
 type OnboardingService interface {
 	CreateTask(ctx context.Context, task *models.OnboardingTask) error
 	GetTasksByEmployee(ctx context.Context, employeeID uuid.UUID) ([]*models.OnboardingTask, error)
+	GetTaskByID(ctx context.Context, id uuid.UUID) (*models.OnboardingTask, error)
 	UpdateTask(ctx context.Context, task *models.OnboardingTask) error
 	CreateOnboardingPlan(ctx context.Context, employeeID uuid.UUID, department string) error
 }
@@ -179,6 +179,10 @@ func (s *onboardingService) CreateTask(ctx context.Context, task *models.Onboard
 
 func (s *onboardingService) GetTasksByEmployee(ctx context.Context, employeeID uuid.UUID) ([]*models.OnboardingTask, error) {
 	return s.repos.Onboarding.GetTasksByEmployee(ctx, employeeID)
+}
+
+func (s *onboardingService) GetTaskByID(ctx context.Context, id uuid.UUID) (*models.OnboardingTask, error) {
+	return s.repos.Onboarding.GetTaskByID(ctx, id)
 }
 
 func (s *onboardingService) UpdateTask(ctx context.Context, task *models.OnboardingTask) error {

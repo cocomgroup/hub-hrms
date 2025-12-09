@@ -4,8 +4,11 @@ import (
 	"encoding/json"
 	"hub-hrms/backend/internal/models"
 	"hub-hrms/backend/internal/service"
+	"io"
+	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/golang-jwt/jwt/v5"
@@ -156,14 +159,89 @@ func listEmployeesHandler(services *service.Services) http.HandlerFunc {
 
 func createEmployeeHandler(services *service.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var employee models.Employee
-		if err := json.NewDecoder(r.Body).Decode(&employee); err != nil {
-			respondError(w, http.StatusBadRequest, "invalid request body")
+		// Read and log the raw body for debugging
+		bodyBytes, err := io.ReadAll(r.Body)
+		if err != nil {
+			log.Printf("Error reading body: %v", err)
+			respondError(w, http.StatusBadRequest, "error reading request body")
 			return
 		}
+		log.Printf("Raw request body: %s", string(bodyBytes))
+		
+		// Parse into a temporary struct that accepts string dates
+		var reqBody struct {
+			FirstName              string  `json:"first_name"`
+			LastName               string  `json:"last_name"`
+			Email                  string  `json:"email"`
+			Phone                  string  `json:"phone"`
+			DateOfBirth            *string `json:"date_of_birth,omitempty"`
+			HireDate               string  `json:"hire_date"`
+			Department             string  `json:"department"`
+			Position               string  `json:"position"`
+			EmploymentType         string  `json:"employment_type"`
+			Status                 string  `json:"status"`
+			StreetAddress          string  `json:"street_address"`
+			City                   string  `json:"city"`
+			State                  string  `json:"state"`
+			ZipCode                string  `json:"zip_code"`
+			Country                string  `json:"country"`
+			EmergencyContactName   string  `json:"emergency_contact_name"`
+			EmergencyContactPhone  string  `json:"emergency_contact_phone"`
+		}
+		
+		if err := json.Unmarshal(bodyBytes, &reqBody); err != nil {
+			log.Printf("Error decoding employee: %v", err)
+			respondError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return
+		}
+		
+		// Parse hire_date from YYYY-MM-DD format
+		hireDate, err := time.Parse("2006-01-02", reqBody.HireDate)
+		if err != nil {
+			log.Printf("Error parsing hire_date: %v", err)
+			respondError(w, http.StatusBadRequest, "invalid hire_date format, use YYYY-MM-DD: "+err.Error())
+			return
+		}
+		
+		// Parse date_of_birth if provided
+		var dateOfBirth *time.Time
+		if reqBody.DateOfBirth != nil && *reqBody.DateOfBirth != "" {
+			dob, err := time.Parse("2006-01-02", *reqBody.DateOfBirth)
+			if err != nil {
+				log.Printf("Error parsing date_of_birth: %v", err)
+				respondError(w, http.StatusBadRequest, "invalid date_of_birth format, use YYYY-MM-DD: "+err.Error())
+				return
+			}
+			dateOfBirth = &dob
+		}
+		
+		// Create employee struct
+		employee := models.Employee{
+			FirstName:              reqBody.FirstName,
+			LastName:               reqBody.LastName,
+			Email:                  reqBody.Email,
+			Phone:                  reqBody.Phone,
+			DateOfBirth:            dateOfBirth,
+			HireDate:               hireDate,
+			Department:             reqBody.Department,
+			Position:               reqBody.Position,
+			EmploymentType:         reqBody.EmploymentType,
+			Status:                 reqBody.Status,
+			StreetAddress:          reqBody.StreetAddress,
+			City:                   reqBody.City,
+			State:                  reqBody.State,
+			ZipCode:                reqBody.ZipCode,
+			Country:                reqBody.Country,
+			EmergencyContactName:   reqBody.EmergencyContactName,
+			EmergencyContactPhone:  reqBody.EmergencyContactPhone,
+		}
+
+		// Log the received employee data for debugging
+		log.Printf("Creating employee: %+v", employee)
 
 		if err := services.Employee.Create(r.Context(), &employee); err != nil {
-			respondError(w, http.StatusInternalServerError, "failed to create employee")
+			log.Printf("Error creating employee: %v", err)
+			respondError(w, http.StatusInternalServerError, "failed to create employee: "+err.Error())
 			return
 		}
 
@@ -199,15 +277,74 @@ func updateEmployeeHandler(services *service.Services) http.HandlerFunc {
 			return
 		}
 
-		var employee models.Employee
-		if err := json.NewDecoder(r.Body).Decode(&employee); err != nil {
-			respondError(w, http.StatusBadRequest, "invalid request body")
+		// Parse into a temporary struct that accepts string dates
+		var reqBody struct {
+			FirstName              string  `json:"first_name"`
+			LastName               string  `json:"last_name"`
+			Email                  string  `json:"email"`
+			Phone                  string  `json:"phone"`
+			DateOfBirth            *string `json:"date_of_birth,omitempty"`
+			HireDate               string  `json:"hire_date"`
+			Department             string  `json:"department"`
+			Position               string  `json:"position"`
+			EmploymentType         string  `json:"employment_type"`
+			Status                 string  `json:"status"`
+			StreetAddress          string  `json:"street_address"`
+			City                   string  `json:"city"`
+			State                  string  `json:"state"`
+			ZipCode                string  `json:"zip_code"`
+			Country                string  `json:"country"`
+			EmergencyContactName   string  `json:"emergency_contact_name"`
+			EmergencyContactPhone  string  `json:"emergency_contact_phone"`
+		}
+		
+		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 			return
 		}
+		
+		// Parse hire_date from YYYY-MM-DD format
+		hireDate, err := time.Parse("2006-01-02", reqBody.HireDate)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid hire_date format, use YYYY-MM-DD: "+err.Error())
+			return
+		}
+		
+		// Parse date_of_birth if provided
+		var dateOfBirth *time.Time
+		if reqBody.DateOfBirth != nil && *reqBody.DateOfBirth != "" {
+			dob, err := time.Parse("2006-01-02", *reqBody.DateOfBirth)
+			if err != nil {
+				respondError(w, http.StatusBadRequest, "invalid date_of_birth format, use YYYY-MM-DD: "+err.Error())
+				return
+			}
+			dateOfBirth = &dob
+		}
+		
+		// Create employee struct
+		employee := models.Employee{
+			ID:                     id,
+			FirstName:              reqBody.FirstName,
+			LastName:               reqBody.LastName,
+			Email:                  reqBody.Email,
+			Phone:                  reqBody.Phone,
+			DateOfBirth:            dateOfBirth,
+			HireDate:               hireDate,
+			Department:             reqBody.Department,
+			Position:               reqBody.Position,
+			EmploymentType:         reqBody.EmploymentType,
+			Status:                 reqBody.Status,
+			StreetAddress:          reqBody.StreetAddress,
+			City:                   reqBody.City,
+			State:                  reqBody.State,
+			ZipCode:                reqBody.ZipCode,
+			Country:                reqBody.Country,
+			EmergencyContactName:   reqBody.EmergencyContactName,
+			EmergencyContactPhone:  reqBody.EmergencyContactPhone,
+		}
 
-		employee.ID = id
 		if err := services.Employee.Update(r.Context(), &employee); err != nil {
-			respondError(w, http.StatusInternalServerError, "failed to update employee")
+			respondError(w, http.StatusInternalServerError, "failed to update employee: "+err.Error())
 			return
 		}
 
@@ -244,19 +381,47 @@ func updateOnboardingTaskHandler(services *service.Services) http.HandlerFunc {
 			return
 		}
 
-		var task models.OnboardingTask
-		if err := json.NewDecoder(r.Body).Decode(&task); err != nil {
-			respondError(w, http.StatusBadRequest, "invalid request body")
+		// Parse update request - only status and completed_at typically updated
+		var reqBody struct {
+			Status      string  `json:"status"`
+			CompletedAt *string `json:"completed_at,omitempty"`
+		}
+		
+		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
+			return
+		}
+		
+		// Parse completed_at if provided
+		var completedAt *time.Time
+		if reqBody.CompletedAt != nil && *reqBody.CompletedAt != "" {
+			parsed, err := time.Parse(time.RFC3339, *reqBody.CompletedAt)
+			if err != nil {
+				respondError(w, http.StatusBadRequest, "invalid completed_at format: "+err.Error())
+				return
+			}
+			completedAt = &parsed
+		}
+		
+		// Get existing task first
+		existingTask, err := services.Onboarding.GetTaskByID(r.Context(), taskID)
+		if err != nil {
+			respondError(w, http.StatusNotFound, "task not found")
+			return
+		}
+		
+		// Update fields
+		existingTask.Status = reqBody.Status
+		if completedAt != nil {
+			existingTask.CompletedAt = completedAt
+		}
+
+		if err := services.Onboarding.UpdateTask(r.Context(), existingTask); err != nil {
+			respondError(w, http.StatusInternalServerError, "failed to update task: "+err.Error())
 			return
 		}
 
-		task.ID = taskID
-		if err := services.Onboarding.UpdateTask(r.Context(), &task); err != nil {
-			respondError(w, http.StatusInternalServerError, "failed to update task")
-			return
-		}
-
-		respondJSON(w, http.StatusOK, task)
+		respondJSON(w, http.StatusOK, existingTask)
 	}
 }
 
@@ -269,15 +434,44 @@ func createOnboardingTaskHandler(services *service.Services) http.HandlerFunc {
 			return
 		}
 
-		var task models.OnboardingTask
-		if err := json.NewDecoder(r.Body).Decode(&task); err != nil {
-			respondError(w, http.StatusBadRequest, "invalid request body")
+		// Parse into temporary struct for date handling
+		var reqBody struct {
+			TaskName          string  `json:"task_name"`
+			Description       *string `json:"description,omitempty"`
+			Category          *string `json:"category,omitempty"`
+			Status            string  `json:"status"`
+			DueDate           *string `json:"due_date,omitempty"`
+			DocumentsRequired bool    `json:"documents_required"`
+		}
+		
+		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 			return
 		}
+		
+		// Parse due_date if provided
+		var dueDate *time.Time
+		if reqBody.DueDate != nil && *reqBody.DueDate != "" {
+			parsed, err := time.Parse("2006-01-02", *reqBody.DueDate)
+			if err != nil {
+				respondError(w, http.StatusBadRequest, "invalid due_date format, use YYYY-MM-DD: "+err.Error())
+				return
+			}
+			dueDate = &parsed
+		}
+		
+		task := models.OnboardingTask{
+			EmployeeID:        employeeID,
+			TaskName:          reqBody.TaskName,
+			Description:       reqBody.Description,
+			Category:          reqBody.Category,
+			Status:            reqBody.Status,
+			DueDate:           dueDate,
+			DocumentsRequired: reqBody.DocumentsRequired,
+		}
 
-		task.EmployeeID = employeeID
 		if err := services.Onboarding.CreateTask(r.Context(), &task); err != nil {
-			respondError(w, http.StatusInternalServerError, "failed to create task")
+			respondError(w, http.StatusInternalServerError, "failed to create task: "+err.Error())
 			return
 		}
 
