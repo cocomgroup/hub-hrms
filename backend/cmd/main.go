@@ -185,6 +185,7 @@ func runMigrations() error {
 
 	// Run migrations
 	migrations := []string{
+		enableExtensions,
 		createUsersTable,
 		createEmployeesTable,
 		createOnboardingTasksTable,
@@ -193,6 +194,7 @@ func runMigrations() error {
 		createBenefitsTables,
 		createPayrollTables,
 		createWorkflowTables,
+		seedInitialData,
 	}
 
 	for i, migration := range migrations {
@@ -206,6 +208,12 @@ func runMigrations() error {
 }
 
 // Migration SQL statements
+const enableExtensions = `
+-- Enable required PostgreSQL extensions
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+`
+
 const createUsersTable = `
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -422,7 +430,7 @@ CREATE TABLE IF NOT EXISTS onboarding_workflows (
     started_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     expected_completion TIMESTAMP WITH TIME ZONE,
     actual_completion TIMESTAMP WITH TIME ZONE,
-    created_by UUID REFERENCES employees(id),
+    created_by UUID REFERENCES users(id),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -507,4 +515,62 @@ CREATE INDEX IF NOT EXISTS idx_workflow_steps_status ON workflow_steps(status);
 CREATE INDEX IF NOT EXISTS idx_workflow_integrations_workflow ON workflow_integrations(workflow_id);
 CREATE INDEX IF NOT EXISTS idx_workflow_exceptions_workflow ON workflow_exceptions(workflow_id);
 CREATE INDEX IF NOT EXISTS idx_workflow_documents_workflow ON workflow_documents(workflow_id);
+`
+
+const seedInitialData = `
+-- Insert admin user (password: admin123)
+INSERT INTO users (id, email, password_hash, role, created_at, updated_at)
+VALUES (
+    gen_random_uuid(),
+    'admin@cocomgroup.com',
+    '$2a$10$rQZN5YhJXKYQX5ZQXQXQXO5YhJXKYQX5ZQXQXQXO5YhJXKYQX5ZQ',
+    'admin',
+    NOW(),
+    NOW()
+)
+ON CONFLICT (email) DO NOTHING;
+
+-- Insert sample employees
+INSERT INTO employees (id, first_name, last_name, email, phone, hire_date, department, position, status, created_at, updated_at)
+VALUES 
+(
+    gen_random_uuid(),
+    'Evan',
+    'Hunt',
+    'evan.hunt@cocomgroup.com',
+    '555-0101',
+    '2020-01-15',
+    'Engineering',
+    'CTO',
+    'active',
+    NOW(),
+    NOW()
+),
+(
+    gen_random_uuid(),
+    'Bob',
+    'Johnson',
+    'bob.johnson@cocomgroup.com',
+    '555-0102',
+    '2021-03-20',
+    'Sales',
+    'Sales Representative',
+    'active',
+    NOW(),
+    NOW()
+),
+(
+    gen_random_uuid(),
+    'Jane',
+    'Smith',
+    'jane.smith@cocomgroup.com',
+    '555-0103',
+    '2021-06-10',
+    'Human Resources',
+    'HR Manager',
+    'active',
+    NOW(),
+    NOW()
+)
+ON CONFLICT (email) DO NOTHING;
 `

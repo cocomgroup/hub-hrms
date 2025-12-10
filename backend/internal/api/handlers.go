@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"hub-hrms/backend/internal/models"
 	"hub-hrms/backend/internal/service"
@@ -111,10 +112,19 @@ func authMiddleware(services *service.Services) func(http.Handler) http.Handler 
 				return
 			}
 
-			// Add user info to context if needed
-			_ = claims
+			// Debug: log claims
+			log.Printf("DEBUG JWT Middleware: Claims = %+v", claims)
 
-			next.ServeHTTP(w, r)
+			// Add user_id to context
+			ctx := r.Context()
+			if userID, ok := claims["user_id"].(string); ok {
+				log.Printf("DEBUG JWT Middleware: Setting user_id in context: %s", userID)
+				ctx = context.WithValue(ctx, "user_id", userID)
+			} else {
+				log.Printf("WARNING JWT Middleware: user_id not found in claims or wrong type")
+			}
+
+			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }

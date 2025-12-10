@@ -4,12 +4,15 @@
   import Dashboard from './routes/Dashboard.svelte';
   import Employees from './routes/Employees.svelte';
   import Onboarding from './routes/Onboarding.svelte';
+  import Workflows from './routes/Workflows.svelte';
+  import WorkflowDetail from './routes/WorkflowDetail.svelte';
   import Timesheet from './routes/Timesheet.svelte';
   import PTO from './routes/PTO.svelte';
   import Benefits from './routes/Benefits.svelte';
   import Payroll from './routes/Payroll.svelte';
 
   let currentPage = $state('dashboard');
+  let workflowId = $state('');
   let isAuthenticated = $state(false);
 
   // Subscribe to auth store using $effect
@@ -20,13 +23,22 @@
     return unsubscribe;
   });
 
-  function navigate(page: string) {
+  function navigate(page: string, id?: string) {
     currentPage = page;
+    if (id) {
+      workflowId = id;
+    }
   }
 
   function logout() {
     authStore.logout();
     currentPage = 'dashboard';
+  }
+
+  // Export navigate for child components
+  export function navigateToWorkflowDetail(id: string) {
+    workflowId = id;
+    currentPage = 'workflow-detail';
   }
 </script>
 
@@ -77,6 +89,18 @@
               <line x1="9" y1="15" x2="15" y2="15"></line>
             </svg>
             <span>Onboarding</span>
+          </button>
+
+          <button class="nav-item" class:active={currentPage === 'workflows' || currentPage === 'workflow-detail'} onclick={() => navigate('workflows')}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+              <polyline points="7.5 4.21 12 6.81 16.5 4.21"></polyline>
+              <polyline points="7.5 19.79 7.5 14.6 3 12"></polyline>
+              <polyline points="21 12 16.5 14.6 16.5 19.79"></polyline>
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+              <line x1="12" y1="22.08" x2="12" y2="12"></line>
+            </svg>
+            <span>Workflows</span>
           </button>
 
           <button class="nav-item" class:active={currentPage === 'timesheet'} onclick={() => navigate('timesheet')}>
@@ -131,6 +155,10 @@
           <Employees />
         {:else if currentPage === 'onboarding'}
           <Onboarding />
+        {:else if currentPage === 'workflows'}
+          <Workflows {navigate} />
+        {:else if currentPage === 'workflow-detail'}
+          <WorkflowDetail id={workflowId} {navigate} />
         {:else if currentPage === 'timesheet'}
           <Timesheet />
         {:else if currentPage === 'pto'}

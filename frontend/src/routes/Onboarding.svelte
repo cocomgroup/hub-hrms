@@ -60,7 +60,7 @@
       const data = await response.json();
       // Filter out system administrator and only show active employees
       employees = (data || []).filter((emp: Employee) => 
-        emp.status === 'active' && emp.email !== 'admin@cocomgroup.com'
+        emp.status === 'active' && emp.email !== 'admin@hub-hrms.local'
       );
     } catch (err: any) {
       error = err.message;

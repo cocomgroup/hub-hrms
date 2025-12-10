@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"log"
 	"hub-hrms/backend/internal/integrations"
 	"hub-hrms/backend/internal/models"
 	"hub-hrms/backend/internal/repository"
@@ -73,6 +74,9 @@ func NewWorkflowService(repos *repository.Repositories) WorkflowService {
 
 // InitiateWorkflow creates a new workflow from a template
 func (s *workflowService) InitiateWorkflow(ctx context.Context, employeeID uuid.UUID, templateName string, createdBy uuid.UUID) (*models.OnboardingWorkflow, error) {
+	log.Printf("DEBUG InitiateWorkflow: employeeID=%s, templateName=%s, createdBy=%s", employeeID, templateName, createdBy)
+	log.Printf("DEBUG InitiateWorkflow: createdBy is nil? %v", createdBy == uuid.Nil)
+	
 	// Get employee details
 	employee, err := s.repos.Employee.GetByID(ctx, employeeID)
 	if err != nil {
@@ -88,12 +92,19 @@ func (s *workflowService) InitiateWorkflow(ctx context.Context, employeeID uuid.
 		CreatedBy:    &createdBy,
 	}
 	
+	log.Printf("DEBUG InitiateWorkflow: workflow.CreatedBy = %v", workflow.CreatedBy)
+	if workflow.CreatedBy != nil {
+		log.Printf("DEBUG InitiateWorkflow: *workflow.CreatedBy = %s", *workflow.CreatedBy)
+	}
+	
 	// Calculate expected completion (30 days from now)
 	expectedCompletion := time.Now().Add(30 * 24 * time.Hour)
 	workflow.ExpectedCompletion = &expectedCompletion
 	
+	log.Printf("DEBUG InitiateWorkflow: About to call CreateWorkflow")
 	err = s.repos.Workflow.CreateWorkflow(ctx, workflow)
 	if err != nil {
+		log.Printf("ERROR InitiateWorkflow: CreateWorkflow failed: %v", err)
 		return nil, fmt.Errorf("failed to create workflow: %w", err)
 	}
 	

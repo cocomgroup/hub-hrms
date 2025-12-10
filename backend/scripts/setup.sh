@@ -25,7 +25,7 @@ read -p "Port [5432]: " DB_PORT
 DB_PORT=${DB_PORT:-5432}
 
 read -p "Database [hrapp]: " DB_NAME
-DB_NAME=${DB_NAME:-hrmsdb}
+DB_NAME=${DB_NAME:-hrapp}
 
 read -p "User [postgres]: " DB_USER
 DB_USER=${DB_USER:-postgres}
@@ -62,7 +62,7 @@ if [ "$ADMIN_EXISTS" -gt "0" ]; then
     psql -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" << EOF
 UPDATE users
 SET password_hash = '\$2a\$10\$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy'
-WHERE email = 'admin@cocomgroup.com';
+WHERE email = 'admin@company.com';
 EOF
     
     echo "✓ Admin password reset to 'admin123'"
@@ -110,7 +110,7 @@ fi
 echo "=========================================="
 echo "Admin User Credentials"
 echo "=========================================="
-echo "Email:    admin@cocomgroup.com"
+echo "Email:    admin@company.com"
 echo "Password: admin123"
 echo ""
 echo "⚠ IMPORTANT: Change this password immediately after first login!"

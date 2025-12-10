@@ -17,7 +17,7 @@ INSERT INTO employees (
     gen_random_uuid(),
     'Admin',
     'User',
-    'admin@cocomgroup.com',
+    'admin@company.com',
     '555-0100',
     CURRENT_DATE,
     'Administration',
@@ -35,7 +35,7 @@ INSERT INTO users (
     role,
     employee_id
 ) VALUES (
-    'admin@cocomgroup.com',
+    'admin@company.com',
     '$2a$10$rQYDzJ7U0qKXLJvHKJGJ9O8nxK9qY6M5f5tD3qJ5L5J5qJ5qJ5qJ5', -- admin123
     'admin',
     'EMPLOYEE_ID_FROM_STEP_1' -- Replace with actual UUID
@@ -64,4 +64,4 @@ INSERT INTO pto_balances (
 SELECT u.id, u.email, u.role, e.first_name, e.last_name, e.position
 FROM users u
 JOIN employees e ON u.employee_id = e.id
-WHERE u.email = 'admin@cocomgroup.com';
+WHERE u.email = 'admin@company.com';

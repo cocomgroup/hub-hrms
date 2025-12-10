@@ -5,6 +5,7 @@ import (
 	"hub-hrms/backend/internal/models"
 	"hub-hrms/backend/internal/service"
 	"net/http"
+	"log"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -13,6 +14,7 @@ import (
 // RegisterWorkflowRoutes registers all workflow-related routes
 func RegisterWorkflowRoutes(r chi.Router, services *service.Services) {
 	r.Route("/workflows", func(r chi.Router) {
+		r.Use(authMiddleware(services))
 		r.Post("/", createWorkflowHandler(services))
 		r.Get("/", listWorkflowsHandler(services))
 		r.Get("/{workflowId}", getWorkflowHandler(services))
@@ -60,9 +62,12 @@ func createWorkflowHandler(services *service.Services) http.HandlerFunc {
 		
 		// Get user from context (from JWT middleware)
 		userID := getUserIDFromContext(r)
+		log.Printf("DEBUG createWorkflowHandler: userID from context = %s", userID)
+		log.Printf("DEBUG createWorkflowHandler: userID is nil? %v", userID == uuid.Nil)
 		
 		workflow, err := services.Workflow.InitiateWorkflow(r.Context(), employeeID, req.TemplateName, userID)
 		if err != nil {
+			log.Printf("ERROR createWorkflowHandler: InitiateWorkflow failed with userID=%s, error=%v", userID, err)
 			respondError(w, http.StatusInternalServerError, "failed to create workflow: "+err.Error())
 			return
 		}
@@ -428,28 +433,43 @@ func advanceStageHandler(services *service.Services) http.HandlerFunc {
 
 // getUserIDFromContext extracts user ID from JWT context
 func getUserIDFromContext(r *http.Request) uuid.UUID {
+	// Debug: log what's in context
+	log.Printf("DEBUG: Attempting to get user_id from context")
+	
 	// This assumes the JWT middleware sets the user_id in context
-	// For now, return a placeholder - this will work with the actual JWT middleware
 	if userID := r.Context().Value("user_id"); userID != nil {
+		log.Printf("DEBUG: Found user_id in context: %v (type: %T)", userID, userID)
 		if id, ok := userID.(uuid.UUID); ok {
+			log.Printf("DEBUG: Successfully parsed as uuid.UUID: %s", id)
 			return id
 		}
 		if idStr, ok := userID.(string); ok {
+			log.Printf("DEBUG: user_id is string: %s", idStr)
 			if id, err := uuid.Parse(idStr); err == nil {
+				log.Printf("DEBUG: Successfully parsed string to UUID: %s", id)
 				return id
+			} else {
+				log.Printf("DEBUG: Failed to parse string to UUID: %v", err)
 			}
 		}
+	} else {
+		log.Printf("DEBUG: user_id not found in context")
 	}
+	
 	// Fallback: try to get from claims in context
 	if claims := r.Context().Value("claims"); claims != nil {
+		log.Printf("DEBUG: Found claims in context")
 		if claimsMap, ok := claims.(map[string]interface{}); ok {
 			if userIDStr, ok := claimsMap["user_id"].(string); ok {
 				if id, err := uuid.Parse(userIDStr); err == nil {
+					log.Printf("DEBUG: Got user_id from claims: %s", id)
 					return id
 				}
 			}
 		}
 	}
+	
 	// Return nil UUID as fallback (should be handled by auth middleware)
+	log.Printf("WARNING: Returning nil UUID - user_id not found in context")
 	return uuid.Nil
 }

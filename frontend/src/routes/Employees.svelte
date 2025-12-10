@@ -77,7 +77,7 @@
       const data = await response.json();
       // Filter out system administrator
       employees = (data || []).filter((emp: Employee) => 
-        emp.email !== 'admin@cocomgroup.com'
+        emp.email !== 'admin@hub-hrms.local'
       );
     } catch (err: any) {
       error = err.message || 'Failed to load employees';

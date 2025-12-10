@@ -27,10 +27,10 @@ $DB_PORT = Read-Host "Port [5432]"
 if ([string]::IsNullOrWhiteSpace($DB_PORT)) { $DB_PORT = "5432" }
 
 $DB_NAME = Read-Host "Database [hrapp]"
-if ([string]::IsNullOrWhiteSpace($DB_NAME)) { $DB_NAME = "hrmsdb" }
+if ([string]::IsNullOrWhiteSpace($DB_NAME)) { $DB_NAME = "hrapp" }
 
 $DB_USER = Read-Host "User [postgres]"
-if ([string]::IsNullOrWhiteSpace($DB_USER)) { $DB_USER = "hrms_user" }
+if ([string]::IsNullOrWhiteSpace($DB_USER)) { $DB_USER = "postgres" }
 
 $SecurePassword = Read-Host "Password" -AsSecureString
 $DB_PASSWORD = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
@@ -54,7 +54,7 @@ Write-Host "[OK] Database connection successful" -ForegroundColor Green
 Write-Host ""
 
 # Check if admin user already exists
-$checkAdmin = & psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -t -c "SELECT COUNT(*) FROM users WHERE email = 'admin@cocomgroup.com';" 2>&1
+$checkAdmin = & psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -t -c "SELECT COUNT(*) FROM users WHERE email = 'admin@company.com';" 2>&1
 $adminExists = [int]($checkAdmin -replace '\s','')
 
 if ($adminExists -gt 0) {
@@ -68,7 +68,7 @@ if ($adminExists -gt 0) {
     }
     
     # Reset password
-    $resetSQL = "UPDATE users SET password_hash = '`$2a`$10`$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy' WHERE email = 'admin@cocomgroup.com';"
+    $resetSQL = "UPDATE users SET password_hash = '`$2a`$10`$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy' WHERE email = 'admin@company.com';"
     
     $resetSQL | & psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME 2>&1 | Out-Null
     
@@ -94,7 +94,7 @@ WITH new_employee AS (
         hire_date, department, position,
         employment_type, status
     ) VALUES (
-        'System', 'Administrator', 'admin@cocomgroup.com', '555-0100',
+        'System', 'Administrator', 'admin@company.com', '555-0100',
         CURRENT_DATE, 'Administration', 'System Administrator',
         'full-time', 'active'
     ) RETURNING id
@@ -134,7 +134,7 @@ COMMIT;
 Write-Host "==========================================" -ForegroundColor Cyan
 Write-Host "Admin User Credentials" -ForegroundColor Cyan
 Write-Host "==========================================" -ForegroundColor Cyan
-Write-Host "Email:    admin@cocomgroup.com" -ForegroundColor White
+Write-Host "Email:    admin@company.com" -ForegroundColor White
 Write-Host "Password: admin123" -ForegroundColor White
 Write-Host ""
 Write-Host "IMPORTANT: Change this password immediately after first login!" -ForegroundColor Yellow
@@ -156,14 +156,14 @@ WITH emp1 AS (
         first_name, last_name, email, phone,
         hire_date, department, position, employment_type, status
     ) VALUES (
-        'John', 'Doe', 'john.doe@cocomgroup.com', '555-0101',
+        'John', 'Doe', 'john.doe@company.com', '555-0101',
         CURRENT_DATE - INTERVAL '30 days', 'Engineering', 'Senior Developer',
         'full-time', 'active'
     ) RETURNING id
 ),
 user1 AS (
     INSERT INTO users (email, password_hash, role, employee_id)
-    SELECT 'john.doe@cocomgroup.com',
+    SELECT 'john.doe@company.com',
            '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy',
            'employee', id FROM emp1
     RETURNING employee_id
@@ -177,14 +177,14 @@ WITH emp2 AS (
         first_name, last_name, email, phone,
         hire_date, department, position, employment_type, status
     ) VALUES (
-        'Jane', 'Smith', 'jane.smith@cocomgroup.com', '555-0102',
+        'Jane', 'Smith', 'jane.smith@company.com', '555-0102',
         CURRENT_DATE - INTERVAL '60 days', 'Human Resources', 'HR Manager',
         'full-time', 'active'
     ) RETURNING id
 ),
 user2 AS (
     INSERT INTO users (email, password_hash, role, employee_id)
-    SELECT 'jane.smith@cocomgroup.com',
+    SELECT 'jane.smith@company.com',
            '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy',
            'manager', id FROM emp2
     RETURNING employee_id
@@ -198,14 +198,14 @@ WITH emp3 AS (
         first_name, last_name, email, phone,
         hire_date, department, position, employment_type, status
     ) VALUES (
-        'Bob', 'Johnson', 'bob.johnson@cocomgroup.com', '555-0103',
+        'Bob', 'Johnson', 'bob.johnson@company.com', '555-0103',
         CURRENT_DATE, 'Sales', 'Sales Representative',
         'full-time', 'active'
     ) RETURNING id
 ),
 user3 AS (
     INSERT INTO users (email, password_hash, role, employee_id)
-    SELECT 'bob.johnson@cocomgroup.com',
+    SELECT 'bob.johnson@company.com',
            '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy',
            'employee', id FROM emp3
     RETURNING employee_id
@@ -222,9 +222,9 @@ SELECT employee_id, 15.0, 10.0, 5.0 FROM user3;
     
     if ($LASTEXITCODE -eq 0) {
         Write-Host "[OK] Sample employees created:" -ForegroundColor Green
-        Write-Host "  - john.doe@cocomgroup.com (password: admin123)" -ForegroundColor White
-        Write-Host "  - jane.smith@cocomgroup.com (password: admin123)" -ForegroundColor White
-        Write-Host "  - bob.johnson@cocomgroup.com (password: admin123)" -ForegroundColor White
+        Write-Host "  - john.doe@company.com (password: admin123)" -ForegroundColor White
+        Write-Host "  - jane.smith@company.com (password: admin123)" -ForegroundColor White
+        Write-Host "  - bob.johnson@company.com (password: admin123)" -ForegroundColor White
         Write-Host ""
     } else {
         Write-Host "Error creating sample employees" -ForegroundColor Red
