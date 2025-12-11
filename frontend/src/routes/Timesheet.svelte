@@ -387,16 +387,19 @@
   }
 
   function getWeekStart(): string {
-    const now = new Date();
-    const day = now.getDay();
-    const diff = now.getDate() - day + (day === 0 ? -6 : 1);
-    return new Date(now.setDate(diff)).toISOString().split('T')[0];
+    const date = new Date(selectedDate);
+    const day = date.getDay();
+    const diff = date.getDate() - day;
+    const weekStart = new Date(date.setDate(diff));
+    return weekStart.toISOString().split('T')[0];
   }
 
   function getWeekEnd(): string {
-    const start = new Date(getWeekStart());
-    start.setDate(start.getDate() + 6);
-    return start.toISOString().split('T')[0];
+    const date = new Date(selectedDate);
+    const day = date.getDay();
+    const diff = date.getDate() + (6 - day);
+    const weekEnd = new Date(date.setDate(diff));
+    return weekEnd.toISOString().split('T')[0];
   }
 
   function formatDate(dateStr: string): string {
@@ -407,38 +410,38 @@
     });
   }
 
-  function formatTime(dateStr: string | undefined): string {
-    if (!dateStr) return '-';
-    return new Date(dateStr).toLocaleTimeString('en-US', { 
+  function formatTime(timeStr: string | undefined): string {
+    if (!timeStr) return '-';
+    return new Date(timeStr).toLocaleTimeString('en-US', { 
       hour: '2-digit', 
       minute: '2-digit' 
     });
   }
 
-  $: totalHours = timeEntries.reduce((sum, e) => sum + (e.total_hours || 0), 0);
-  $: canEdit = currentPeriod?.status === 'draft';
+  $: periodTotal = currentPeriod 
+    ? currentPeriod.total_regular_hours + currentPeriod.total_overtime_hours + currentPeriod.total_pto_hours
+    : 0;
 </script>
 
 <div class="timesheet-container">
-  <!-- Header -->
-  <div class="header">
-    <h1>My Timesheet</h1>
-    <div class="period-info">
-      {#if currentPeriod}
-        <span class="period-dates">
+  <div class="timesheet-header">
+    <h1>Timesheet</h1>
+    {#if currentPeriod}
+      <div class="period-info">
+        <div class="period-dates">
           {formatDate(currentPeriod.start_date)} - {formatDate(currentPeriod.end_date)}
-        </span>
+        </div>
         <span class="status-badge status-{currentPeriod.status}">
           {currentPeriod.status}
         </span>
-      {/if}
-    </div>
+      </div>
+    {/if}
   </div>
 
-  <!-- Messages -->
   {#if error}
     <div class="alert alert-error">{error}</div>
   {/if}
+  
   {#if success}
     <div class="alert alert-success">{success}</div>
   {/if}
@@ -446,42 +449,33 @@
   <!-- Clock In/Out Section -->
   <div class="clock-section">
     <div class="clock-display">
-      {#if clockedIn}
-        <div class="clock-status clocked-in">
-          <div class="status-icon">🟢</div>
-          <div class="status-info">
-            <h3>Clocked In</h3>
-            <p>Started at {formatTime(clockInTime)}</p>
+      <div class="clock-status">
+        <div class="status-icon">
+          {clockedIn ? '🟢' : '⚪'}
+        </div>
+        <div class="status-info">
+          <h3>{clockedIn ? 'Clocked In' : 'Not Clocked In'}</h3>
+          <p>
+            {#if clockedIn && clockInTime}
+              Since {formatTime(clockInTime)}
+            {:else}
+              Ready to clock in
+            {/if}
+          </p>
+          {#if clockedIn}
             <div class="elapsed-time">{elapsedTime}</div>
-          </div>
+          {/if}
         </div>
-      {:else}
-        <div class="clock-status clocked-out">
-          <div class="status-icon">⚪</div>
-          <div class="status-info">
-            <h3>Not Clocked In</h3>
-            <p>Ready to start work</p>
-          </div>
-        </div>
-      {/if}
+      </div>
     </div>
-    
     <div class="clock-actions">
-      {#if clockedIn}
-        <button 
-          class="btn btn-danger btn-lg" 
-          on:click={clockOut}
-          disabled={loading}
-        >
-          Clock Out
+      {#if !clockedIn}
+        <button class="btn btn-success btn-lg" on:click={clockIn} disabled={loading}>
+          Clock In
         </button>
       {:else}
-        <button 
-          class="btn btn-success btn-lg" 
-          on:click={clockIn}
-          disabled={loading}
-        >
-          Clock In
+        <button class="btn btn-danger btn-lg" on:click={clockOut} disabled={loading}>
+          Clock Out
         </button>
       {/if}
     </div>
@@ -491,39 +485,32 @@
   <div class="summary-cards">
     <div class="card">
       <h4>Regular Hours</h4>
-      <div class="card-value">{currentPeriod?.total_regular_hours.toFixed(2) || '0.00'}</div>
+      <div class="card-value">{currentPeriod?.total_regular_hours.toFixed(1) || '0.0'}</div>
     </div>
     <div class="card">
       <h4>Overtime Hours</h4>
-      <div class="card-value">{currentPeriod?.total_overtime_hours.toFixed(2) || '0.00'}</div>
+      <div class="card-value">{currentPeriod?.total_overtime_hours.toFixed(1) || '0.0'}</div>
     </div>
     <div class="card">
       <h4>PTO Hours</h4>
-      <div class="card-value">{currentPeriod?.total_pto_hours.toFixed(2) || '0.00'}</div>
+      <div class="card-value">{currentPeriod?.total_pto_hours.toFixed(1) || '0.0'}</div>
     </div>
     <div class="card">
       <h4>Total Hours</h4>
-      <div class="card-value">{totalHours.toFixed(2)}</div>
+      <div class="card-value">{periodTotal.toFixed(1)}</div>
     </div>
   </div>
 
   <!-- Actions Bar -->
   <div class="actions-bar">
-    {#if canEdit}
-      <button class="btn btn-primary" on:click={() => showAddEntry = true}>
-        + Add Time Entry
-      </button>
-      <button 
-        class="btn btn-success" 
-        on:click={submitTimesheet}
-        disabled={timeEntries.length === 0}
-      >
-        Submit for Approval
+    <button class="btn btn-primary" on:click={() => showAddEntry = true}>
+      + Add Entry
+    </button>
+    {#if currentPeriod?.status === 'draft'}
+      <button class="btn btn-success" on:click={submitTimesheet} disabled={loading || timeEntries.length === 0}>
+        Submit Timesheet
       </button>
     {/if}
-    <button class="btn btn-secondary" on:click={loadData}>
-      Refresh
-    </button>
   </div>
 
   <!-- Time Entries Table -->
@@ -535,74 +522,77 @@
           <th>Clock In</th>
           <th>Clock Out</th>
           <th>Break</th>
+          <th>Total Hours</th>
           <th>Type</th>
-          <th>Hours</th>
           <th>Projects</th>
           <th>Status</th>
           <th>Actions</th>
         </tr>
       </thead>
       <tbody>
-        {#each timeEntries as entry}
+        {#if timeEntries.length === 0}
           <tr>
-            <td>{formatDate(entry.entry_date)}</td>
-            <td>{formatTime(entry.clock_in)}</td>
-            <td>{formatTime(entry.clock_out)}</td>
-            <td>{entry.break_duration} min</td>
-            <td>
-              <span class="entry-type-badge type-{entry.entry_type}">
-                {entry.entry_type}
-              </span>
-            </td>
-            <td><strong>{entry.total_hours?.toFixed(2) || '-'}</strong></td>
-            <td>
-              {#if entry.projects && entry.projects.length > 0}
-                <div class="project-list">
-                  {#each entry.projects as proj}
-                    <div class="project-item">
-                      {proj.project_code}: {proj.hours}h
-                    </div>
-                  {/each}
-                </div>
-              {:else}
-                -
-              {/if}
-            </td>
-            <td>
-              <span class="status-badge status-{entry.status}">
-                {entry.status}
-              </span>
-            </td>
-            <td>
-              {#if entry.status === 'draft'}
-                <button class="btn-icon" on:click={() => editEntry(entry)} title="Edit">
-                  ✏️
-                </button>
-                <button class="btn-icon" on:click={() => deleteEntry(entry.id)} title="Delete">
-                  🗑️
-                </button>
-              {/if}
-              {#if entry.notes}
-                <button class="btn-icon" title={entry.notes}>
-                  📝
-                </button>
-              {/if}
+            <td colspan="9">
+              <div class="empty-state">
+                No time entries for this period. Add your first entry above!
+              </div>
             </td>
           </tr>
         {:else}
-          <tr>
-            <td colspan="9" class="empty-state">
-              No time entries for this period. Clock in or add a manual entry.
-            </td>
-          </tr>
-        {/each}
+          {#each timeEntries as entry}
+            <tr>
+              <td>{formatDate(entry.entry_date)}</td>
+              <td>{formatTime(entry.clock_in)}</td>
+              <td>{formatTime(entry.clock_out)}</td>
+              <td>{entry.break_duration}m</td>
+              <td>{entry.total_hours?.toFixed(2) || '-'}</td>
+              <td>
+                <span class="entry-type-badge type-{entry.entry_type}">
+                  {entry.entry_type}
+                </span>
+              </td>
+              <td>
+                {#if entry.projects && entry.projects.length > 0}
+                  <div class="project-list">
+                    {#each entry.projects as project}
+                      <div class="project-item">
+                        {project.project_name} ({project.hours}h)
+                      </div>
+                    {/each}
+                  </div>
+                {:else}
+                  -
+                {/if}
+              </td>
+              <td>
+                <span class="status-badge status-{entry.status}">
+                  {entry.status}
+                </span>
+              </td>
+              <td>
+                {#if entry.status === 'draft'}
+                  <button class="btn-icon" on:click={() => editEntry(entry)} title="Edit entry" aria-label="Edit entry">
+                    ✏️
+                  </button>
+                  <button class="btn-icon" on:click={() => deleteEntry(entry.id)} title="Delete entry" aria-label="Delete entry">
+                    🗑️
+                  </button>
+                {/if}
+              </td>
+            </tr>
+          {/each}
+        {/if}
       </tbody>
     </table>
   </div>
 
   <!-- Add/Edit Entry Modal -->
   {#if showAddEntry}
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
     <div class="modal-overlay" on:click={resetForm}>
+      <!-- svelte-ignore a11y-click-events-have-key-events -->
+      <!-- svelte-ignore a11y-no-static-element-interactions -->
       <div class="modal" on:click|stopPropagation>
         <div class="modal-header">
           <h2>{editingEntry ? 'Edit' : 'Add'} Time Entry</h2>
@@ -611,29 +601,29 @@
         
         <div class="modal-body">
           <div class="form-group">
-            <label>Date</label>
-            <input type="date" bind:value={newEntry.entry_date} />
+            <label for="entry-date">Date</label>
+            <input id="entry-date" type="date" bind:value={newEntry.entry_date} />
           </div>
 
           <div class="form-row">
             <div class="form-group">
-              <label>Clock In</label>
-              <input type="time" bind:value={newEntry.clock_in} />
+              <label for="clock-in">Clock In</label>
+              <input id="clock-in" type="time" bind:value={newEntry.clock_in} />
             </div>
             <div class="form-group">
-              <label>Clock Out</label>
-              <input type="time" bind:value={newEntry.clock_out} />
+              <label for="clock-out">Clock Out</label>
+              <input id="clock-out" type="time" bind:value={newEntry.clock_out} />
             </div>
           </div>
 
           <div class="form-row">
             <div class="form-group">
-              <label>Break Duration (minutes)</label>
-              <input type="number" bind:value={newEntry.break_duration} min="0" />
+              <label for="break-duration">Break Duration (minutes)</label>
+              <input id="break-duration" type="number" bind:value={newEntry.break_duration} min="0" />
             </div>
             <div class="form-group">
-              <label>Entry Type</label>
-              <select bind:value={newEntry.entry_type}>
+              <label for="entry-type">Entry Type</label>
+              <select id="entry-type" bind:value={newEntry.entry_type}>
                 <option value="regular">Regular</option>
                 <option value="overtime">Overtime</option>
                 <option value="pto">PTO</option>
@@ -644,36 +634,42 @@
           </div>
 
           <div class="form-group">
-            <label>Notes</label>
-            <textarea bind:value={newEntry.notes} rows="2"></textarea>
+            <label for="entry-notes">Notes</label>
+            <textarea id="entry-notes" bind:value={newEntry.notes} rows="2"></textarea>
           </div>
 
           <!-- Project Allocations -->
           <div class="form-section">
             <div class="section-header">
               <h3>Project Allocations</h3>
-              <button class="btn btn-sm" on:click={addProjectAllocation}>
+              <button class="btn btn-sm btn-secondary" on:click={addProjectAllocation}>
                 + Add Project
               </button>
             </div>
-
-            {#each newEntry.projects as proj, i}
+            
+            {#each newEntry.projects as projectAlloc, i}
               <div class="project-allocation">
-                <select bind:value={proj.project_id}>
+                <select bind:value={projectAlloc.project_id} aria-label="Select project">
                   <option value="">Select Project</option>
                   {#each projects as project}
-                    <option value={project.id}>{project.code} - {project.name}</option>
+                    <option value={project.id}>{project.name} ({project.code})</option>
                   {/each}
                 </select>
                 <input 
                   type="number" 
-                  bind:value={proj.hours} 
+                  bind:value={projectAlloc.hours} 
                   placeholder="Hours" 
-                  step="0.25"
-                  min="0"
+                  min="0" 
+                  step="0.5"
+                  aria-label="Project hours"
                 />
-                <button class="btn-icon" on:click={() => removeProjectAllocation(i)}>
-                  🗑️
+                <button 
+                  class="btn-icon" 
+                  on:click={() => removeProjectAllocation(i)}
+                  title="Remove project allocation"
+                  aria-label="Remove project allocation"
+                >
+                  ❌
                 </button>
               </div>
             {/each}
@@ -681,9 +677,11 @@
         </div>
 
         <div class="modal-footer">
-          <button class="btn btn-secondary" on:click={resetForm}>Cancel</button>
+          <button class="btn btn-secondary" on:click={resetForm}>
+            Cancel
+          </button>
           <button class="btn btn-primary" on:click={saveEntry} disabled={loading}>
-            {editingEntry ? 'Update' : 'Create'} Entry
+            {editingEntry ? 'Update' : 'Save'} Entry
           </button>
         </div>
       </div>
@@ -693,12 +691,12 @@
 
 <style>
   .timesheet-container {
-    padding: 2rem;
     max-width: 1400px;
     margin: 0 auto;
+    padding: 2rem;
   }
 
-  .header {
+  .timesheet-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
