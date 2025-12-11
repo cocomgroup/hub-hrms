@@ -59,22 +59,6 @@ type OnboardingTask struct {
 	UpdatedAt         time.Time  `json:"updated_at"`
 }
 
-// Timesheet represents a time tracking entry
-type Timesheet struct {
-	ID           uuid.UUID  `json:"id"`
-	EmployeeID   uuid.UUID  `json:"employee_id"`
-	ClockIn      time.Time  `json:"clock_in"`
-	ClockOut     *time.Time `json:"clock_out,omitempty"`
-	BreakMinutes int        `json:"break_minutes"`
-	TotalHours   *float64   `json:"total_hours,omitempty"`
-	ProjectCode  *string    `json:"project_code,omitempty"`
-	Notes        *string    `json:"notes,omitempty"`
-	Status       string     `json:"status"`
-	ApprovedBy   *uuid.UUID `json:"approved_by,omitempty"`
-	ApprovedAt   *time.Time `json:"approved_at,omitempty"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
-}
 
 // PTOBalance represents an employee's PTO balance
 type PTOBalance struct {
@@ -180,17 +164,6 @@ type LoginResponse struct {
 	Token     string    `json:"token"`
 	User      User      `json:"user"`
 	Employee  *Employee `json:"employee,omitempty"`
-}
-
-type ClockInRequest struct {
-	EmployeeID  uuid.UUID `json:"employee_id"`
-	ProjectCode *string   `json:"project_code,omitempty"`
-}
-
-type ClockOutRequest struct {
-	TimesheetID  uuid.UUID `json:"timesheet_id"`
-	BreakMinutes int       `json:"break_minutes"`
-	Notes        *string   `json:"notes,omitempty"`
 }
 
 type PTORequestCreate struct {
@@ -350,3 +323,4 @@ type DocSearchDocument struct {
 	UploadedAt   time.Time              `json:"uploaded_at"`
 	Metadata     map[string]interface{} `json:"metadata,omitempty"`
 }
+

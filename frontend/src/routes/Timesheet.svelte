@@ -1,5 +1,1091 @@
-<script>
-  let timesheets = $state([]);
+<script lang="ts">
+  import { onMount } from 'svelte';
+  import { authStore } from '../stores/auth';
+  
+  interface TimeEntry {
+    id: string;
+    employee_id: string;
+    entry_date: string;
+    clock_in?: string;
+    clock_out?: string;
+    break_duration: number;
+    notes: string;
+    entry_type: string;
+    status: string;
+    total_hours?: number;
+    projects?: TimeEntryProject[];
+  }
+
+  interface TimeEntryProject {
+    id: string;
+    project_id: string;
+    project_name: string;
+    project_code: string;
+    hours: number;
+    notes: string;
+  }
+
+  interface Project {
+    id: string;
+    name: string;
+    code: string;
+    status: string;
+  }
+
+  interface TimesheetPeriod {
+    id: string;
+    start_date: string;
+    end_date: string;
+    status: string;
+    total_regular_hours: number;
+    total_overtime_hours: number;
+    total_pto_hours: number;
+  }
+
+  let activeEntry: TimeEntry | null = null;
+  let currentPeriod: TimesheetPeriod | null = null;
+  let timeEntries: TimeEntry[] = [];
+  let projects: Project[] = [];
+  let loading = false;
+  let error = '';
+  let success = '';
+  
+  // Filter and view state
+  let viewMode: 'week' | 'period' = 'week';
+  let selectedDate = new Date().toISOString().split('T')[0];
+  let showAddEntry = false;
+  let editingEntry: TimeEntry | null = null;
+  
+  // New entry form
+  let newEntry = {
+    entry_date: new Date().toISOString().split('T')[0],
+    clock_in: '',
+    clock_out: '',
+    break_duration: 0,
+    notes: '',
+    entry_type: 'regular',
+    projects: [] as { project_id: string; hours: number; notes: string }[]
+  };
+
+  // Clock in/out state
+  let clockedIn = false;
+  let clockInTime = '';
+  let elapsedTime = '00:00:00';
+  let timerInterval: number;
+
+  onMount(() => {
+    loadData();
+    checkActiveClockIn();
+  });
+
+  async function loadData() {
+    loading = true;
+    error = '';
+    
+    try {
+      await Promise.all([
+        loadCurrentPeriod(),
+        loadTimeEntries(),
+        loadProjects()
+      ]);
+    } catch (err: any) {
+      error = err.message || 'Failed to load data';
+    } finally {
+      loading = false;
+    }
+  }
+
+  async function loadCurrentPeriod() {
+    const response = await fetch('/api/timesheet/periods/current', {
+      headers: {
+        'Authorization': `Bearer ${$authStore.token}`
+      }
+    });
+    
+    if (!response.ok) throw new Error('Failed to load current period');
+    currentPeriod = await response.json();
+  }
+
+  async function loadTimeEntries() {
+    const startDate = currentPeriod?.start_date || getWeekStart();
+    const endDate = currentPeriod?.end_date || getWeekEnd();
+    
+    const response = await fetch(
+      `/api/timesheet/entries?start_date=${startDate}&end_date=${endDate}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${$authStore.token}`
+        }
+      }
+    );
+    
+    if (!response.ok) throw new Error('Failed to load time entries');
+    timeEntries = await response.json();
+  }
+
+  async function loadProjects() {
+    const response = await fetch('/api/timesheet/projects?status=active', {
+      headers: {
+        'Authorization': `Bearer ${$authStore.token}`
+      }
+    });
+    
+    if (!response.ok) throw new Error('Failed to load projects');
+    projects = await response.json();
+  }
+
+  async function checkActiveClockIn() {
+    try {
+      const response = await fetch('/api/timesheet/active', {
+        headers: {
+          'Authorization': `Bearer ${$authStore.token}`
+        }
+      });
+      
+      if (response.ok) {
+        activeEntry = await response.json();
+        if (activeEntry && activeEntry.clock_in) {
+          clockedIn = true;
+          clockInTime = activeEntry.clock_in;
+          startTimer();
+        }
+      }
+    } catch (err) {
+      console.error('Failed to check active clock-in:', err);
+    }
+  }
+
+  async function clockIn() {
+    loading = true;
+    error = '';
+    
+    try {
+      const response = await fetch('/api/timesheet/clock-in', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${$authStore.token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ notes: '' })
+      });
+      
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Failed to clock in');
+      }
+      
+      activeEntry = await response.json();
+      clockedIn = true;
+      clockInTime = activeEntry!.clock_in!;
+      startTimer();
+      success = 'Clocked in successfully!';
+      setTimeout(() => success = '', 3000);
+      
+      await loadTimeEntries();
+    } catch (err: any) {
+      error = err.message;
+    } finally {
+      loading = false;
+    }
+  }
+
+  async function clockOut() {
+    loading = true;
+    error = '';
+    
+    const breakDuration = parseInt(prompt('Break duration in minutes:', '0') || '0');
+    
+    try {
+      const response = await fetch('/api/timesheet/clock-out', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${$authStore.token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ 
+          break_duration: breakDuration,
+          notes: '' 
+        })
+      });
+      
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Failed to clock out');
+      }
+      
+      activeEntry = await response.json();
+      clockedIn = false;
+      stopTimer();
+      success = `Clocked out! Total: ${activeEntry!.total_hours?.toFixed(2)} hours`;
+      setTimeout(() => success = '', 3000);
+      
+      await loadTimeEntries();
+    } catch (err: any) {
+      error = err.message;
+    } finally {
+      loading = false;
+    }
+  }
+
+  function startTimer() {
+    if (timerInterval) clearInterval(timerInterval);
+    
+    timerInterval = window.setInterval(() => {
+      if (!clockInTime) return;
+      
+      const start = new Date(clockInTime);
+      const now = new Date();
+      const diff = now.getTime() - start.getTime();
+      
+      const hours = Math.floor(diff / 3600000);
+      const minutes = Math.floor((diff % 3600000) / 60000);
+      const seconds = Math.floor((diff % 60000) / 1000);
+      
+      elapsedTime = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    }, 1000);
+  }
+
+  function stopTimer() {
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      timerInterval = 0;
+    }
+    elapsedTime = '00:00:00';
+  }
+
+  async function saveEntry() {
+    loading = true;
+    error = '';
+    
+    try {
+      const url = editingEntry 
+        ? `/api/timesheet/entries/${editingEntry.id}`
+        : '/api/timesheet/entries';
+      
+      const method = editingEntry ? 'PUT' : 'POST';
+      
+      const response = await fetch(url, {
+        method,
+        headers: {
+          'Authorization': `Bearer ${$authStore.token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(newEntry)
+      });
+      
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || 'Failed to save entry');
+      }
+      
+      success = editingEntry ? 'Entry updated!' : 'Entry created!';
+      setTimeout(() => success = '', 3000);
+      
+      resetForm();
+      await loadTimeEntries();
+    } catch (err: any) {
+      error = err.message;
+    } finally {
+      loading = false;
+    }
+  }
+
+  async function deleteEntry(id: string) {
+    if (!confirm('Delete this time entry?')) return;
+    
+    loading = true;
+    error = '';
+    
+    try {
+      const response = await fetch(`/api/timesheet/entries/${id}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${$authStore.token}`
+        }
+      });
+      
+      if (!response.ok) throw new Error('Failed to delete entry');
+      
+      success = 'Entry deleted!';
+      setTimeout(() => success = '', 3000);
+      await loadTimeEntries();
+    } catch (err: any) {
+      error = err.message;
+    } finally {
+      loading = false;
+    }
+  }
+
+  function editEntry(entry: TimeEntry) {
+    editingEntry = entry;
+    newEntry = {
+      entry_date: entry.entry_date.split('T')[0],
+      clock_in: entry.clock_in?.substring(11, 16) || '',
+      clock_out: entry.clock_out?.substring(11, 16) || '',
+      break_duration: entry.break_duration,
+      notes: entry.notes,
+      entry_type: entry.entry_type,
+      projects: entry.projects?.map(p => ({
+        project_id: p.project_id,
+        hours: p.hours,
+        notes: p.notes
+      })) || []
+    };
+    showAddEntry = true;
+  }
+
+  function resetForm() {
+    showAddEntry = false;
+    editingEntry = null;
+    newEntry = {
+      entry_date: new Date().toISOString().split('T')[0],
+      clock_in: '',
+      clock_out: '',
+      break_duration: 0,
+      notes: '',
+      entry_type: 'regular',
+      projects: []
+    };
+  }
+
+  function addProjectAllocation() {
+    newEntry.projects.push({ project_id: '', hours: 0, notes: '' });
+    newEntry = newEntry;
+  }
+
+  function removeProjectAllocation(index: number) {
+    newEntry.projects.splice(index, 1);
+    newEntry = newEntry;
+  }
+
+  async function submitTimesheet() {
+    if (!currentPeriod) return;
+    
+    if (!confirm('Submit timesheet for approval?')) return;
+    
+    loading = true;
+    error = '';
+    
+    try {
+      const response = await fetch(`/api/timesheet/periods/${currentPeriod.id}/submit`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${$authStore.token}`
+        }
+      });
+      
+      if (!response.ok) throw new Error('Failed to submit timesheet');
+      
+      success = 'Timesheet submitted for approval!';
+      setTimeout(() => success = '', 3000);
+      await loadCurrentPeriod();
+    } catch (err: any) {
+      error = err.message;
+    } finally {
+      loading = false;
+    }
+  }
+
+  function getWeekStart(): string {
+    const now = new Date();
+    const day = now.getDay();
+    const diff = now.getDate() - day + (day === 0 ? -6 : 1);
+    return new Date(now.setDate(diff)).toISOString().split('T')[0];
+  }
+
+  function getWeekEnd(): string {
+    const start = new Date(getWeekStart());
+    start.setDate(start.getDate() + 6);
+    return start.toISOString().split('T')[0];
+  }
+
+  function formatDate(dateStr: string): string {
+    return new Date(dateStr).toLocaleDateString('en-US', { 
+      weekday: 'short', 
+      month: 'short', 
+      day: 'numeric' 
+    });
+  }
+
+  function formatTime(dateStr: string | undefined): string {
+    if (!dateStr) return '-';
+    return new Date(dateStr).toLocaleTimeString('en-US', { 
+      hour: '2-digit', 
+      minute: '2-digit' 
+    });
+  }
+
+  $: totalHours = timeEntries.reduce((sum, e) => sum + (e.total_hours || 0), 0);
+  $: canEdit = currentPeriod?.status === 'draft';
 </script>
-<div class="page"><h1>Timesheet</h1><p>Time tracking coming soon...</p></div>
-<style>.page{padding:2rem;}.page h1{font-size:2rem;color:#e4e7eb;margin-bottom:1rem;}</style>
+
+<div class="timesheet-container">
+  <!-- Header -->
+  <div class="header">
+    <h1>My Timesheet</h1>
+    <div class="period-info">
+      {#if currentPeriod}
+        <span class="period-dates">
+          {formatDate(currentPeriod.start_date)} - {formatDate(currentPeriod.end_date)}
+        </span>
+        <span class="status-badge status-{currentPeriod.status}">
+          {currentPeriod.status}
+        </span>
+      {/if}
+    </div>
+  </div>
+
+  <!-- Messages -->
+  {#if error}
+    <div class="alert alert-error">{error}</div>
+  {/if}
+  {#if success}
+    <div class="alert alert-success">{success}</div>
+  {/if}
+
+  <!-- Clock In/Out Section -->
+  <div class="clock-section">
+    <div class="clock-display">
+      {#if clockedIn}
+        <div class="clock-status clocked-in">
+          <div class="status-icon">🟢</div>
+          <div class="status-info">
+            <h3>Clocked In</h3>
+            <p>Started at {formatTime(clockInTime)}</p>
+            <div class="elapsed-time">{elapsedTime}</div>
+          </div>
+        </div>
+      {:else}
+        <div class="clock-status clocked-out">
+          <div class="status-icon">⚪</div>
+          <div class="status-info">
+            <h3>Not Clocked In</h3>
+            <p>Ready to start work</p>
+          </div>
+        </div>
+      {/if}
+    </div>
+    
+    <div class="clock-actions">
+      {#if clockedIn}
+        <button 
+          class="btn btn-danger btn-lg" 
+          on:click={clockOut}
+          disabled={loading}
+        >
+          Clock Out
+        </button>
+      {:else}
+        <button 
+          class="btn btn-success btn-lg" 
+          on:click={clockIn}
+          disabled={loading}
+        >
+          Clock In
+        </button>
+      {/if}
+    </div>
+  </div>
+
+  <!-- Summary Cards -->
+  <div class="summary-cards">
+    <div class="card">
+      <h4>Regular Hours</h4>
+      <div class="card-value">{currentPeriod?.total_regular_hours.toFixed(2) || '0.00'}</div>
+    </div>
+    <div class="card">
+      <h4>Overtime Hours</h4>
+      <div class="card-value">{currentPeriod?.total_overtime_hours.toFixed(2) || '0.00'}</div>
+    </div>
+    <div class="card">
+      <h4>PTO Hours</h4>
+      <div class="card-value">{currentPeriod?.total_pto_hours.toFixed(2) || '0.00'}</div>
+    </div>
+    <div class="card">
+      <h4>Total Hours</h4>
+      <div class="card-value">{totalHours.toFixed(2)}</div>
+    </div>
+  </div>
+
+  <!-- Actions Bar -->
+  <div class="actions-bar">
+    {#if canEdit}
+      <button class="btn btn-primary" on:click={() => showAddEntry = true}>
+        + Add Time Entry
+      </button>
+      <button 
+        class="btn btn-success" 
+        on:click={submitTimesheet}
+        disabled={timeEntries.length === 0}
+      >
+        Submit for Approval
+      </button>
+    {/if}
+    <button class="btn btn-secondary" on:click={loadData}>
+      Refresh
+    </button>
+  </div>
+
+  <!-- Time Entries Table -->
+  <div class="entries-table">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Clock In</th>
+          <th>Clock Out</th>
+          <th>Break</th>
+          <th>Type</th>
+          <th>Hours</th>
+          <th>Projects</th>
+          <th>Status</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#each timeEntries as entry}
+          <tr>
+            <td>{formatDate(entry.entry_date)}</td>
+            <td>{formatTime(entry.clock_in)}</td>
+            <td>{formatTime(entry.clock_out)}</td>
+            <td>{entry.break_duration} min</td>
+            <td>
+              <span class="entry-type-badge type-{entry.entry_type}">
+                {entry.entry_type}
+              </span>
+            </td>
+            <td><strong>{entry.total_hours?.toFixed(2) || '-'}</strong></td>
+            <td>
+              {#if entry.projects && entry.projects.length > 0}
+                <div class="project-list">
+                  {#each entry.projects as proj}
+                    <div class="project-item">
+                      {proj.project_code}: {proj.hours}h
+                    </div>
+                  {/each}
+                </div>
+              {:else}
+                -
+              {/if}
+            </td>
+            <td>
+              <span class="status-badge status-{entry.status}">
+                {entry.status}
+              </span>
+            </td>
+            <td>
+              {#if entry.status === 'draft'}
+                <button class="btn-icon" on:click={() => editEntry(entry)} title="Edit">
+                  ✏️
+                </button>
+                <button class="btn-icon" on:click={() => deleteEntry(entry.id)} title="Delete">
+                  🗑️
+                </button>
+              {/if}
+              {#if entry.notes}
+                <button class="btn-icon" title={entry.notes}>
+                  📝
+                </button>
+              {/if}
+            </td>
+          </tr>
+        {:else}
+          <tr>
+            <td colspan="9" class="empty-state">
+              No time entries for this period. Clock in or add a manual entry.
+            </td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Add/Edit Entry Modal -->
+  {#if showAddEntry}
+    <div class="modal-overlay" on:click={resetForm}>
+      <div class="modal" on:click|stopPropagation>
+        <div class="modal-header">
+          <h2>{editingEntry ? 'Edit' : 'Add'} Time Entry</h2>
+          <button class="close-btn" on:click={resetForm}>×</button>
+        </div>
+        
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Date</label>
+            <input type="date" bind:value={newEntry.entry_date} />
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label>Clock In</label>
+              <input type="time" bind:value={newEntry.clock_in} />
+            </div>
+            <div class="form-group">
+              <label>Clock Out</label>
+              <input type="time" bind:value={newEntry.clock_out} />
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-group">
+              <label>Break Duration (minutes)</label>
+              <input type="number" bind:value={newEntry.break_duration} min="0" />
+            </div>
+            <div class="form-group">
+              <label>Entry Type</label>
+              <select bind:value={newEntry.entry_type}>
+                <option value="regular">Regular</option>
+                <option value="overtime">Overtime</option>
+                <option value="pto">PTO</option>
+                <option value="sick">Sick Leave</option>
+                <option value="holiday">Holiday</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label>Notes</label>
+            <textarea bind:value={newEntry.notes} rows="2"></textarea>
+          </div>
+
+          <!-- Project Allocations -->
+          <div class="form-section">
+            <div class="section-header">
+              <h3>Project Allocations</h3>
+              <button class="btn btn-sm" on:click={addProjectAllocation}>
+                + Add Project
+              </button>
+            </div>
+
+            {#each newEntry.projects as proj, i}
+              <div class="project-allocation">
+                <select bind:value={proj.project_id}>
+                  <option value="">Select Project</option>
+                  {#each projects as project}
+                    <option value={project.id}>{project.code} - {project.name}</option>
+                  {/each}
+                </select>
+                <input 
+                  type="number" 
+                  bind:value={proj.hours} 
+                  placeholder="Hours" 
+                  step="0.25"
+                  min="0"
+                />
+                <button class="btn-icon" on:click={() => removeProjectAllocation(i)}>
+                  🗑️
+                </button>
+              </div>
+            {/each}
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button class="btn btn-secondary" on:click={resetForm}>Cancel</button>
+          <button class="btn btn-primary" on:click={saveEntry} disabled={loading}>
+            {editingEntry ? 'Update' : 'Create'} Entry
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
+</div>
+
+<style>
+  .timesheet-container {
+    padding: 2rem;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+  }
+
+  .period-info {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+  }
+
+  .period-dates {
+    font-size: 1.1rem;
+    font-weight: 500;
+  }
+
+  .alert {
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+  }
+
+  .alert-error {
+    background-color: #fee;
+    color: #c33;
+    border: 1px solid #fcc;
+  }
+
+  .alert-success {
+    background-color: #efe;
+    color: #3c3;
+    border: 1px solid #cfc;
+  }
+
+  .clock-section {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 12px;
+    padding: 2rem;
+    color: white;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+  }
+
+  .clock-display {
+    flex: 1;
+  }
+
+  .clock-status {
+    display: flex;
+    gap: 1.5rem;
+    align-items: center;
+  }
+
+  .status-icon {
+    font-size: 3rem;
+  }
+
+  .status-info h3 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1.5rem;
+  }
+
+  .status-info p {
+    margin: 0;
+    opacity: 0.9;
+  }
+
+  .elapsed-time {
+    font-size: 2rem;
+    font-weight: bold;
+    margin-top: 0.5rem;
+    font-family: 'Courier New', monospace;
+  }
+
+  .clock-actions button {
+    padding: 1rem 2.5rem;
+    font-size: 1.2rem;
+  }
+
+  .summary-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2rem;
+  }
+
+  .card {
+    background: white;
+    border-radius: 8px;
+    padding: 1.5rem;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  }
+
+  .card h4 {
+    margin: 0 0 0.5rem 0;
+    color: #666;
+    font-size: 0.9rem;
+    font-weight: 500;
+  }
+
+  .card-value {
+    font-size: 2rem;
+    font-weight: bold;
+    color: #333;
+  }
+
+  .actions-bar {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .entries-table {
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    overflow: hidden;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  th, td {
+    padding: 1rem;
+    text-align: left;
+    border-bottom: 1px solid #eee;
+  }
+
+  th {
+    background-color: #f8f9fa;
+    font-weight: 600;
+    color: #495057;
+  }
+
+  tbody tr:hover {
+    background-color: #f8f9fa;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 3rem;
+    color: #999;
+  }
+
+  .status-badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+
+  .status-draft {
+    background-color: #e3f2fd;
+    color: #1976d2;
+  }
+
+  .status-submitted {
+    background-color: #fff3e0;
+    color: #f57c00;
+  }
+
+  .status-approved {
+    background-color: #e8f5e9;
+    color: #388e3c;
+  }
+
+  .status-rejected {
+    background-color: #ffebee;
+    color: #d32f2f;
+  }
+
+  .entry-type-badge {
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.875rem;
+  }
+
+  .type-regular {
+    background-color: #e3f2fd;
+    color: #1976d2;
+  }
+
+  .type-overtime {
+    background-color: #fff3e0;
+    color: #f57c00;
+  }
+
+  .type-pto, .type-sick, .type-holiday {
+    background-color: #f3e5f5;
+    color: #7b1fa2;
+  }
+
+  .project-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .project-item {
+    font-size: 0.875rem;
+    color: #666;
+  }
+
+  .btn-icon {
+    background: none;
+    border: none;
+    font-size: 1.2rem;
+    cursor: pointer;
+    padding: 0.25rem;
+    opacity: 0.7;
+  }
+
+  .btn-icon:hover {
+    opacity: 1;
+  }
+
+  .modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+
+  .modal {
+    background: white;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 700px;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.5rem;
+    border-bottom: 1px solid #eee;
+  }
+
+  .modal-header h2 {
+    margin: 0;
+  }
+
+  .close-btn {
+    background: none;
+    border: none;
+    font-size: 2rem;
+    cursor: pointer;
+    color: #999;
+    line-height: 1;
+  }
+
+  .modal-body {
+    padding: 1.5rem;
+  }
+
+  .modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 1rem;
+    padding: 1.5rem;
+    border-top: 1px solid #eee;
+  }
+
+  .form-group {
+    margin-bottom: 1.5rem;
+  }
+
+  .form-group label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+    color: #333;
+  }
+
+  .form-group input,
+  .form-group select,
+  .form-group textarea {
+    width: 100%;
+    padding: 0.75rem;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 1rem;
+  }
+
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+
+  .form-section {
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid #eee;
+  }
+
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+
+  .section-header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+  }
+
+  .project-allocation {
+    display: grid;
+    grid-template-columns: 2fr 1fr auto;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .btn {
+    padding: 0.75rem 1.5rem;
+    border: none;
+    border-radius: 6px;
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-primary {
+    background-color: #667eea;
+    color: white;
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background-color: #5568d3;
+  }
+
+  .btn-success {
+    background-color: #48bb78;
+    color: white;
+  }
+
+  .btn-success:hover:not(:disabled) {
+    background-color: #38a169;
+  }
+
+  .btn-danger {
+    background-color: #f56565;
+    color: white;
+  }
+
+  .btn-danger:hover:not(:disabled) {
+    background-color: #e53e3e;
+  }
+
+  .btn-secondary {
+    background-color: #e2e8f0;
+    color: #4a5568;
+  }
+
+  .btn-secondary:hover:not(:disabled) {
+    background-color: #cbd5e0;
+  }
+
+  .btn-sm {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+  }
+
+  .btn-lg {
+    padding: 1rem 2rem;
+    font-size: 1.1rem;
+  }
+</style>

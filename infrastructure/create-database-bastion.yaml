@@ -1,0 +1,110 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Temporary bastion to create hrmsdb database'
+
+Parameters:
+  DBHost:
+    Type: String
+    Default: hub-doc-search-postgres.cqxc6o2kin1t.us-east-1.rds.amazonaws.com
+  
+  DBPassword:
+    Type: String
+    NoEcho: true
+  
+  VpcId:
+    Type: String
+    Description: VPC ID where RDS is located
+  
+  SubnetId:
+    Type: String
+    Description: Any subnet that can reach RDS (private or public)
+  
+  RDSSecurityGroupId:
+    Type: String
+    Default: sg-0d88a4ede08f5f08c
+
+Resources:
+  BastionSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Temporary bastion for database creation
+      VpcId: !Ref VpcId
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          DestinationSecurityGroupId: !Ref RDSSecurityGroupId
+
+  RDSIngressRule:
+    Type: AWS::EC2::SecurityGroupIngress
+    Properties:
+      GroupId: !Ref RDSSecurityGroupId
+      IpProtocol: tcp
+      FromPort: 5432
+      ToPort: 5432
+      SourceSecurityGroupId: !Ref BastionSecurityGroup
+
+  BastionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+
+  BastionInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref BastionRole
+
+  BastionInstance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Sub '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64}}'
+      InstanceType: t3.micro
+      IamInstanceProfile: !Ref BastionInstanceProfile
+      SecurityGroupIds:
+        - !Ref BastionSecurityGroup
+      SubnetId: !Ref SubnetId
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -e
+          
+          # Install PostgreSQL client
+          dnf install -y postgresql15
+          
+          # Wait a bit for everything to be ready
+          sleep 10
+          
+          # Create database
+          PGPASSWORD="${DBPassword}" psql -h ${DBHost} -U postgres -d postgres -c "CREATE DATABASE hrmsdb;" || echo "Database might already exist"
+          
+          # Add extensions
+          PGPASSWORD="${DBPassword}" psql -h ${DBHost} -U postgres -d hrmsdb -c "CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\";"
+          PGPASSWORD="${DBPassword}" psql -h ${DBHost} -U postgres -d hrmsdb -c "CREATE EXTENSION IF NOT EXISTS \"pgcrypto\";"
+          
+          echo "Database created successfully!"
+          
+          # Signal success and terminate
+          /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource BastionInstance --region ${AWS::Region}
+          
+          # Wait a minute then self-terminate
+          sleep 60
+          shutdown -h now
+      Tags:
+        - Key: Name
+          Value: hrms-db-creator-bastion
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT10M
+
+Outputs:
+  Status:
+    Value: Database created successfully
+    Description: Status

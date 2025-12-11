@@ -526,15 +526,6 @@ func (r *onboardingRepository) DeleteTask(ctx context.Context, id uuid.UUID) err
 	return err
 }
 
-// Stub implementations for remaining repositories
-type timesheetRepository struct{ db *pgxpool.Pool }
-func NewTimesheetRepository(db *pgxpool.Pool) TimesheetRepository { return &timesheetRepository{db: db} }
-func (r *timesheetRepository) Create(ctx context.Context, timesheet *models.Timesheet) error { return nil }
-func (r *timesheetRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.Timesheet, error) { return nil, nil }
-func (r *timesheetRepository) GetByEmployee(ctx context.Context, employeeID uuid.UUID, filters map[string]interface{}) ([]*models.Timesheet, error) { return nil, nil }
-func (r *timesheetRepository) GetActiveTimesheet(ctx context.Context, employeeID uuid.UUID) (*models.Timesheet, error) { return nil, nil }
-func (r *timesheetRepository) Update(ctx context.Context, timesheet *models.Timesheet) error { return nil }
-func (r *timesheetRepository) List(ctx context.Context, filters map[string]interface{}) ([]*models.Timesheet, error) { return nil, nil }
 
 type ptoRepository struct{ db *pgxpool.Pool }
 func NewPTORepository(db *pgxpool.Pool) PTORepository { return &ptoRepository{db: db} }

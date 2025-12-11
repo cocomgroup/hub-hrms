@@ -42,16 +42,6 @@ func RegisterOnboardingRoutes(r chi.Router, services *service.Services) {
 	})
 }
 
-// RegisterTimesheetRoutes registers timesheet routes
-func RegisterTimesheetRoutes(r chi.Router, services *service.Services) {
-	r.Route("/timesheets", func(r chi.Router) {
-		r.Use(authMiddleware(services))
-		r.Post("/clock-in", clockInHandler(services))
-		r.Post("/clock-out", clockOutHandler(services))
-		r.Get("/employee/{employeeId}", getEmployeeTimesheetsHandler(services))
-		r.Put("/{id}/approve", approveTimesheetHandler(services))
-	})
-}
 
 // RegisterPTORoutes registers PTO routes
 func RegisterPTORoutes(r chi.Router, services *service.Services) {
@@ -489,82 +479,6 @@ func createOnboardingTaskHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-// Timesheet handlers
-func clockInHandler(services *service.Services) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var req models.ClockInRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			respondError(w, http.StatusBadRequest, "invalid request body")
-			return
-		}
-
-		timesheet, err := services.Timesheet.ClockIn(r.Context(), &req)
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, "failed to clock in")
-			return
-		}
-
-		respondJSON(w, http.StatusCreated, timesheet)
-	}
-}
-
-func clockOutHandler(services *service.Services) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var req models.ClockOutRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			respondError(w, http.StatusBadRequest, "invalid request body")
-			return
-		}
-
-		timesheet, err := services.Timesheet.ClockOut(r.Context(), &req)
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, "failed to clock out")
-			return
-		}
-
-		respondJSON(w, http.StatusOK, timesheet)
-	}
-}
-
-func getEmployeeTimesheetsHandler(services *service.Services) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		employeeIDStr := chi.URLParam(r, "employeeId")
-		employeeID, err := uuid.Parse(employeeIDStr)
-		if err != nil {
-			respondError(w, http.StatusBadRequest, "invalid employee ID")
-			return
-		}
-
-		timesheets, err := services.Timesheet.GetByEmployee(r.Context(), employeeID, nil)
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, "failed to get timesheets")
-			return
-		}
-
-		respondJSON(w, http.StatusOK, timesheets)
-	}
-}
-
-func approveTimesheetHandler(services *service.Services) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		timesheetIDStr := chi.URLParam(r, "id")
-		timesheetID, err := uuid.Parse(timesheetIDStr)
-		if err != nil {
-			respondError(w, http.StatusBadRequest, "invalid timesheet ID")
-			return
-		}
-
-		// In a real app, get approver ID from JWT token
-		approverID := uuid.New() // Placeholder
-
-		if err := services.Timesheet.ApproveTimesheet(r.Context(), timesheetID, approverID); err != nil {
-			respondError(w, http.StatusInternalServerError, "failed to approve timesheet")
-			return
-		}
-
-		respondJSON(w, http.StatusOK, map[string]string{"status": "approved"})
-	}
-}
 
 // PTO handlers
 func getPTOBalanceHandler(services *service.Services) http.HandlerFunc {

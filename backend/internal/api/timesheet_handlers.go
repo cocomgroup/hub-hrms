@@ -1,0 +1,458 @@
+package api
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
+	"hub-hrms/backend/internal/models"
+	"hub-hrms/backend/internal/service"
+)
+
+// RegisterTimesheetRoutes registers all timesheet-related routes
+func RegisterTimesheetRoutes(r chi.Router, services *service.Services) {
+	r.Route("/timesheet", func(r chi.Router) {
+		// Clock in/out
+		r.Post("/clock-in", clockInHandler(services))
+		r.Post("/clock-out", clockOutHandler(services))
+		r.Get("/active", getActiveClockInHandler(services))
+		
+		// Time entries
+		r.Get("/entries", getTimeEntriesHandler(services))
+		r.Post("/entries", createTimeEntryHandler(services))
+		r.Get("/entries/{id}", getTimeEntryHandler(services))
+		r.Put("/entries/{id}", updateTimeEntryHandler(services))
+		r.Delete("/entries/{id}", deleteTimeEntryHandler(services))
+		
+		// Submit and approval
+		r.Post("/entries/{id}/submit", submitTimesheetHandler(services))
+		r.Post("/entries/{id}/approve", approveTimesheetHandler(services))
+		r.Get("/pending", getPendingApprovalsHandler(services))
+		
+		// Projects
+		r.Get("/projects", getProjectsHandler(services))
+		r.Post("/projects", createProjectHandler(services))
+		
+		// Reports
+		r.Get("/reports/summary", getEmployeeSummaryHandler(services))
+	})
+}
+
+// clockInHandler handles clock-in requests
+func clockInHandler(services *service.Services) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Get employee ID from JWT context
+		employeeID, err := getEmployeeIDFromContext(r.Context())
+		if err != nil {
+			respondError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		var req models.ClockInRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			// Empty body is okay for clock in
+			req = models.ClockInRequest{}
+		}
+
+		timesheet, err := services.Timesheet.ClockIn(r.Context(), employeeID, req.Notes)
+		if err != nil {
+			if err == service.ErrAlreadyClockedIn {
+				respondError(w, http.StatusBadRequest, "already clocked in")
+				return
+			}
+			respondError(w, http.StatusInternalServerError, "failed to clock in")
+			return
+		}
+
+		respondJSON(w, http.StatusCreated, timesheet)
+	}
+}
+
+// clockOutHandler handles clock-out requests
+func clockOutHandler(services *service.Services) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Get employee ID from JWT context
+		employeeID, err := getEmployeeIDFromContext(r.Context())
+		if err != nil {
+			respondError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		var req models.ClockOutRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+
+		timesheet, err := services.Timesheet.ClockOut(r.Context(), employeeID, req.BreakMinutes, req.Notes)
+		if err != nil {
+			if err == service.ErrNotClockedIn {
+				respondError(w, http.StatusBadRequest, "not clocked in")
+				return
+			}
+			respondError(w, http.StatusInternalServerError, "failed to clock out")
+			return
+		}
+
+		respondJSON(w, http.StatusOK, timesheet)
+	}
+}
+
+// getActiveClockInHandler gets the active clock-in for the employee
+func getActiveClockInHandler(services *service.Services) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		employeeID, err := getEmployeeIDFromContext(r.Context())
+		if err != nil {
+			respondError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		timesheet, err := services.Timesheet.GetActiveClockIn(r.Context(), employeeID)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "failed to get active clock-in")
+			return
+		}
+
+		if timesheet == nil {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
+		respondJSON(w, http.StatusOK, timesheet)
+	}
+}
+
+// getTimeEntriesHandler gets time entries for the employee
+func getTimeEntriesHandler(services *service.Services) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		employeeID, err := getEmployeeIDFromContext(r.Context())
+		if err != nil {
+			respondError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		// Parse query parameters
+		startDateStr := r.URL.Query().Get("start_date")
+		endDateStr := r.URL.Query().Get("end_date")
+
+		var startDate, endDate time.Time
+		if startDateStr != "" {
+			startDate, _ = time.Parse("2006-01-02", startDateStr)
+		} else {
+			// Default to current week
+			startDate = getWeekStart()
+		}
+
+		if endDateStr != "" {
+			endDate, _ = time.Parse("2006-01-02", endDateStr)
+		} else {
+			endDate = getWeekEnd()
+		}
+
+		timesheets, err := services.Timesheet.GetTimeEntries(r.Context(), employeeID, startDate, endDate)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "failed to get time entries")
+			return
+		}
+
+		respondJSON(w, http.StatusOK, timesheets)
+	}
+}
+
+// createTimeEntryHandler creates a new time entry
+func createTimeEntryHandler(services *service.Services) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		employeeID, err := getEmployeeIDFromContext(r.Context())
+		if err != nil {
+			respondError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		var req models.TimesheetCreateRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+
+		// Set employee ID from context
+		req.EmployeeID = employeeID
+
+		timesheet, err := services.Timesheet.CreateTimeEntry(r.Context(), &req)
+		if err != nil {
+			if err == service.ErrInvalidTimeRange {
+				respondError(w, http.StatusBadRequest, "invalid time range")
+				return
+			}
+			respondError(w, http.StatusInternalServerError, "failed to create time entry")
+			return
+		}
+
+		respondJSON(w, http.StatusCreated, timesheet)
+	}
+}
+
+// getTimeEntryHandler gets a specific time entry
+func getTimeEntryHandler(services *service.Services) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		idStr := chi.URLParam(r, "id")
+		id, err := uuid.Parse(idStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid time entry ID")
+			return
+		}
+
+		employeeID, err := getEmployeeIDFromContext(r.Context())
+		if err != nil {
+			respondError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		// Get all entries and find the specific one
+		// Note: This is inefficient - in production, add GetByID to the service
+		timesheets, err := services.Timesheet.GetTimeEntries(r.Context(), employeeID, time.Time{}, time.Now())
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "failed to get time entry")
+			return
+		}
+
+		// Find the specific entry
+		for _, ts := range timesheets {
+			if ts.ID == id {
+				respondJSON(w, http.StatusOK, ts)
+				return
+			}
+		}
+
+		respondError(w, http.StatusNotFound, "time entry not found")
+	}
+}
+
+// updateTimeEntryHandler updates a time entry
+func updateTimeEntryHandler(services *service.Services) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		idStr := chi.URLParam(r, "id")
+		id, err := uuid.Parse(idStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid time entry ID")
+			return
+		}
+
+		var req models.TimesheetUpdateRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+
+		timesheet, err := services.Timesheet.UpdateTimeEntry(r.Context(), id, &req)
+		if err != nil {
+			if err == service.ErrTimesheetNotDraft {
+				respondError(w, http.StatusBadRequest, "timesheet must be in draft status")
+				return
+			}
+			if err == service.ErrInvalidTimeRange {
+				respondError(w, http.StatusBadRequest, "invalid time range")
+				return
+			}
+			respondError(w, http.StatusInternalServerError, "failed to update time entry")
+			return
+		}
+
+		respondJSON(w, http.StatusOK, timesheet)
+	}
+}
+
+// deleteTimeEntryHandler deletes a time entry
+func deleteTimeEntryHandler(services *service.Services) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		idStr := chi.URLParam(r, "id")
+		id, err := uuid.Parse(idStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid time entry ID")
+			return
+		}
+
+		if err := services.Timesheet.DeleteTimeEntry(r.Context(), id); err != nil {
+			if err == service.ErrTimesheetNotDraft {
+				respondError(w, http.StatusBadRequest, "timesheet must be in draft status")
+				return
+			}
+			respondError(w, http.StatusInternalServerError, "failed to delete time entry")
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// submitTimesheetHandler submits a timesheet for approval
+func submitTimesheetHandler(services *service.Services) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		idStr := chi.URLParam(r, "id")
+		id, err := uuid.Parse(idStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid timesheet ID")
+			return
+		}
+
+		employeeID, err := getEmployeeIDFromContext(r.Context())
+		if err != nil {
+			respondError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		timesheet, err := services.Timesheet.SubmitTimesheet(r.Context(), id, employeeID)
+		if err != nil {
+			if err == service.ErrUnauthorized {
+				respondError(w, http.StatusForbidden, "unauthorized")
+				return
+			}
+			respondError(w, http.StatusInternalServerError, "failed to submit timesheet")
+			return
+		}
+
+		respondJSON(w, http.StatusOK, timesheet)
+	}
+}
+
+// approveTimesheetHandler approves or rejects a timesheet
+func approveTimesheetHandler(services *service.Services) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		idStr := chi.URLParam(r, "id")
+		id, err := uuid.Parse(idStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid timesheet ID")
+			return
+		}
+
+		var req models.TimesheetApprovalRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+
+		timesheet, err := services.Timesheet.ApproveTimesheet(r.Context(), id, &req)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "failed to approve timesheet")
+			return
+		}
+
+		respondJSON(w, http.StatusOK, timesheet)
+	}
+}
+
+// getPendingApprovalsHandler gets all pending timesheet approvals
+func getPendingApprovalsHandler(services *service.Services) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Note: In production, verify user has manager role
+
+		timesheets, err := services.Timesheet.GetPendingApprovals(r.Context())
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "failed to get pending approvals")
+			return
+		}
+
+		respondJSON(w, http.StatusOK, timesheets)
+	}
+}
+
+// getProjectsHandler gets all active projects
+func getProjectsHandler(services *service.Services) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		projects, err := services.Timesheet.GetProjects(r.Context())
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "failed to get projects")
+			return
+		}
+
+		respondJSON(w, http.StatusOK, projects)
+	}
+}
+
+// createProjectHandler creates a new project
+func createProjectHandler(services *service.Services) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req models.ProjectCreateRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+
+		project, err := services.Timesheet.CreateProject(r.Context(), &req)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "failed to create project")
+			return
+		}
+
+		respondJSON(w, http.StatusCreated, project)
+	}
+}
+
+// getEmployeeSummaryHandler gets hours summary for an employee
+func getEmployeeSummaryHandler(services *service.Services) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		employeeID, err := getEmployeeIDFromContext(r.Context())
+		if err != nil {
+			respondError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		// Parse query parameters
+		startDateStr := r.URL.Query().Get("start_date")
+		endDateStr := r.URL.Query().Get("end_date")
+
+		var startDate, endDate time.Time
+		if startDateStr != "" {
+			startDate, _ = time.Parse("2006-01-02", startDateStr)
+		} else {
+			startDate = getWeekStart()
+		}
+
+		if endDateStr != "" {
+			endDate, _ = time.Parse("2006-01-02", endDateStr)
+		} else {
+			endDate = getWeekEnd()
+		}
+
+		summary, err := services.Timesheet.GetEmployeeSummary(r.Context(), employeeID, startDate, endDate)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "failed to get summary")
+			return
+		}
+
+		respondJSON(w, http.StatusOK, summary)
+	}
+}
+
+// Helper functions
+
+func getEmployeeIDFromContext(ctx context.Context) (uuid.UUID, error) {
+	// Extract employee ID from JWT claims in context
+	// This is a placeholder - implement based on your auth middleware
+	claims, ok := ctx.Value("claims").(map[string]interface{})
+	if !ok {
+		return uuid.Nil, service.ErrUnauthorized
+	}
+
+	employeeIDStr, ok := claims["employee_id"].(string)
+	if !ok {
+		return uuid.Nil, service.ErrUnauthorized
+	}
+
+	return uuid.Parse(employeeIDStr)
+}
+
+func getWeekStart() time.Time {
+	now := time.Now()
+	weekday := int(now.Weekday())
+	if weekday == 0 {
+		weekday = 7
+	}
+	return now.AddDate(0, 0, -(weekday - 1)).Truncate(24 * time.Hour)
+}
+
+func getWeekEnd() time.Time {
+	return getWeekStart().AddDate(0, 0, 6)
+}
