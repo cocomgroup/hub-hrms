@@ -82,17 +82,6 @@ type PTORepository interface {
 	ListRequests(ctx context.Context, filters map[string]interface{}) ([]*models.PTORequest, error)
 }
 
-// BenefitsRepository interface
-type BenefitsRepository interface {
-	CreatePlan(ctx context.Context, plan *models.BenefitPlan) error
-	GetPlanByID(ctx context.Context, id uuid.UUID) (*models.BenefitPlan, error)
-	ListPlans(ctx context.Context, activeOnly bool) ([]*models.BenefitPlan, error)
-	UpdatePlan(ctx context.Context, plan *models.BenefitPlan) error
-	CreateEnrollment(ctx context.Context, enrollment *models.BenefitEnrollment) error
-	GetEnrollmentByID(ctx context.Context, id uuid.UUID) (*models.BenefitEnrollment, error)
-	GetEnrollmentsByEmployee(ctx context.Context, employeeID uuid.UUID) ([]*models.BenefitEnrollment, error)
-	UpdateEnrollment(ctx context.Context, enrollment *models.BenefitEnrollment) error
-}
 
 // PayrollRepository interface
 type PayrollRepository interface {
@@ -538,16 +527,6 @@ func (r *ptoRepository) GetRequestsByEmployee(ctx context.Context, employeeID uu
 func (r *ptoRepository) UpdateRequest(ctx context.Context, request *models.PTORequest) error { return nil }
 func (r *ptoRepository) ListRequests(ctx context.Context, filters map[string]interface{}) ([]*models.PTORequest, error) { return nil, nil }
 
-type benefitsRepository struct{ db *pgxpool.Pool }
-func NewBenefitsRepository(db *pgxpool.Pool) BenefitsRepository { return &benefitsRepository{db: db} }
-func (r *benefitsRepository) CreatePlan(ctx context.Context, plan *models.BenefitPlan) error { return nil }
-func (r *benefitsRepository) GetPlanByID(ctx context.Context, id uuid.UUID) (*models.BenefitPlan, error) { return nil, nil }
-func (r *benefitsRepository) ListPlans(ctx context.Context, activeOnly bool) ([]*models.BenefitPlan, error) { return nil, nil }
-func (r *benefitsRepository) UpdatePlan(ctx context.Context, plan *models.BenefitPlan) error { return nil }
-func (r *benefitsRepository) CreateEnrollment(ctx context.Context, enrollment *models.BenefitEnrollment) error { return nil }
-func (r *benefitsRepository) GetEnrollmentByID(ctx context.Context, id uuid.UUID) (*models.BenefitEnrollment, error) { return nil, nil }
-func (r *benefitsRepository) GetEnrollmentsByEmployee(ctx context.Context, employeeID uuid.UUID) ([]*models.BenefitEnrollment, error) { return nil, nil }
-func (r *benefitsRepository) UpdateEnrollment(ctx context.Context, enrollment *models.BenefitEnrollment) error { return nil }
 
 type payrollRepository struct{ db *pgxpool.Pool }
 func NewPayrollRepository(db *pgxpool.Pool) PayrollRepository { return &payrollRepository{db: db} }

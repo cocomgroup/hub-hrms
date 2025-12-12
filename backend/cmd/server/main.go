@@ -144,14 +144,16 @@ func setupRouter(services *service.Services, cfg *config.Config) *chi.Mux {
 		MaxAge:           300,
 	}))
 
-	// Health check
-	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
-	})
 
 	// API routes
 	r.Route("/api", func(r chi.Router) {
+		// Health check
+		r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"status":"healthy","timestamp":"` + time.Now().Format(time.RFC3339) + `"}`))
+		})
+		
 		api.RegisterAuthRoutes(r, services)
 		api.RegisterEmployeeRoutes(r, services)
 		api.RegisterOnboardingRoutes(r, services)

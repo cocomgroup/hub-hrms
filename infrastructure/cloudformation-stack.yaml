@@ -75,6 +75,11 @@ Parameters:
     Type: String
     Default: ''
 
+  RDSSecurityGroupId:
+    Description: Existing RDS Security Group ID to allow ECS access
+    Type: String
+    Default: ''
+
   # Instance Parameters
   BackendInstanceType:
     Description: EC2 instance type for backend
@@ -106,6 +111,7 @@ Parameters:
     Default: ''
 
 Conditions:
+  HasRDSSecurityGroup: !Not [!Equals [!Ref RDSSecurityGroupId, '']]
   CreateVPC: !Equals [!Ref VpcId, '']
   UseHTTPS: !Not [!Equals [!Ref CertificateArn, '']]
   HasDomain: !Not [!Equals [!Ref DomainName, '']]
@@ -123,7 +129,7 @@ Resources:
       EnableDnsSupport: true
       Tags:
         - Key: Name
-          Value: !Sub ${EnvironmentName}-hrms-vpc
+          Value: !Sub hub-hrms-vpc
 
   InternetGateway:
     Type: AWS::EC2::InternetGateway
@@ -131,7 +137,7 @@ Resources:
     Properties:
       Tags:
         - Key: Name
-          Value: !Sub ${EnvironmentName}-hrms-igw
+          Value: !Sub hub-hrms-igw
 
   InternetGatewayAttachment:
     Type: AWS::EC2::VPCGatewayAttachment
@@ -150,7 +156,7 @@ Resources:
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
-          Value: !Sub ${EnvironmentName}-hrms-public-subnet-1
+          Value: !Sub hub-hrms-public-subnet-1
 
   PublicSubnet2:
     Type: AWS::EC2::Subnet
@@ -162,7 +168,7 @@ Resources:
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
-          Value: !Sub ${EnvironmentName}-hrms-public-subnet-2
+          Value: !Sub hub-hrms-public-subnet-2
 
   PrivateSubnet1:
     Type: AWS::EC2::Subnet
@@ -173,7 +179,7 @@ Resources:
       CidrBlock: 10.0.11.0/24
       Tags:
         - Key: Name
-          Value: !Sub ${EnvironmentName}-hrms-private-subnet-1
+          Value: !Sub hub-hrms-private-subnet-1
 
   PrivateSubnet2:
     Type: AWS::EC2::Subnet
@@ -184,7 +190,7 @@ Resources:
       CidrBlock: 10.0.12.0/24
       Tags:
         - Key: Name
-          Value: !Sub ${EnvironmentName}-hrms-private-subnet-2
+          Value: !Sub hub-hrms-private-subnet-2
 
   NatGateway1EIP:
     Type: AWS::EC2::EIP
@@ -221,7 +227,7 @@ Resources:
       VpcId: !Ref VPC
       Tags:
         - Key: Name
-          Value: !Sub ${EnvironmentName}-hrms-public-routes
+          Value: !Sub hub-hrms-public-routes
 
   DefaultPublicRoute:
     Type: AWS::EC2::Route
@@ -253,7 +259,7 @@ Resources:
       VpcId: !Ref VPC
       Tags:
         - Key: Name
-          Value: !Sub ${EnvironmentName}-hrms-private-routes-1
+          Value: !Sub hub-hrms-private-routes-1
 
   DefaultPrivateRoute1:
     Type: AWS::EC2::Route
@@ -277,7 +283,7 @@ Resources:
       VpcId: !Ref VPC
       Tags:
         - Key: Name
-          Value: !Sub ${EnvironmentName}-hrms-private-routes-2
+          Value: !Sub hub-hrms-private-routes-2
 
   DefaultPrivateRoute2:
     Type: AWS::EC2::Route
@@ -300,7 +306,7 @@ Resources:
   ALBSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupName: !Sub ${EnvironmentName}-hrms-alb-sg
+      GroupName: !Sub hub-hrms-alb-sg
       GroupDescription: Security group for Application Load Balancer
       VpcId: !If [CreateVPC, !Ref VPC, !Ref VpcId]
       SecurityGroupIngress:
@@ -314,12 +320,12 @@ Resources:
           CidrIp: 0.0.0.0/0
       Tags:
         - Key: Name
-          Value: !Sub ${EnvironmentName}-hrms-alb-sg
+          Value: !Sub hub-hrms-alb-sg
 
   ECSSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupName: !Sub ${EnvironmentName}-hrms-ecs-sg
+      GroupName: !Sub hub-hrms-ecs-sg
       GroupDescription: Security group for ECS tasks
       VpcId: !If [CreateVPC, !Ref VPC, !Ref VpcId]
       SecurityGroupIngress:
@@ -329,7 +335,18 @@ Resources:
           SourceSecurityGroupId: !Ref ALBSecurityGroup
       Tags:
         - Key: Name
-          Value: !Sub ${EnvironmentName}-hrms-ecs-sg
+          Value: !Sub hub-hrms-ecs-sg
+  RDSSecurityGroupIngress:
+    Type: AWS::EC2::SecurityGroupIngress
+    Condition: HasRDSSecurityGroup
+    Properties:
+      GroupId: !Ref RDSSecurityGroupId
+      IpProtocol: tcp
+      FromPort: 5432
+      ToPort: 5432
+      SourceSecurityGroupId: !Ref ECSSecurityGroup
+      Description: Allow ECS tasks to access RDS database
+
 
   # ========================================
   # Application Load Balancer
@@ -337,7 +354,7 @@ Resources:
   ApplicationLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
-      Name: !Sub ${EnvironmentName}-hrms-alb
+      Name: !Sub hub-hrms-alb
       Type: application
       Scheme: internet-facing
       IpAddressType: ipv4
@@ -353,23 +370,23 @@ Resources:
   ALBTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
-      Name: !Sub ${EnvironmentName}-hrms-tg
+      Name: !Sub hub-hrms-tg
       Port: 8080
       Protocol: HTTP
       VpcId: !If [CreateVPC, !Ref VPC, !Ref VpcId]
       TargetType: ip
       HealthCheckEnabled: true
-      HealthCheckPath: /
+      HealthCheckPath: /api/health
       HealthCheckProtocol: HTTP
       HealthCheckIntervalSeconds: 30
       HealthCheckTimeoutSeconds: 10
       HealthyThresholdCount: 2
       UnhealthyThresholdCount: 5
       Matcher:
-        HttpCode: 200,404
+        HttpCode: 200
       Tags:
         - Key: Name
-          Value: !Sub ${EnvironmentName}-hrms-tg
+          Value: !Sub hub-hrms-tg
 
   ALBListenerHTTP:
     Type: AWS::ElasticLoadBalancingV2::Listener
@@ -448,7 +465,9 @@ Resources:
               - Effect: Allow
                 Action:
                   - secretsmanager:GetSecretValue
-                Resource: !Ref DatabaseSecrets
+                Resource:
+                  - !Ref DatabaseSecrets
+                  - !Ref JWTSecretParameter
 
   ECSTaskRole:
     Type: AWS::IAM::Role
@@ -654,7 +673,7 @@ Resources:
   BackendTaskDefinition:
     Type: AWS::ECS::TaskDefinition
     Properties:
-      Family: !Sub ${EnvironmentName}-hrms-backend
+      Family: !Sub hub-hrms-backend
       NetworkMode: awsvpc
       RequiresCompatibilities:
         - FARGATE
@@ -718,7 +737,7 @@ Resources:
         - ContainerName: backend
           ContainerPort: 8080
           TargetGroupArn: !Ref ALBTargetGroup
-      HealthCheckGracePeriodSeconds: 120
+      HealthCheckGracePeriodSeconds: 300
       DeploymentConfiguration:
         MaximumPercent: 200
         MinimumHealthyPercent: 100

@@ -329,46 +329,6 @@ func (s *ptoService) GetRequestsByEmployee(ctx context.Context, employeeID uuid.
 	return s.repos.PTO.GetRequestsByEmployee(ctx, employeeID)
 }
 
-// BenefitsService handles benefits operations
-type BenefitsService interface {
-	ListPlans(ctx context.Context) ([]*models.BenefitPlan, error)
-	Enroll(ctx context.Context, employeeID uuid.UUID, req *models.EnrollmentCreate) (*models.BenefitEnrollment, error)
-	GetEnrollmentsByEmployee(ctx context.Context, employeeID uuid.UUID) ([]*models.BenefitEnrollment, error)
-}
-
-type benefitsService struct {
-	repos *repository.Repositories
-}
-
-func NewBenefitsService(repos *repository.Repositories) BenefitsService {
-	return &benefitsService{repos: repos}
-}
-
-func (s *benefitsService) ListPlans(ctx context.Context) ([]*models.BenefitPlan, error) {
-	return s.repos.Benefits.ListPlans(ctx, true)
-}
-
-func (s *benefitsService) Enroll(ctx context.Context, employeeID uuid.UUID, req *models.EnrollmentCreate) (*models.BenefitEnrollment, error) {
-	enrollment := &models.BenefitEnrollment{
-		EmployeeID:     employeeID,
-		PlanID:         req.PlanID,
-		EnrollmentDate: time.Now(),
-		EffectiveDate:  req.EffectiveDate,
-		Status:         "active",
-		Dependents:     req.Dependents,
-	}
-
-	if err := s.repos.Benefits.CreateEnrollment(ctx, enrollment); err != nil {
-		return nil, err
-	}
-
-	return enrollment, nil
-}
-
-func (s *benefitsService) GetEnrollmentsByEmployee(ctx context.Context, employeeID uuid.UUID) ([]*models.BenefitEnrollment, error) {
-	return s.repos.Benefits.GetEnrollmentsByEmployee(ctx, employeeID)
-}
-
 // PayrollService handles payroll operations
 type PayrollService interface {
 	ListPeriods(ctx context.Context) ([]*models.PayrollPeriod, error)

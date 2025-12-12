@@ -567,58 +567,7 @@ func reviewPTORequestHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-// Benefits handlers
-func listBenefitPlansHandler(services *service.Services) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		plans, err := services.Benefits.ListPlans(r.Context())
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, "failed to list plans")
-			return
-		}
 
-		respondJSON(w, http.StatusOK, plans)
-	}
-}
-
-func createEnrollmentHandler(services *service.Services) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var req models.EnrollmentCreate
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			respondError(w, http.StatusBadRequest, "invalid request body")
-			return
-		}
-
-		// In a real app, get employee ID from JWT token
-		employeeID := uuid.New() // Placeholder
-
-		enrollment, err := services.Benefits.Enroll(r.Context(), employeeID, &req)
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, "failed to create enrollment")
-			return
-		}
-
-		respondJSON(w, http.StatusCreated, enrollment)
-	}
-}
-
-func getEnrollmentsHandler(services *service.Services) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		employeeIDStr := chi.URLParam(r, "employeeId")
-		employeeID, err := uuid.Parse(employeeIDStr)
-		if err != nil {
-			respondError(w, http.StatusBadRequest, "invalid employee ID")
-			return
-		}
-
-		enrollments, err := services.Benefits.GetEnrollmentsByEmployee(r.Context(), employeeID)
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, "failed to get enrollments")
-			return
-		}
-
-		respondJSON(w, http.StatusOK, enrollments)
-	}
-}
 
 // Payroll handlers
 func listPayrollPeriodsHandler(services *service.Services) http.HandlerFunc {
