@@ -30,6 +30,7 @@ type Services struct {
 	PTO        PTOService
 	Benefits   BenefitsService
 	Payroll    PayrollService
+	Recruiting RecruitingService
 }
 
 func NewServices(repos *repository.Repositories, cfg *config.Config) *Services {
@@ -327,43 +328,6 @@ func (s *ptoService) ReviewRequest(ctx context.Context, requestID, reviewerID uu
 
 func (s *ptoService) GetRequestsByEmployee(ctx context.Context, employeeID uuid.UUID) ([]*models.PTORequest, error) {
 	return s.repos.PTO.GetRequestsByEmployee(ctx, employeeID)
-}
-
-// PayrollService handles payroll operations
-type PayrollService interface {
-	ListPeriods(ctx context.Context) ([]*models.PayrollPeriod, error)
-	GetPayStubsByEmployee(ctx context.Context, employeeID uuid.UUID) ([]*models.PayStub, error)
-	ProcessPayroll(ctx context.Context, periodID, processedBy uuid.UUID) error
-}
-
-type payrollService struct {
-	repos *repository.Repositories
-}
-
-func NewPayrollService(repos *repository.Repositories) PayrollService {
-	return &payrollService{repos: repos}
-}
-
-func (s *payrollService) ListPeriods(ctx context.Context) ([]*models.PayrollPeriod, error) {
-	return s.repos.Payroll.ListPeriods(ctx, nil)
-}
-
-func (s *payrollService) GetPayStubsByEmployee(ctx context.Context, employeeID uuid.UUID) ([]*models.PayStub, error) {
-	return s.repos.Payroll.GetPayStubsByEmployee(ctx, employeeID)
-}
-
-func (s *payrollService) ProcessPayroll(ctx context.Context, periodID, processedBy uuid.UUID) error {
-	period, err := s.repos.Payroll.GetPeriodByID(ctx, periodID)
-	if err != nil {
-		return err
-	}
-
-	period.Status = "processed"
-	period.ProcessedBy = &processedBy
-	now := time.Now()
-	period.ProcessedAt = &now
-
-	return s.repos.Payroll.UpdatePeriod(ctx, period)
 }
 
 // Helper functions

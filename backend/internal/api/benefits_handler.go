@@ -10,6 +10,16 @@ import (
 	"hub-hrms/backend/internal/service"
 )
 
+// RegisterBenefitsRoutes registers benefits routes
+func RegisterBenefitsRoutes(r chi.Router, services *service.Services) {
+	r.Route("/benefits", func(r chi.Router) {
+		r.Use(authMiddleware(services))
+		r.Get("/plans", listBenefitPlansHandler(services))
+		r.Post("/enrollments", createEnrollmentHandler(services))
+		r.Get("/enrollments/{employeeId}", getEnrollmentsHandler(services))
+	})
+}
+
 // Benefits handlers
 func listBenefitPlansHandler(services *service.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {

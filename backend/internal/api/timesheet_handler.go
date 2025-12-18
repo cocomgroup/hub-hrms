@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -428,21 +427,6 @@ func getEmployeeSummaryHandler(services *service.Services) http.HandlerFunc {
 
 // Helper functions
 
-func getEmployeeIDFromContext(ctx context.Context) (uuid.UUID, error) {
-	// Extract employee ID from JWT claims in context
-	// This is a placeholder - implement based on your auth middleware
-	claims, ok := ctx.Value("claims").(map[string]interface{})
-	if !ok {
-		return uuid.Nil, service.ErrUnauthorized
-	}
-
-	employeeIDStr, ok := claims["employee_id"].(string)
-	if !ok {
-		return uuid.Nil, service.ErrUnauthorized
-	}
-
-	return uuid.Parse(employeeIDStr)
-}
 
 func getWeekStart() time.Time {
 	now := time.Now()

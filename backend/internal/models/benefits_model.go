@@ -242,3 +242,9 @@ type EnrollmentPeriod struct {
 	CreatedAt   time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at" db:"updated_at"`
 }
+
+type EnrollmentCreate struct {
+	PlanID         uuid.UUID              `json:"plan_id"`
+	EffectiveDate  time.Time              `json:"effective_date"`
+	Dependents     map[string]interface{} `json:"dependents,omitempty"`
+}

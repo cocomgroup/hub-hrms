@@ -6,6 +6,7 @@ import (
 	"hub-hrms/backend/internal/models"
 	"hub-hrms/backend/internal/service"
 	"io"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -42,37 +43,6 @@ func RegisterOnboardingRoutes(r chi.Router, services *service.Services) {
 	})
 }
 
-
-// RegisterPTORoutes registers PTO routes
-func RegisterPTORoutes(r chi.Router, services *service.Services) {
-	r.Route("/pto", func(r chi.Router) {
-		r.Use(authMiddleware(services))
-		r.Get("/balance/{employeeId}", getPTOBalanceHandler(services))
-		r.Post("/requests", createPTORequestHandler(services))
-		r.Get("/requests/{employeeId}", getPTORequestsHandler(services))
-		r.Put("/requests/{id}/review", reviewPTORequestHandler(services))
-	})
-}
-
-// RegisterBenefitsRoutes registers benefits routes
-func RegisterBenefitsRoutes(r chi.Router, services *service.Services) {
-	r.Route("/benefits", func(r chi.Router) {
-		r.Use(authMiddleware(services))
-		r.Get("/plans", listBenefitPlansHandler(services))
-		r.Post("/enrollments", createEnrollmentHandler(services))
-		r.Get("/enrollments/{employeeId}", getEnrollmentsHandler(services))
-	})
-}
-
-// RegisterPayrollRoutes registers payroll routes
-func RegisterPayrollRoutes(r chi.Router, services *service.Services) {
-	r.Route("/payroll", func(r chi.Router) {
-		r.Use(authMiddleware(services))
-		r.Get("/periods", listPayrollPeriodsHandler(services))
-		r.Get("/stubs/{employeeId}", getPayStubsHandler(services))
-		r.Post("/process/{periodId}", processPayrollHandler(services))
-	})
-}
 
 // Middleware
 func authMiddleware(services *service.Services) func(http.Handler) http.Handler {
@@ -480,148 +450,6 @@ func createOnboardingTaskHandler(services *service.Services) http.HandlerFunc {
 }
 
 
-// PTO handlers
-func getPTOBalanceHandler(services *service.Services) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		employeeIDStr := chi.URLParam(r, "employeeId")
-		employeeID, err := uuid.Parse(employeeIDStr)
-		if err != nil {
-			respondError(w, http.StatusBadRequest, "invalid employee ID")
-			return
-		}
-
-		balance, err := services.PTO.GetBalance(r.Context(), employeeID)
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, "failed to get PTO balance")
-			return
-		}
-
-		respondJSON(w, http.StatusOK, balance)
-	}
-}
-
-func createPTORequestHandler(services *service.Services) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var req models.PTORequestCreate
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			respondError(w, http.StatusBadRequest, "invalid request body")
-			return
-		}
-
-		// In a real app, get employee ID from JWT token
-		employeeID := uuid.New() // Placeholder
-
-		request, err := services.PTO.CreateRequest(r.Context(), employeeID, &req)
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, "failed to create PTO request")
-			return
-		}
-
-		respondJSON(w, http.StatusCreated, request)
-	}
-}
-
-func getPTORequestsHandler(services *service.Services) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		employeeIDStr := chi.URLParam(r, "employeeId")
-		employeeID, err := uuid.Parse(employeeIDStr)
-		if err != nil {
-			respondError(w, http.StatusBadRequest, "invalid employee ID")
-			return
-		}
-
-		requests, err := services.PTO.GetRequestsByEmployee(r.Context(), employeeID)
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, "failed to get PTO requests")
-			return
-		}
-
-		respondJSON(w, http.StatusOK, requests)
-	}
-}
-
-func reviewPTORequestHandler(services *service.Services) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		requestIDStr := chi.URLParam(r, "id")
-		requestID, err := uuid.Parse(requestIDStr)
-		if err != nil {
-			respondError(w, http.StatusBadRequest, "invalid request ID")
-			return
-		}
-
-		var review models.PTORequestReview
-		if err := json.NewDecoder(r.Body).Decode(&review); err != nil {
-			respondError(w, http.StatusBadRequest, "invalid request body")
-			return
-		}
-
-		// In a real app, get reviewer ID from JWT token
-		reviewerID := uuid.New() // Placeholder
-
-		if err := services.PTO.ReviewRequest(r.Context(), requestID, reviewerID, &review); err != nil {
-			respondError(w, http.StatusInternalServerError, "failed to review request")
-			return
-		}
-
-		respondJSON(w, http.StatusOK, map[string]string{"status": review.Status})
-	}
-}
-
-
-
-// Payroll handlers
-func listPayrollPeriodsHandler(services *service.Services) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		periods, err := services.Payroll.ListPeriods(r.Context())
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, "failed to list periods")
-			return
-		}
-
-		respondJSON(w, http.StatusOK, periods)
-	}
-}
-
-func getPayStubsHandler(services *service.Services) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		employeeIDStr := chi.URLParam(r, "employeeId")
-		employeeID, err := uuid.Parse(employeeIDStr)
-		if err != nil {
-			respondError(w, http.StatusBadRequest, "invalid employee ID")
-			return
-		}
-
-		stubs, err := services.Payroll.GetPayStubsByEmployee(r.Context(), employeeID)
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, "failed to get pay stubs")
-			return
-		}
-
-		respondJSON(w, http.StatusOK, stubs)
-	}
-}
-
-func processPayrollHandler(services *service.Services) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		periodIDStr := chi.URLParam(r, "periodId")
-		periodID, err := uuid.Parse(periodIDStr)
-		if err != nil {
-			respondError(w, http.StatusBadRequest, "invalid period ID")
-			return
-		}
-
-		// In a real app, get processor ID from JWT token
-		processorID := uuid.New() // Placeholder
-
-		if err := services.Payroll.ProcessPayroll(r.Context(), periodID, processorID); err != nil {
-			respondError(w, http.StatusInternalServerError, "failed to process payroll")
-			return
-		}
-
-		respondJSON(w, http.StatusOK, map[string]string{"status": "processed"})
-	}
-}
-
 // Helper functions
 func respondJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")
@@ -631,4 +459,72 @@ func respondJSON(w http.ResponseWriter, status int, data interface{}) {
 
 func respondError(w http.ResponseWriter, status int, message string) {
 	respondJSON(w, status, map[string]string{"error": message})
+}
+
+// Helper functions for context
+func getUserIDFromContext(ctx context.Context) (uuid.UUID, error) {
+	userIDStr, ok := ctx.Value("user_id").(string)
+	if !ok {
+		return uuid.Nil, fmt.Errorf("user_id not found in context")
+	}
+	return uuid.Parse(userIDStr)
+}
+
+// getUserIDFromContext extracts user ID from JWT context
+func getUserIDFromJWTContext(r *http.Request) uuid.UUID {
+	// Debug: log what's in context
+	log.Printf("DEBUG: Attempting to get user_id from context")
+	
+	// This assumes the JWT middleware sets the user_id in context
+	if userID := r.Context().Value("user_id"); userID != nil {
+		log.Printf("DEBUG: Found user_id in context: %v (type: %T)", userID, userID)
+		if id, ok := userID.(uuid.UUID); ok {
+			log.Printf("DEBUG: Successfully parsed as uuid.UUID: %s", id)
+			return id
+		}
+		if idStr, ok := userID.(string); ok {
+			log.Printf("DEBUG: user_id is string: %s", idStr)
+			if id, err := uuid.Parse(idStr); err == nil {
+				log.Printf("DEBUG: Successfully parsed string to UUID: %s", id)
+				return id
+			} else {
+				log.Printf("DEBUG: Failed to parse string to UUID: %v", err)
+			}
+		}
+	} else {
+		log.Printf("DEBUG: user_id not found in context")
+	}
+	
+	// Fallback: try to get from claims in context
+	if claims := r.Context().Value("claims"); claims != nil {
+		log.Printf("DEBUG: Found claims in context")
+		if claimsMap, ok := claims.(map[string]interface{}); ok {
+			if userIDStr, ok := claimsMap["user_id"].(string); ok {
+				if id, err := uuid.Parse(userIDStr); err == nil {
+					log.Printf("DEBUG: Got user_id from claims: %s", id)
+					return id
+				}
+			}
+		}
+	}
+	
+	// Return nil UUID as fallback (should be handled by auth middleware)
+	log.Printf("WARNING: Returning nil UUID - user_id not found in context")
+	return uuid.Nil
+}
+
+func getEmployeeIDFromContext(ctx context.Context) (uuid.UUID, error) {
+	// Extract employee ID from JWT claims in context
+	// This is a placeholder - implement based on your auth middleware
+	claims, ok := ctx.Value("claims").(map[string]interface{})
+	if !ok {
+		return uuid.Nil, service.ErrUnauthorized
+	}
+
+	employeeIDStr, ok := claims["employee_id"].(string)
+	if !ok {
+		return uuid.Nil, service.ErrUnauthorized
+	}
+
+	return uuid.Parse(employeeIDStr)
 }

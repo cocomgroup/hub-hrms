@@ -1,4 +1,8 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
+  import { authStore } from '../stores/auth-store';
+
+  // Types
   interface Employee {
     id: string;
     first_name: string;
@@ -7,6 +11,7 @@
     department: string;
     position: string;
     status: string;
+    hire_date: string;
   }
 
   interface OnboardingTask {
@@ -18,71 +23,156 @@
     status: string;
     due_date?: string;
     completed_at?: string;
+    assigned_to?: string;
     documents_required: boolean;
+    document_url?: string;
     created_at: string;
     updated_at: string;
   }
 
-  let employees = $state<Employee[]>([]);
-  let selectedEmployee = $state<Employee | null>(null);
-  let tasks = $state<OnboardingTask[]>([]);
-  let loading = $state(true);
-  let tasksLoading = $state(false);
-  let error = $state('');
-  let showAddTaskModal = $state(false);
+  interface Workflow {
+    id: string;
+    employee_id: string;
+    employee_name?: string;
+    template_name: string;
+    status: string;
+    current_stage: string;
+    progress_percentage: number;
+    started_at: string;
+    expected_completion: string;
+    actual_completion?: string;
+    created_at: string;
+  }
 
-  let newTask = $state({
+  interface WorkflowStep {
+    id: string;
+    workflow_id: string;
+    step_name: string;
+    step_order: number;
+    status: string;
+    assigned_to?: string;
+    due_date?: string;
+    completed_at?: string;
+    notes?: string;
+  }
+
+  // State
+  let activeTab: 'tasks' | 'workflows' = 'tasks';
+  let loading = false;
+  let error = '';
+  let success = '';
+
+  // Tasks State
+  let employees: Employee[] = [];
+  let selectedEmployee: Employee | null = null;
+  let tasks: OnboardingTask[] = [];
+  let tasksLoading = false;
+  let showAddTaskModal = false;
+  let filterStatus = 'all';
+  let filterCategory = 'all';
+
+  let newTask = {
     task_name: '',
     description: '',
     category: 'documentation',
     due_date: '',
-    documents_required: false
+    documents_required: false,
+    assigned_to: ''
+  };
+
+  // Workflows State
+  let workflows: Workflow[] = [];
+  let workflowsLoading = false;
+  let showCreateWorkflowModal = false;
+  let showWorkflowDetailModal = false;
+  let selectedWorkflow: Workflow | null = null;
+  let workflowSteps: WorkflowStep[] = [];
+  let workflowStatusFilter = 'all';
+
+  let newWorkflow = {
+    employee_id: '',
+    template_name: 'software-engineer'
+  };
+
+  const workflowTemplates = [
+    { value: 'software-engineer', label: 'Software Engineer (17 steps)', duration: '90 days' },
+    { value: 'generic', label: 'Generic Employee (4 steps)', duration: '30 days' },
+    { value: 'sales-representative', label: 'Sales Representative (12 steps)', duration: '60 days' },
+    { value: 'manager', label: 'Manager (15 steps)', duration: '90 days' }
+  ];
+
+  const taskCategories = [
+    { value: 'documentation', label: 'Documentation', icon: '📄' },
+    { value: 'equipment', label: 'Equipment', icon: '💻' },
+    { value: 'training', label: 'Training', icon: '📚' },
+    { value: 'hr', label: 'HR', icon: '👥' },
+    { value: 'it', label: 'IT', icon: '🔧' },
+    { value: 'compliance', label: 'Compliance', icon: '✓' }
+  ];
+
+  // Computed
+  $: filteredTasks = tasks.filter(task => {
+    const matchesStatus = filterStatus === 'all' || task.status === filterStatus;
+    const matchesCategory = filterCategory === 'all' || task.category === filterCategory;
+    return matchesStatus && matchesCategory;
   });
 
-  let filterStatus = $state('all');
-  let filterCategory = $state('all');
-
-  $effect(() => {
-    loadEmployees();
+  $: filteredWorkflows = workflows.filter(workflow => {
+    return workflowStatusFilter === 'all' || workflow.status === workflowStatusFilter;
   });
 
+  $: taskStats = {
+    total: tasks.length,
+    pending: tasks.filter(t => t.status === 'pending').length,
+    in_progress: tasks.filter(t => t.status === 'in_progress').length,
+    completed: tasks.filter(t => t.status === 'completed').length
+  };
+
+  $: workflowStats = {
+    total: workflows.length,
+    in_progress: workflows.filter(w => w.status === 'in_progress').length,
+    completed: workflows.filter(w => w.status === 'completed').length
+  };
+
+  // API Calls - Tasks
   async function loadEmployees() {
-    loading = true;
-    error = '';
-    
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/employees`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+      loading = true;
+      error = '';
+      
+      const response = await fetch('/api/employees', {
+        headers: {
+          'Authorization': `Bearer ${$authStore.token}`
+        }
       });
 
       if (!response.ok) throw new Error('Failed to load employees');
+      
       const data = await response.json();
-      // Filter out system administrator and only show active employees
       employees = (data || []).filter((emp: Employee) => 
-        emp.status === 'active' && emp.email !== 'admin@hub-hrms.local'
+        emp.status === 'active'
       );
     } catch (err: any) {
       error = err.message;
-      employees = [];
     } finally {
       loading = false;
     }
   }
 
   async function loadTasks(employeeId: string) {
-    tasksLoading = true;
-    error = '';
-    
     try {
-      const token = localStorage.getItem('token');
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/onboarding/${employeeId}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+      tasksLoading = true;
+      error = '';
+      
+      const response = await fetch(`/api/onboarding/${employeeId}`, {
+        headers: {
+          'Authorization': `Bearer ${$authStore.token}`
+        }
       });
 
       if (!response.ok) throw new Error('Failed to load tasks');
-      const data = await response.json();
-      tasks = data || [];
+      
+      tasks = await response.json();
     } catch (err: any) {
       error = err.message;
       tasks = [];
@@ -100,379 +190,1539 @@
     if (!selectedEmployee) return;
 
     try {
-      const token = localStorage.getItem('token');
-      const taskData: any = {
-        task_name: newTask.task_name,
-        description: newTask.description || undefined,
-        category: newTask.category || undefined,
-        status: 'pending',
-        documents_required: newTask.documents_required
-      };
+      loading = true;
+      error = '';
+      success = '';
 
-      if (newTask.due_date) {
-        taskData.due_date = newTask.due_date;
-      }
-
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/onboarding/${selectedEmployee.id}/tasks`, {
+      const response = await fetch('/api/onboarding', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${$authStore.token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(taskData)
+        body: JSON.stringify({
+          employee_id: selectedEmployee.id,
+          ...newTask
+        })
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || 'Failed to create task');
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to create task');
       }
 
+      success = 'Task created successfully';
+      showAddTaskModal = false;
+      resetTaskForm();
       await loadTasks(selectedEmployee.id);
-      closeAddTaskModal();
     } catch (err: any) {
       error = err.message;
+    } finally {
+      loading = false;
     }
   }
 
   async function updateTaskStatus(taskId: string, status: string) {
-    if (!selectedEmployee) return;
-
     try {
-      const token = localStorage.getItem('token');
-      const updateData: any = { status };
-      if (status === 'completed') {
-        updateData.completed_at = new Date().toISOString();
-      }
+      loading = true;
+      error = '';
+      success = '';
 
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/onboarding/${selectedEmployee.id}/tasks/${taskId}`, {
+      const response = await fetch(`/api/onboarding/${taskId}`, {
         method: 'PUT',
         headers: {
-          'Authorization': `Bearer ${token}`,
+          'Authorization': `Bearer ${$authStore.token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(updateData)
+        body: JSON.stringify({ status })
       });
 
-      if (!response.ok) throw new Error('Failed to update task');
-      await loadTasks(selectedEmployee.id);
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to update task');
+      }
+
+      success = 'Task updated successfully';
+      if (selectedEmployee) {
+        await loadTasks(selectedEmployee.id);
+      }
     } catch (err: any) {
       error = err.message;
+    } finally {
+      loading = false;
     }
   }
 
-  function openAddTaskModal() {
+  async function deleteTask(taskId: string) {
+    if (!confirm('Are you sure you want to delete this task?')) return;
+
+    try {
+      loading = true;
+      error = '';
+      success = '';
+
+      const response = await fetch(`/api/onboarding/${taskId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${$authStore.token}`
+        }
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to delete task');
+      }
+
+      success = 'Task deleted successfully';
+      if (selectedEmployee) {
+        await loadTasks(selectedEmployee.id);
+      }
+    } catch (err: any) {
+      error = err.message;
+    } finally {
+      loading = false;
+    }
+  }
+
+  function resetTaskForm() {
     newTask = {
       task_name: '',
       description: '',
       category: 'documentation',
       due_date: '',
-      documents_required: false
+      documents_required: false,
+      assigned_to: ''
     };
-    showAddTaskModal = true;
   }
 
-  function closeAddTaskModal() {
-    showAddTaskModal = false;
+  // API Calls - Workflows
+  async function loadWorkflows() {
+    try {
+      workflowsLoading = true;
+      error = '';
+
+      let url = '/api/workflows';
+      if (workflowStatusFilter !== 'all') {
+        url += `?status=${workflowStatusFilter}`;
+      }
+
+      const response = await fetch(url, {
+        headers: {
+          'Authorization': `Bearer ${$authStore.token}`
+        }
+      });
+
+      if (!response.ok) throw new Error('Failed to load workflows');
+
+      const data = await response.json();
+      workflows = Array.isArray(data) ? data : [];
+    } catch (err: any) {
+      error = err.message;
+      workflows = [];
+    } finally {
+      workflowsLoading = false;
+    }
   }
 
-  let filteredTasks = $derived(() => {
-    let result = tasks;
-    if (filterStatus !== 'all') result = result.filter(t => t.status === filterStatus);
-    if (filterCategory !== 'all') result = result.filter(t => t.category === filterCategory);
-    return result;
-  });
+  async function createWorkflow() {
+    try {
+      loading = true;
+      error = '';
+      success = '';
 
-  let completionRate = $derived(() => {
-    if (tasks.length === 0) return 0;
-    const completed = tasks.filter(t => t.status === 'completed').length;
-    return Math.round((completed / tasks.length) * 100);
-  });
+      const response = await fetch('/api/workflows', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${$authStore.token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(newWorkflow)
+      });
 
-  function getStatusColor(status: string): string {
-    const colors: Record<string, string> = {
-      completed: '#10b981',
-      'in-progress': '#f59e0b',
-      pending: '#6366f1'
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to create workflow');
+      }
+
+      success = 'Workflow created successfully';
+      showCreateWorkflowModal = false;
+      resetWorkflowForm();
+      await loadWorkflows();
+    } catch (err: any) {
+      error = err.message;
+    } finally {
+      loading = false;
+    }
+  }
+
+  async function viewWorkflowDetails(workflow: Workflow) {
+    try {
+      loading = true;
+      error = '';
+      selectedWorkflow = workflow;
+
+      const response = await fetch(`/api/workflows/${workflow.id}`, {
+        headers: {
+          'Authorization': `Bearer ${$authStore.token}`
+        }
+      });
+
+      if (!response.ok) throw new Error('Failed to load workflow details');
+
+      const data = await response.json();
+      workflowSteps = data.steps || [];
+      showWorkflowDetailModal = true;
+    } catch (err: any) {
+      error = err.message;
+    } finally {
+      loading = false;
+    }
+  }
+
+  async function updateStepStatus(stepId: string, status: string) {
+    try {
+      loading = true;
+      error = '';
+
+      const response = await fetch(`/api/workflows/steps/${stepId}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${$authStore.token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ status })
+      });
+
+      if (!response.ok) throw new Error('Failed to update step');
+
+      success = 'Step updated successfully';
+      if (selectedWorkflow) {
+        await viewWorkflowDetails(selectedWorkflow);
+        await loadWorkflows();
+      }
+    } catch (err: any) {
+      error = err.message;
+    } finally {
+      loading = false;
+    }
+  }
+
+  function resetWorkflowForm() {
+    newWorkflow = {
+      employee_id: '',
+      template_name: 'software-engineer'
     };
-    return colors[status] || '#6b7280';
   }
 
-  function formatDate(dateString?: string): string {
-    if (!dateString) return '-';
-    return new Date(dateString).toLocaleDateString();
+  // Utility Functions
+  function formatDate(dateStr: string): string {
+    if (!dateStr) return 'Not set';
+    return new Date(dateStr).toLocaleDateString();
   }
+
+  function getStatusBadgeClass(status: string): string {
+    const classes = {
+      pending: 'badge-warning',
+      in_progress: 'badge-info',
+      completed: 'badge-success',
+      cancelled: 'badge-error',
+      blocked: 'badge-error'
+    };
+    return classes[status] || 'badge-ghost';
+  }
+
+  function getCategoryIcon(category: string): string {
+    const cat = taskCategories.find(c => c.value === category);
+    return cat?.icon || '📋';
+  }
+
+  function getProgressColor(percentage: number): string {
+    if (percentage >= 75) return '#10b981';
+    if (percentage >= 50) return '#3b82f6';
+    if (percentage >= 25) return '#f59e0b';
+    return '#ef4444';
+  }
+
+  onMount(() => {
+    loadEmployees();
+    loadWorkflows();
+  });
 </script>
 
 <div class="onboarding-container">
-  <div class="header">
-    <h1>Onboarding Management</h1>
-    <p>Track and manage employee onboarding tasks</p>
+  <!-- Header -->
+  <div class="onboarding-header">
+    <h1>🎯 Employee Onboarding</h1>
+    <p class="text-muted">Manage onboarding tasks and workflows for new hires</p>
   </div>
 
+  <!-- Alerts -->
   {#if error}
-    <div class="error-banner">{error}</div>
+    <div class="alert alert-error">
+      <span>{error}</span>
+      <button on:click={() => error = ''}>✕</button>
+    </div>
   {/if}
 
-  <div class="content-grid">
-    <div class="employee-sidebar">
-      <h2>Active Employees</h2>
-      
-      {#if loading}
-        <div class="loading-spinner">Loading...</div>
-      {:else if employees.length === 0}
-        <div class="empty-state"><p>No active employees</p></div>
-      {:else}
-        <div class="employee-list">
-          {#each employees as employee}
-            <button
-              class="employee-card"
-              class:selected={selectedEmployee?.id === employee.id}
-              onclick={() => selectEmployee(employee)}
-            >
-              <div class="employee-avatar">
-                {employee.first_name.charAt(0)}{employee.last_name.charAt(0)}
-              </div>
-              <div class="employee-info">
-                <div class="employee-name">{employee.first_name} {employee.last_name}</div>
-                <div class="employee-details">{employee.position}</div>
-              </div>
-            </button>
-          {/each}
-        </div>
-      {/if}
+  {#if success}
+    <div class="alert alert-success">
+      <span>{success}</span>
+      <button on:click={() => success = ''}>✕</button>
     </div>
+  {/if}
 
-    <div class="tasks-panel">
-      {#if !selectedEmployee}
-        <div class="empty-state">
-          <h3>Select an Employee</h3>
-          <p>Choose an employee to view their onboarding tasks</p>
-        </div>
-      {:else}
-        <div class="tasks-header">
-          <div class="employee-banner">
-            <h2>{selectedEmployee.first_name} {selectedEmployee.last_name}</h2>
-            <p>{selectedEmployee.position} - {selectedEmployee.department}</p>
+  <!-- Tabs -->
+  <div class="tabs">
+    <button 
+      class="tab {activeTab === 'tasks' ? 'tab-active' : ''}"
+      on:click={() => activeTab = 'tasks'}>
+      ✓ Tasks
+    </button>
+    <button 
+      class="tab {activeTab === 'workflows' ? 'tab-active' : ''}"
+      on:click={() => activeTab = 'workflows'}>
+      🔄 Workflows
+    </button>
+  </div>
+
+  <!-- Content -->
+  <div class="tab-content">
+    <!-- Tasks Tab -->
+    {#if activeTab === 'tasks'}
+      <div class="tasks-section">
+        <div class="two-column-layout">
+          <!-- Left: Employee List -->
+          <div class="employee-panel">
+            <div class="panel-header">
+              <h2>Select Employee</h2>
+            </div>
+
+            {#if loading}
+              <div class="loading">Loading employees...</div>
+            {:else if employees.length === 0}
+              <div class="empty-state">
+                <span class="empty-icon">👥</span>
+                <p>No employees found</p>
+              </div>
+            {:else}
+              <div class="employee-list">
+                {#each employees as employee}
+                  <button
+                    class="employee-card {selectedEmployee?.id === employee.id ? 'active' : ''}"
+                    on:click={() => selectEmployee(employee)}>
+                    <div class="employee-avatar">{employee.first_name[0]}{employee.last_name[0]}</div>
+                    <div class="employee-info">
+                      <div class="employee-name">{employee.first_name} {employee.last_name}</div>
+                      <div class="employee-meta">{employee.position || 'N/A'}</div>
+                      <div class="employee-meta">{employee.department || 'N/A'}</div>
+                    </div>
+                  </button>
+                {/each}
+              </div>
+            {/if}
           </div>
 
-          {#if tasks.length > 0}
-            <div class="progress-card">
-              <div class="progress-label">
-                <span>Completion Rate</span>
-                <span class="progress-value">{completionRate()}%</span>
+          <!-- Right: Tasks -->
+          <div class="tasks-panel">
+            {#if selectedEmployee}
+              <div class="panel-header">
+                <div>
+                  <h2>Onboarding Tasks</h2>
+                  <p class="text-muted">{selectedEmployee.first_name} {selectedEmployee.last_name}</p>
+                </div>
+                <button class="btn btn-primary" on:click={() => showAddTaskModal = true}>
+                  + Add Task
+                </button>
               </div>
-              <div class="progress-bar">
-                <div class="progress-fill" style="width: {completionRate()}%"></div>
-              </div>
-              <div class="task-stats">
-                {tasks.filter(t => t.status === 'completed').length} of {tasks.length} tasks completed
-              </div>
-            </div>
-          {/if}
 
-          <div class="actions-bar">
-            <button class="btn-primary" onclick={openAddTaskModal}>+ Add Task</button>
-            <div class="filters">
-              <select bind:value={filterStatus} class="filter-select">
-                <option value="all">All Status</option>
-                <option value="pending">Pending</option>
-                <option value="in-progress">In Progress</option>
-                <option value="completed">Completed</option>
-              </select>
-              <select bind:value={filterCategory} class="filter-select">
-                <option value="all">All Categories</option>
-                <option value="documentation">Documentation</option>
-                <option value="training">Training</option>
-                <option value="equipment">Equipment</option>
-                <option value="it-setup">IT Setup</option>
-                <option value="hr-paperwork">HR Paperwork</option>
-              </select>
+              <!-- Stats -->
+              <div class="stats-grid">
+                <div class="stat-card">
+                  <span class="stat-icon">📋</span>
+                  <div class="stat-info">
+                    <div class="stat-value">{taskStats.total}</div>
+                    <div class="stat-label">Total Tasks</div>
+                  </div>
+                </div>
+                <div class="stat-card">
+                  <span class="stat-icon">⏳</span>
+                  <div class="stat-info">
+                    <div class="stat-value">{taskStats.pending + taskStats.in_progress}</div>
+                    <div class="stat-label">In Progress</div>
+                  </div>
+                </div>
+                <div class="stat-card">
+                  <span class="stat-icon">✅</span>
+                  <div class="stat-info">
+                    <div class="stat-value">{taskStats.completed}</div>
+                    <div class="stat-label">Completed</div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Filters -->
+              <div class="filters">
+                <select bind:value={filterStatus} class="select select-sm">
+                  <option value="all">All Status</option>
+                  <option value="pending">Pending</option>
+                  <option value="in_progress">In Progress</option>
+                  <option value="completed">Completed</option>
+                </select>
+
+                <select bind:value={filterCategory} class="select select-sm">
+                  <option value="all">All Categories</option>
+                  {#each taskCategories as cat}
+                    <option value={cat.value}>{cat.icon} {cat.label}</option>
+                  {/each}
+                </select>
+              </div>
+
+              <!-- Tasks List -->
+              {#if tasksLoading}
+                <div class="loading">Loading tasks...</div>
+              {:else if filteredTasks.length === 0}
+                <div class="empty-state">
+                  <span class="empty-icon">📝</span>
+                  <p>No tasks found</p>
+                  <button class="btn btn-primary" on:click={() => showAddTaskModal = true}>
+                    Create First Task
+                  </button>
+                </div>
+              {:else}
+                <div class="tasks-list">
+                  {#each filteredTasks as task}
+                    <div class="task-card">
+                      <div class="task-header">
+                        <div class="task-title-row">
+                          <span class="task-icon">{getCategoryIcon(task.category)}</span>
+                          <h3 class="task-title">{task.task_name}</h3>
+                        </div>
+                        <div class="task-actions">
+                          <select
+                            value={task.status}
+                            on:change={(e) => updateTaskStatus(task.id, e.currentTarget.value)}
+                            class="select select-sm">
+                            <option value="pending">Pending</option>
+                            <option value="in_progress">In Progress</option>
+                            <option value="completed">Completed</option>
+                          </select>
+                          <button class="btn btn-sm btn-ghost" on:click={() => deleteTask(task.id)}>
+                            🗑️
+                          </button>
+                        </div>
+                      </div>
+
+                      {#if task.description}
+                        <p class="task-description">{task.description}</p>
+                      {/if}
+
+                      <div class="task-meta">
+                        <span class="badge {getStatusBadgeClass(task.status)}">
+                          {task.status.replace('_', ' ')}
+                        </span>
+                        {#if task.category}
+                          <span class="badge badge-ghost">{task.category}</span>
+                        {/if}
+                        {#if task.documents_required}
+                          <span class="badge badge-info">📄 Docs Required</span>
+                        {/if}
+                      </div>
+
+                      <div class="task-footer">
+                        {#if task.due_date}
+                          <span class="task-date">📅 Due: {formatDate(task.due_date)}</span>
+                        {/if}
+                        {#if task.completed_at}
+                          <span class="task-date text-success">✓ Completed: {formatDate(task.completed_at)}</span>
+                        {/if}
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+            {:else}
+              <div class="empty-state">
+                <span class="empty-icon">👈</span>
+                <p>Select an employee to view their onboarding tasks</p>
+              </div>
+            {/if}
+          </div>
+        </div>
+      </div>
+    {/if}
+
+    <!-- Workflows Tab -->
+    {#if activeTab === 'workflows'}
+      <div class="workflows-section">
+        <div class="section-header">
+          <div>
+            <h2>Onboarding Workflows</h2>
+            <p class="text-muted">Automated multi-step onboarding processes</p>
+          </div>
+          <button class="btn btn-primary" on:click={() => showCreateWorkflowModal = true}>
+            + Create Workflow
+          </button>
+        </div>
+
+        <!-- Workflow Stats -->
+        <div class="stats-grid">
+          <div class="stat-card">
+            <span class="stat-icon">🔄</span>
+            <div class="stat-info">
+              <div class="stat-value">{workflowStats.total}</div>
+              <div class="stat-label">Total Workflows</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <span class="stat-icon">⚡</span>
+            <div class="stat-info">
+              <div class="stat-value">{workflowStats.in_progress}</div>
+              <div class="stat-label">In Progress</div>
+            </div>
+          </div>
+          <div class="stat-card">
+            <span class="stat-icon">✅</span>
+            <div class="stat-info">
+              <div class="stat-value">{workflowStats.completed}</div>
+              <div class="stat-label">Completed</div>
             </div>
           </div>
         </div>
 
-        {#if tasksLoading}
-          <div class="loading-spinner">Loading tasks...</div>
-        {:else if filteredTasks().length === 0}
+        <!-- Filter -->
+        <div class="filters">
+          <select bind:value={workflowStatusFilter} on:change={loadWorkflows} class="select select-sm">
+            <option value="all">All Status</option>
+            <option value="in_progress">In Progress</option>
+            <option value="completed">Completed</option>
+            <option value="cancelled">Cancelled</option>
+          </select>
+        </div>
+
+        <!-- Workflows List -->
+        {#if workflowsLoading}
+          <div class="loading">Loading workflows...</div>
+        {:else if filteredWorkflows.length === 0}
           <div class="empty-state">
-            <h3>No Tasks</h3>
-            <p>{tasks.length === 0 ? 'Create the first task!' : 'No tasks match filters'}</p>
+            <span class="empty-icon">🔄</span>
+            <p>No workflows found</p>
+            <button class="btn btn-primary" on:click={() => showCreateWorkflowModal = true}>
+              Create First Workflow
+            </button>
           </div>
         {:else}
-          <div class="tasks-grid">
-            {#each filteredTasks() as task}
-              <div class="task-card">
-                <div class="task-header">
-                  <div class="task-title-row">
-                    <h3>{task.task_name}</h3>
-                    {#if task.category}
-                      <span class="task-category">{task.category}</span>
-                    {/if}
-                  </div>
-                  <select
-                    class="status-select"
-                    value={task.status}
-                    onchange={(e) => updateTaskStatus(task.id, e.currentTarget.value)}
-                    style="background-color: {getStatusColor(task.status)}20; color: {getStatusColor(task.status)}"
-                  >
-                    <option value="pending">Pending</option>
-                    <option value="in-progress">In Progress</option>
-                    <option value="completed">Completed</option>
-                  </select>
+          <div class="workflows-grid">
+            {#each filteredWorkflows as workflow}
+              <div class="workflow-card" on:click={() => viewWorkflowDetails(workflow)}>
+                <div class="workflow-header">
+                  <span class="workflow-icon">🔄</span>
+                  <span class="badge {getStatusBadgeClass(workflow.status)}">
+                    {workflow.status.replace('_', ' ')}
+                  </span>
                 </div>
-                {#if task.description}
-                  <p class="task-description">{task.description}</p>
-                {/if}
-                <div class="task-meta">
-                  {#if task.due_date}
-                    <div class="meta-item">
-                      <span class="meta-label">Due:</span>
-                      <span class="meta-value">{formatDate(task.due_date)}</span>
+
+                <h3 class="workflow-title">{workflow.template_name.replace('-', ' ').toUpperCase()}</h3>
+                <p class="workflow-employee">{workflow.employee_name || 'Employee'}</p>
+
+                <div class="workflow-progress">
+                  <div class="progress-bar">
+                    <div 
+                      class="progress-fill" 
+                      style="width: {workflow.progress_percentage}%; background: {getProgressColor(workflow.progress_percentage)}">
                     </div>
-                  {/if}
-                  {#if task.completed_at}
-                    <div class="meta-item">
-                      <span class="meta-label">Completed:</span>
-                      <span class="meta-value">{formatDate(task.completed_at)}</span>
-                    </div>
-                  {/if}
-                  {#if task.documents_required}
-                    <span class="badge">📄 Docs Required</span>
+                  </div>
+                  <span class="progress-text">{workflow.progress_percentage}% Complete</span>
+                </div>
+
+                <div class="workflow-stage">
+                  <span class="stage-label">Current Stage:</span>
+                  <span class="stage-value">{workflow.current_stage}</span>
+                </div>
+
+                <div class="workflow-footer">
+                  <span class="workflow-date">📅 Started: {formatDate(workflow.started_at)}</span>
+                  {#if workflow.actual_completion}
+                    <span class="workflow-date text-success">✓ {formatDate(workflow.actual_completion)}</span>
+                  {:else}
+                    <span class="workflow-date">⏳ Due: {formatDate(workflow.expected_completion)}</span>
                   {/if}
                 </div>
               </div>
             {/each}
           </div>
         {/if}
-      {/if}
-    </div>
+      </div>
+    {/if}
   </div>
 </div>
 
-{#if showAddTaskModal && selectedEmployee}
-  <div 
-    class="modal-overlay"
-    onclick={(e) => e.target === e.currentTarget && closeAddTaskModal()}
-    onkeydown={(e) => e.key === 'Escape' && closeAddTaskModal()}
-    role="button"
-    tabindex="0"
-    aria-label="Close modal"
-  >
-    <div class="modal" role="dialog" aria-modal="true" tabindex="-1">
-      <div class="modal-header">
-        <h2>Add Onboarding Task</h2>
-        <button class="close-btn" onclick={closeAddTaskModal}>×</button>
-      </div>
-      <form onsubmit={(e) => { e.preventDefault(); createTask(); }} class="modal-body">
-        <div class="form-group">
-          <label>Task Name *<input type="text" bind:value={newTask.task_name} required /></label>
+<!-- Add Task Modal -->
+{#if showAddTaskModal}
+  <div class="modal" on:click={() => showAddTaskModal = false}>
+    <div class="modal-box" on:click|stopPropagation>
+      <h2>Add Onboarding Task</h2>
+
+      <form on:submit|preventDefault={createTask} class="form">
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text">Task Name</span>
+          </label>
+          <input 
+            type="text" 
+            bind:value={newTask.task_name} 
+            class="input w-full" 
+            required 
+            placeholder="e.g., Complete I-9 Form"
+          />
         </div>
-        <div class="form-group">
-          <label>Description<textarea bind:value={newTask.description} rows="3"></textarea></label>
+
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text">Description</span>
+          </label>
+          <textarea 
+            bind:value={newTask.description} 
+            class="textarea w-full" 
+            rows="3"
+            placeholder="Task details..."
+          ></textarea>
         </div>
+
         <div class="form-row">
-          <div class="form-group">
-            <label>Category
-              <select bind:value={newTask.category}>
-                <option value="documentation">Documentation</option>
-                <option value="training">Training</option>
-                <option value="equipment">Equipment</option>
-                <option value="it-setup">IT Setup</option>
-                <option value="hr-paperwork">HR Paperwork</option>
-              </select>
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text">Category</span>
             </label>
+            <select bind:value={newTask.category} class="select w-full">
+              {#each taskCategories as cat}
+                <option value={cat.value}>{cat.icon} {cat.label}</option>
+              {/each}
+            </select>
           </div>
-          <div class="form-group">
-            <label>Due Date<input type="date" bind:value={newTask.due_date} /></label>
+
+          <div class="form-control">
+            <label class="label">
+              <span class="label-text">Due Date</span>
+            </label>
+            <input 
+              type="date" 
+              bind:value={newTask.due_date} 
+              class="input w-full"
+            />
           </div>
         </div>
-        <div class="form-group">
-          <label class="checkbox-label">
-            <input type="checkbox" bind:checked={newTask.documents_required} />
-            Documents Required
+
+        <div class="form-control">
+          <label class="label cursor-pointer">
+            <span class="label-text">Documents Required</span>
+            <input 
+              type="checkbox" 
+              bind:checked={newTask.documents_required} 
+              class="checkbox"
+            />
           </label>
         </div>
+
         <div class="modal-actions">
-          <button type="button" class="btn-secondary" onclick={closeAddTaskModal}>Cancel</button>
-          <button type="submit" class="btn-primary">Create Task</button>
+          <button type="submit" class="btn btn-primary" disabled={loading}>
+            {loading ? 'Creating...' : 'Create Task'}
+          </button>
+          <button type="button" class="btn btn-ghost" on:click={() => showAddTaskModal = false}>
+            Cancel
+          </button>
         </div>
       </form>
     </div>
   </div>
 {/if}
 
+<!-- Create Workflow Modal -->
+{#if showCreateWorkflowModal}
+  <div class="modal" on:click={() => showCreateWorkflowModal = false}>
+    <div class="modal-box" on:click|stopPropagation>
+      <h2>Create Onboarding Workflow</h2>
+
+      <form on:submit|preventDefault={createWorkflow} class="form">
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text">Select Employee</span>
+          </label>
+          <select bind:value={newWorkflow.employee_id} class="select w-full" required>
+            <option value="">Choose employee...</option>
+            {#each employees as employee}
+              <option value={employee.id}>
+                {employee.first_name} {employee.last_name} - {employee.position || 'N/A'}
+              </option>
+            {/each}
+          </select>
+        </div>
+
+        <div class="form-control">
+          <label class="label">
+            <span class="label-text">Workflow Template</span>
+          </label>
+          <select bind:value={newWorkflow.template_name} class="select w-full" required>
+            {#each workflowTemplates as template}
+              <option value={template.value}>{template.label}</option>
+            {/each}
+          </select>
+          <label class="label">
+            <span class="text-muted">
+              {workflowTemplates.find(t => t.value === newWorkflow.template_name)?.duration || ''}
+            </span>
+          </label>
+        </div>
+
+        <div class="template-preview">
+          <h4>Template Details</h4>
+          {#if newWorkflow.template_name === 'software-engineer'}
+            <p>Comprehensive 17-step process covering documentation, equipment setup, training, team introductions, and development environment configuration.</p>
+          {:else if newWorkflow.template_name === 'generic'}
+            <p>Basic 4-step onboarding including documentation, equipment, workspace setup, and team introduction.</p>
+          {:else if newWorkflow.template_name === 'sales-representative'}
+            <p>Sales-focused 12-step process including CRM training, product knowledge, sales methodology, and territory assignment.</p>
+          {:else if newWorkflow.template_name === 'manager'}
+            <p>Leadership-focused 15-step process including team introductions, policy training, budget review, and strategic planning sessions.</p>
+          {/if}
+        </div>
+
+        <div class="modal-actions">
+          <button type="submit" class="btn btn-primary" disabled={loading}>
+            {loading ? 'Creating...' : 'Create Workflow'}
+          </button>
+          <button type="button" class="btn btn-ghost" on:click={() => showCreateWorkflowModal = false}>
+            Cancel
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+{/if}
+
+<!-- Workflow Detail Modal -->
+{#if showWorkflowDetailModal && selectedWorkflow}
+  <div class="modal" on:click={() => showWorkflowDetailModal = false}>
+    <div class="modal-box max-w-4xl" on:click|stopPropagation>
+      <div class="modal-header">
+        <div>
+          <h2>{selectedWorkflow.template_name.replace('-', ' ').toUpperCase()}</h2>
+          <p class="text-muted">{selectedWorkflow.employee_name}</p>
+        </div>
+        <button class="btn btn-circle btn-sm" on:click={() => showWorkflowDetailModal = false}>✕</button>
+      </div>
+
+      <!-- Progress Overview -->
+      <div class="workflow-detail-progress">
+        <div class="progress-bar-large">
+          <div 
+            class="progress-fill" 
+            style="width: {selectedWorkflow.progress_percentage}%; background: {getProgressColor(selectedWorkflow.progress_percentage)}">
+          </div>
+        </div>
+        <div class="progress-stats">
+          <span>{selectedWorkflow.progress_percentage}% Complete</span>
+          <span class="badge {getStatusBadgeClass(selectedWorkflow.status)}">
+            {selectedWorkflow.status.replace('_', ' ')}
+          </span>
+        </div>
+      </div>
+
+      <!-- Steps List -->
+      <div class="steps-list">
+        <h3>Workflow Steps</h3>
+        {#each workflowSteps as step, index}
+          <div class="step-item">
+            <div class="step-number">{index + 1}</div>
+            <div class="step-content">
+              <div class="step-header">
+                <h4>{step.step_name}</h4>
+                <select
+                  value={step.status}
+                  on:change={(e) => updateStepStatus(step.id, e.currentTarget.value)}
+                  class="select select-sm">
+                  <option value="pending">Pending</option>
+                  <option value="in_progress">In Progress</option>
+                  <option value="completed">Completed</option>
+                  <option value="blocked">Blocked</option>
+                </select>
+              </div>
+              {#if step.notes}
+                <p class="step-notes">{step.notes}</p>
+              {/if}
+              <div class="step-meta">
+                <span class="badge {getStatusBadgeClass(step.status)}">
+                  {step.status.replace('_', ' ')}
+                </span>
+                {#if step.due_date}
+                  <span class="text-muted">Due: {formatDate(step.due_date)}</span>
+                {/if}
+                {#if step.completed_at}
+                  <span class="text-success">Completed: {formatDate(step.completed_at)}</span>
+                {/if}
+              </div>
+            </div>
+          </div>
+        {/each}
+      </div>
+
+      <div class="modal-actions">
+        <button class="btn btn-ghost" on:click={() => showWorkflowDetailModal = false}>
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <style>
-  .onboarding-container { padding: 2rem; max-width: 1400px; margin: 0 auto; }
-  .header h1 { font-size: 2rem; font-weight: 700; color: #e4e7eb; margin-bottom: 0.5rem; }
-  .header p { color: #9ca3af; }
-  .error-banner { background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); color: #fca5a5; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; }
-  .content-grid { display: grid; grid-template-columns: 320px 1fr; gap: 2rem; min-height: calc(100vh - 250px); }
-  
-  .employee-sidebar { background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(10px); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 12px; padding: 1.5rem; height: fit-content; max-height: calc(100vh - 250px); overflow-y: auto; }
-  .employee-sidebar h2 { font-size: 1.125rem; font-weight: 600; color: #e4e7eb; margin-bottom: 1rem; }
-  .employee-list { display: flex; flex-direction: column; gap: 0.75rem; }
-  .employee-card { display: flex; align-items: center; gap: 0.75rem; padding: 0.875rem; background: rgba(30, 41, 59, 0.4); border: 1px solid rgba(99, 102, 241, 0.1); border-radius: 8px; cursor: pointer; transition: all 0.2s; text-align: left; width: 100%; }
-  .employee-card:hover { background: rgba(99, 102, 241, 0.1); border-color: rgba(99, 102, 241, 0.3); transform: translateX(4px); }
-  .employee-card.selected { background: rgba(99, 102, 241, 0.2); border-color: rgba(99, 102, 241, 0.5); }
-  .employee-avatar { width: 40px; height: 40px; border-radius: 50%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); display: flex; align-items: center; justify-content: center; font-size: 0.875rem; font-weight: 600; color: white; }
-  .employee-info { flex: 1; min-width: 0; }
-  .employee-name { font-weight: 600; color: #e4e7eb; font-size: 0.875rem; }
-  .employee-details { font-size: 0.75rem; color: #9ca3af; }
-  
-  .tasks-panel { background: rgba(15, 23, 42, 0.6); backdrop-filter: blur(10px); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 12px; padding: 2rem; }
-  .tasks-header { margin-bottom: 2rem; }
-  .employee-banner h2 { font-size: 1.5rem; font-weight: 700; color: #e4e7eb; margin-bottom: 0.25rem; }
-  .employee-banner p { color: #9ca3af; font-size: 0.875rem; }
-  
-  .progress-card { background: rgba(99, 102, 241, 0.1); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 8px; padding: 1.25rem; margin: 1.5rem 0; }
-  .progress-label { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; font-size: 0.875rem; color: #9ca3af; }
-  .progress-value { font-size: 1.5rem; font-weight: 700; color: #6366f1; }
-  .progress-bar { height: 8px; background: rgba(30, 41, 59, 0.6); border-radius: 4px; overflow: hidden; margin-bottom: 0.5rem; }
-  .progress-fill { height: 100%; background: linear-gradient(90deg, #6366f1 0%, #8b5cf6 100%); border-radius: 4px; transition: width 0.3s; }
-  .task-stats { font-size: 0.75rem; color: #9ca3af; }
-  
-  .actions-bar { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; }
-  .filters { display: flex; gap: 0.75rem; }
-  .filter-select { padding: 0.5rem 0.875rem; background: rgba(30, 41, 59, 0.6); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 6px; color: #e4e7eb; font-size: 0.875rem; cursor: pointer; }
-  
-  .tasks-grid { display: grid; gap: 1rem; margin-top: 1.5rem; }
-  .task-card { background: rgba(30, 41, 59, 0.4); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 8px; padding: 1.25rem; transition: all 0.2s; }
-  .task-card:hover { border-color: rgba(99, 102, 241, 0.4); transform: translateY(-2px); }
-  .task-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 0.75rem; gap: 1rem; }
-  .task-title-row { display: flex; align-items: center; gap: 0.75rem; flex: 1; }
-  .task-card h3 { font-size: 1rem; font-weight: 600; color: #e4e7eb; margin: 0; }
-  .task-category { font-size: 0.75rem; padding: 0.25rem 0.625rem; background: rgba(99, 102, 241, 0.2); color: #a5b4fc; border-radius: 4px; text-transform: capitalize; }
-  .status-select { padding: 0.375rem 0.75rem; border-radius: 6px; border: 1px solid rgba(99, 102, 241, 0.3); font-size: 0.75rem; font-weight: 600; cursor: pointer; }
-  .task-description { color: #9ca3af; font-size: 0.875rem; line-height: 1.5; margin-bottom: 0.75rem; }
-  .task-meta { display: flex; flex-wrap: wrap; gap: 1rem; font-size: 0.75rem; }
-  .meta-item { display: flex; gap: 0.25rem; }
-  .meta-label { color: #6b7280; }
-  .meta-value { color: #9ca3af; font-weight: 500; }
-  .badge { padding: 0.25rem 0.625rem; border-radius: 4px; font-weight: 500; background: rgba(245, 158, 11, 0.2); color: #fbbf24; }
-  
-  .btn-primary { padding: 0.625rem 1.25rem; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; border-radius: 8px; font-weight: 600; font-size: 0.875rem; cursor: pointer; transition: all 0.2s; }
-  .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4); }
-  .btn-secondary { padding: 0.625rem 1.25rem; background: rgba(30, 41, 59, 0.6); color: #e4e7eb; border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 8px; font-weight: 600; font-size: 0.875rem; cursor: pointer; }
-  
-  .loading-spinner, .empty-state { text-align: center; padding: 3rem; color: #9ca3af; }
-  .empty-state h3 { font-size: 1.25rem; color: #e4e7eb; margin-bottom: 0.5rem; }
-  
-  .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.75); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 1rem; }
-  .modal { background: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.95) 100%); border: 1px solid rgba(99, 102, 241, 0.3); border-radius: 16px; width: 100%; max-width: 600px; max-height: 90vh; overflow-y: auto; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); }
-  .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 1.5rem 2rem; border-bottom: 1px solid rgba(99, 102, 241, 0.2); }
-  .modal-header h2 { font-size: 1.5rem; font-weight: 700; color: #e4e7eb; margin: 0; }
-  .close-btn { width: 32px; height: 32px; border-radius: 6px; border: none; background: rgba(99, 102, 241, 0.1); color: #e4e7eb; font-size: 1.5rem; cursor: pointer; }
-  .modal-body { padding: 2rem; }
-  .form-group { display: flex; flex-direction: column; gap: 0.5rem; margin-bottom: 1.25rem; }
-  .form-group label { display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.875rem; font-weight: 600; color: #e4e7eb; }
-  .form-group input, .form-group select, .form-group textarea { padding: 0.875rem 1rem; background: rgba(15, 23, 42, 0.6); border: 1px solid rgba(99, 102, 241, 0.2); border-radius: 8px; color: #e4e7eb; font-size: 0.875rem; }
-  .form-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
-  .checkbox-label { flex-direction: row !important; align-items: center; gap: 0.5rem !important; cursor: pointer; }
-  .checkbox-label input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
-  .modal-actions { display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 2rem; }
-  
+  .onboarding-container {
+    padding: 2rem;
+    max-width: 1600px;
+    margin: 0 auto;
+  }
+
+  .onboarding-header {
+    margin-bottom: 2rem;
+  }
+
+  .onboarding-header h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    color: #111827;
+    margin-bottom: 0.5rem;
+  }
+
+  .text-muted {
+    color: #6b7280;
+    font-size: 0.875rem;
+  }
+
+  .text-success {
+    color: #059669;
+  }
+
+  .alert {
+    padding: 1rem;
+    border-radius: 0.5rem;
+    margin-bottom: 1.5rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .alert-error {
+    background: #fef2f2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
+  }
+
+  .alert-success {
+    background: #f0fdf4;
+    color: #166534;
+    border: 1px solid #bbf7d0;
+  }
+
+  .alert button {
+    background: none;
+    border: none;
+    font-size: 1.25rem;
+    cursor: pointer;
+  }
+
+  .tabs {
+    display: flex;
+    gap: 0.5rem;
+    border-bottom: 2px solid #e5e7eb;
+    margin-bottom: 2rem;
+  }
+
+  .tab {
+    padding: 0.75rem 1.5rem;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: #6b7280;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: -2px;
+  }
+
+  .tab:hover {
+    color: #111827;
+  }
+
+  .tab-active {
+    color: #3b82f6;
+    border-bottom-color: #3b82f6;
+  }
+
+  .two-column-layout {
+    display: grid;
+    grid-template-columns: 350px 1fr;
+    gap: 2rem;
+  }
+
+  .employee-panel,
+  .tasks-panel {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.75rem;
+    padding: 1.5rem;
+  }
+
+  .panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+  }
+
+  .panel-header h2 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #111827;
+  }
+
+  .loading {
+    text-align: center;
+    padding: 3rem;
+    color: #6b7280;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 3rem;
+    color: #6b7280;
+  }
+
+  .empty-icon {
+    font-size: 4rem;
+    display: block;
+    margin-bottom: 1rem;
+  }
+
+  .employee-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .employee-card {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: left;
+    width: 100%;
+  }
+
+  .employee-card:hover {
+    background: #f9fafb;
+    border-color: #3b82f6;
+  }
+
+  .employee-card.active {
+    background: #eff6ff;
+    border-color: #3b82f6;
+  }
+
+  .employee-avatar {
+    width: 3rem;
+    height: 3rem;
+    border-radius: 50%;
+    background: #3b82f6;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 1.125rem;
+  }
+
+  .employee-info {
+    flex: 1;
+  }
+
+  .employee-name {
+    font-weight: 600;
+    color: #111827;
+    margin-bottom: 0.25rem;
+  }
+
+  .employee-meta {
+    font-size: 0.875rem;
+    color: #6b7280;
+  }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .stat-card {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+    padding: 1rem;
+  }
+
+  .stat-icon {
+    font-size: 2rem;
+  }
+
+  .stat-info {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .stat-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #111827;
+  }
+
+  .stat-label {
+    font-size: 0.875rem;
+    color: #6b7280;
+  }
+
+  .filters {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .select,
+  .input {
+    padding: 0.5rem;
+    border: 1px solid #d1d5db;
+    border-radius: 0.375rem;
+    font-size: 1rem;
+  }
+
+  .select-sm {
+    padding: 0.375rem;
+    font-size: 0.875rem;
+  }
+
+  .select:focus,
+  .input:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  }
+
+  .tasks-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .task-card {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+    padding: 1.5rem;
+    transition: all 0.2s;
+  }
+
+  .task-card:hover {
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  }
+
+  .task-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1rem;
+  }
+
+  .task-title-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex: 1;
+  }
+
+  .task-icon {
+    font-size: 1.5rem;
+  }
+
+  .task-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #111827;
+  }
+
+  .task-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  .task-description {
+    color: #6b7280;
+    font-size: 0.875rem;
+    margin-bottom: 1rem;
+  }
+
+  .task-meta {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+  }
+
+  .task-footer {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.875rem;
+    color: #6b7280;
+  }
+
+  .task-date {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  .badge-success {
+    background: #d1fae5;
+    color: #065f46;
+  }
+
+  .badge-info {
+    background: #dbeafe;
+    color: #1e40af;
+  }
+
+  .badge-warning {
+    background: #fef3c7;
+    color: #92400e;
+  }
+
+  .badge-error {
+    background: #fee2e2;
+    color: #991b1b;
+  }
+
+  .badge-ghost {
+    background: #f3f4f6;
+    color: #4b5563;
+  }
+
+  .btn {
+    padding: 0.5rem 1rem;
+    border-radius: 0.375rem;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.2s;
+    background: none;
+  }
+
+  .btn-primary {
+    background: #3b82f6;
+    color: white;
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background: #2563eb;
+  }
+
+  .btn-sm {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.875rem;
+  }
+
+  .btn-ghost {
+    color: #6b7280;
+    border-color: #d1d5db;
+  }
+
+  .btn-ghost:hover {
+    background: #f9fafb;
+  }
+
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-circle {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+  }
+
+  .section-header h2 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #111827;
+  }
+
+  .workflows-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+    gap: 1.5rem;
+  }
+
+  .workflow-card {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.75rem;
+    padding: 1.5rem;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .workflow-card:hover {
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    border-color: #3b82f6;
+  }
+
+  .workflow-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+
+  .workflow-icon {
+    font-size: 2rem;
+  }
+
+  .workflow-title {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: #111827;
+    margin-bottom: 0.5rem;
+    text-transform: capitalize;
+  }
+
+  .workflow-employee {
+    color: #6b7280;
+    font-size: 0.875rem;
+    margin-bottom: 1rem;
+  }
+
+  .workflow-progress {
+    margin-bottom: 1rem;
+  }
+
+  .progress-bar {
+    height: 0.5rem;
+    background: #e5e7eb;
+    border-radius: 9999px;
+    overflow: hidden;
+    margin-bottom: 0.5rem;
+  }
+
+  .progress-fill {
+    height: 100%;
+    transition: width 0.3s;
+  }
+
+  .progress-text {
+    font-size: 0.875rem;
+    color: #6b7280;
+  }
+
+  .workflow-stage {
+    background: #f9fafb;
+    padding: 0.75rem;
+    border-radius: 0.375rem;
+    margin-bottom: 1rem;
+  }
+
+  .stage-label {
+    font-size: 0.75rem;
+    color: #6b7280;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+
+  .stage-value {
+    display: block;
+    margin-top: 0.25rem;
+    color: #111827;
+    font-weight: 600;
+  }
+
+  .workflow-footer {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.875rem;
+    color: #6b7280;
+  }
+
+  .workflow-date {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 1rem;
+  }
+
+  .modal-box {
+    background: white;
+    border-radius: 0.75rem;
+    padding: 2rem;
+    max-height: 90vh;
+    overflow-y: auto;
+    width: 100%;
+    max-width: 32rem;
+  }
+
+  .max-w-4xl {
+    max-width: 56rem;
+  }
+
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 1.5rem;
+  }
+
+  .modal-header h2 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #111827;
+  }
+
+  .form {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+
+  .form-control {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .label {
+    margin-bottom: 0.5rem;
+  }
+
+  .label-text {
+    font-weight: 500;
+    color: #374151;
+  }
+
+  .label.cursor-pointer {
+    cursor: pointer;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .w-full {
+    width: 100%;
+  }
+
+  .textarea {
+    padding: 0.5rem;
+    border: 1px solid #d1d5db;
+    border-radius: 0.375rem;
+    font-size: 1rem;
+    font-family: inherit;
+    resize: vertical;
+  }
+
+  .textarea:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  }
+
+  .checkbox {
+    width: 1.25rem;
+    height: 1.25rem;
+    border-radius: 0.25rem;
+    border: 1px solid #d1d5db;
+    cursor: pointer;
+  }
+
+  .form-row {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+  }
+
+  .template-preview {
+    background: #f0f9ff;
+    border: 1px solid #bae6fd;
+    border-radius: 0.5rem;
+    padding: 1rem;
+  }
+
+  .template-preview h4 {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #0c4a6e;
+    margin-bottom: 0.5rem;
+  }
+
+  .template-preview p {
+    font-size: 0.875rem;
+    color: #075985;
+  }
+
+  .modal-actions {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: flex-end;
+    margin-top: 1.5rem;
+  }
+
+  .workflow-detail-progress {
+    background: #f9fafb;
+    padding: 1.5rem;
+    border-radius: 0.75rem;
+    margin-bottom: 2rem;
+  }
+
+  .progress-bar-large {
+    height: 1rem;
+    background: #e5e7eb;
+    border-radius: 9999px;
+    overflow: hidden;
+    margin-bottom: 1rem;
+  }
+
+  .progress-stats {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .steps-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .steps-list h3 {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: #111827;
+    margin-bottom: 1rem;
+  }
+
+  .step-item {
+    display: flex;
+    gap: 1rem;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+    padding: 1rem;
+  }
+
+  .step-number {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    background: #3b82f6;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  .step-content {
+    flex: 1;
+  }
+
+  .step-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+
+  .step-header h4 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #111827;
+  }
+
+  .step-notes {
+    color: #6b7280;
+    font-size: 0.875rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .step-meta {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.875rem;
+  }
+
   @media (max-width: 1024px) {
-    .content-grid { grid-template-columns: 1fr; }
-    .employee-sidebar { max-height: 300px; }
+    .two-column-layout {
+      grid-template-columns: 1fr;
+    }
+
+    .workflows-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 768px) {
+    .onboarding-container {
+      padding: 1rem;
+    }
+
+    .stats-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .form-row {
+      grid-template-columns: 1fr;
+    }
   }
 </style>

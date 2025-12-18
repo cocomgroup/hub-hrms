@@ -1,362 +1,202 @@
-# Hub HRMS Backend Fix - With Diagnostics
-# Checks what exists and fixes what's needed
+# CloudFormation Template Auto-Patcher
+# This script automatically fixes the CloudFormation template
 
 param(
     [Parameter(Mandatory=$false)]
-    [string]$StackName = 'hub-hrms',
+    [string]$TemplateFile = "cloudformation-stack.yaml",
     
     [Parameter(Mandatory=$false)]
-    [string]$Region = 'us-east-1'
+    [string]$OutputFile = "cloudformation-stack-fixed.yaml"
 )
 
-$ErrorActionPreference = "Continue"
-
-Write-Host "============================================" -ForegroundColor Cyan
-Write-Host "Hub HRMS - Diagnostics & Fix" -ForegroundColor Cyan
-Write-Host "============================================" -ForegroundColor Cyan
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "CloudFormation Template Auto-Patcher" -ForegroundColor Cyan
+Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
-# Get stack info
-Write-Host "Checking CloudFormation stack..." -ForegroundColor Yellow
-$stackInfo = aws cloudformation describe-stacks --stack-name $StackName --region $Region --output json 2>&1 | ConvertFrom-Json
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "ERROR: Stack not found: $StackName" -ForegroundColor Red
+if (-not (Test-Path $TemplateFile)) {
+    Write-Host "ERROR: Template file not found: $TemplateFile" -ForegroundColor Red
     exit 1
 }
 
-$stack = $stackInfo.Stacks[0]
-Write-Host "Stack Status: $($stack.StackStatus)" -ForegroundColor $(if ($stack.StackStatus -like "*COMPLETE") { "Green" } else { "Yellow" })
-Write-Host ""
+Write-Host "Reading template: $TemplateFile" -ForegroundColor Yellow
+$content = Get-Content $TemplateFile -Raw
 
-# Check ECS cluster
-Write-Host "Checking ECS cluster..." -ForegroundColor Yellow
-$clusterName = "$StackName-cluster"
-$clusterInfo = aws ecs describe-clusters --clusters $clusterName --region $Region --output json 2>&1 | ConvertFrom-Json
+# Fix 1: Change ragdb to hrmsdb
+Write-Host "Fix 1: Changing database name ragdb -> hrmsdb..." -ForegroundColor Cyan
+$content = $content -replace 'ragdb', 'hrmsdb'
+Write-Host "  Done: Database name fixed" -ForegroundColor Green
 
-if ($clusterInfo.clusters.Count -gt 0) {
-    $cluster = $clusterInfo.clusters[0]
-    Write-Host "Cluster: $($cluster.clusterName)" -ForegroundColor Green
-    Write-Host "  Running Tasks: $($cluster.runningTasksCount)" -ForegroundColor White
-    Write-Host "  Pending Tasks: $($cluster.pendingTasksCount)" -ForegroundColor White
+# Fix 2: Add JWT Secret after DatabaseSecret
+Write-Host "Fix 2: Adding JWT Secret resource..." -ForegroundColor Cyan
+$jwtSecretBlock = @"
+
+  JWTSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub `${EnvironmentName}/jwt-secret
+      Description: JWT signing secret for Hub HRMS
+      GenerateSecretString:
+        SecretStringTemplate: '{}'
+        GenerateStringKey: "secret"
+        PasswordLength: 64
+        ExcludeCharacters: '"@/\\'
+"@
+
+# Find DatabaseSecret and add JWT Secret after it
+if ($content -match '(?s)(  DatabaseSecret:.*?\n\n)(  #===)') {
+    $content = $content -replace '(?s)(  DatabaseSecret:.*?\n\n)(  #===)', "`$1$jwtSecretBlock`n`n`$2"
+    Write-Host "  Done: JWT Secret resource added" -ForegroundColor Green
 } else {
-    Write-Host "ERROR: Cluster not found: $clusterName" -ForegroundColor Red
-    exit 1
+    Write-Host "  Warning: Could not find DatabaseSecret section" -ForegroundColor Yellow
 }
-Write-Host ""
 
-# Check ECS service
-Write-Host "Checking ECS service..." -ForegroundColor Yellow
-$serviceName = "$StackName-backend"
-$serviceInfo = aws ecs describe-services --cluster $clusterName --services $serviceName --region $Region --output json 2>&1 | ConvertFrom-Json
+# Fix 3: Update IAM roles to include JWT Secret
+Write-Host "Fix 3: Updating IAM roles..." -ForegroundColor Cyan
 
-if ($serviceInfo.services.Count -gt 0) {
-    $service = $serviceInfo.services[0]
-    Write-Host "Service: $($service.serviceName)" -ForegroundColor Green
-    Write-Host "  Status: $($service.status)" -ForegroundColor White
-    Write-Host "  Desired: $($service.desiredCount)" -ForegroundColor White
-    Write-Host "  Running: $($service.runningCount)" -ForegroundColor White
-    Write-Host "  Task Definition: $($service.taskDefinition)" -ForegroundColor White
-    
-    # Get current task def ARN
-    $currentTaskDefArn = $service.taskDefinition
+# Update ECSTaskExecutionRole
+$content = $content -replace '(?s)(ECSTaskExecutionRole:.*?Resource:\s*- !Ref DatabaseSecret)', "`$1`n                  - !Ref JWTSecret"
+
+# Update ECSTaskRole  
+$content = $content -replace '(?s)(ECSTaskRole:.*?Resource:\s*- !Ref DatabaseSecret)(?!\s*- !Ref JWTSecret)', "`$1`n                  - !Ref JWTSecret"
+
+Write-Host "  Done: IAM roles updated" -ForegroundColor Green
+
+# Fix 4: Replace Environment and Secrets in BackendTaskDefinition
+Write-Host "Fix 4: Updating Backend Task Definition..." -ForegroundColor Cyan
+
+$oldEnvBlock = @'
+          Environment:
+            - Name: SERVER_ADDR
+              Value: ':8080'
+            - Name: GIN_MODE
+              Value: release
+          Secrets:
+            - Name: DATABASE_URL
+              ValueFrom: !Sub '\$\{DatabaseSecret\}:connectionString::'
+'@
+
+$newEnvBlock = @"
+          Environment:
+            - Name: SERVER_ADDR
+              Value: ':8080'
+            - Name: GIN_MODE
+              Value: release
+            - Name: PORT
+              Value: '8080'
+            - Name: ENVIRONMENT
+              Value: 'production'
+          Secrets:
+            - Name: DB_HOST
+              ValueFrom: !Sub '`${DatabaseSecret}:host::'
+            - Name: DB_PORT
+              ValueFrom: !Sub '`${DatabaseSecret}:port::'
+            - Name: DB_NAME
+              ValueFrom: !Sub '`${DatabaseSecret}:dbname::'
+            - Name: DB_USER
+              ValueFrom: !Sub '`${DatabaseSecret}:username::'
+            - Name: DB_PASSWORD
+              ValueFrom: !Sub '`${DatabaseSecret}:password::'
+            - Name: JWT_SECRET
+              ValueFrom: !Sub '`${JWTSecret}:secret::'
+"@
+
+$content = $content -replace [regex]::Escape($oldEnvBlock), $newEnvBlock
+Write-Host "  Done: Backend environment variables updated" -ForegroundColor Green
+
+# Fix 5: Add or update Outputs section
+Write-Host "Fix 5: Adding Outputs section..." -ForegroundColor Cyan
+
+$outputsSection = @"
+
+Outputs:
+  RDSEndpoint:
+    Description: RDS Database Endpoint
+    Value: !GetAtt Database.Endpoint.Address
+    Export:
+      Name: !Sub `${EnvironmentName}-RDS-Endpoint
+
+  DatabaseSecretArn:
+    Description: Database Secret ARN
+    Value: !Ref DatabaseSecret
+    Export:
+      Name: !Sub `${EnvironmentName}-DB-Secret-ARN
+
+  JWTSecretArn:
+    Description: JWT Secret ARN
+    Value: !Ref JWTSecret
+    Export:
+      Name: !Sub `${EnvironmentName}-JWT-Secret-ARN
+
+  ALBDNSName:
+    Description: Application Load Balancer DNS Name
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+    Export:
+      Name: !Sub `${EnvironmentName}-ALB-DNS
+
+  ApplicationURL:
+    Description: Application URL
+    Value: !Sub 'http://`${ApplicationLoadBalancer.DNSName}'
+
+  BackendTargetGroupArn:
+    Description: Backend Target Group ARN
+    Value: !Ref BackendTargetGroup
+    Export:
+      Name: !Sub `${EnvironmentName}-Backend-TG
+
+  ECSClusterName:
+    Description: ECS Cluster Name
+    Value: !Ref ECSCluster
+    Export:
+      Name: !Sub `${EnvironmentName}-ECS-Cluster
+
+  BackendServiceName:
+    Description: Backend ECS Service Name
+    Value: !GetAtt BackendService.Name
+    Export:
+      Name: !Sub `${EnvironmentName}-Backend-Service
+"@
+
+# Check if Outputs section exists
+if ($content -match 'Outputs:') {
+    Write-Host "  Info: Outputs section already exists, skipping" -ForegroundColor Yellow
 } else {
-    Write-Host "ERROR: Service not found: $serviceName" -ForegroundColor Red
-    exit 1
+    $content += $outputsSection
+    Write-Host "  Done: Outputs section added" -ForegroundColor Green
 }
+
+# Write the fixed template
 Write-Host ""
-
-# Check task definitions
-Write-Host "Checking task definitions..." -ForegroundColor Yellow
-$taskDefs = aws ecs list-task-definitions --family-prefix "$StackName-backend" --region $Region --output json 2>&1 | ConvertFrom-Json
-
-if ($taskDefs.taskDefinitionArns.Count -gt 0) {
-    Write-Host "Found $($taskDefs.taskDefinitionArns.Count) task definition(s):" -ForegroundColor Green
-    $taskDefs.taskDefinitionArns | ForEach-Object {
-        Write-Host "  - $_" -ForegroundColor Gray
-    }
-    
-    # Use the service's current task definition
-    $taskDefArn = $currentTaskDefArn
-    Write-Host ""
-    Write-Host "Using current service task definition: $taskDefArn" -ForegroundColor Cyan
-} else {
-    Write-Host "ERROR: No task definitions found for family: $StackName-backend" -ForegroundColor Red
-    Write-Host ""
-    Write-Host "Available task definition families:" -ForegroundColor Yellow
-    aws ecs list-task-definition-families --region $Region --output table
-    exit 1
-}
-Write-Host ""
-
-# Get secrets info
-Write-Host "Checking secrets..." -ForegroundColor Yellow
-
-# Database secret
-$dbSecretArn = aws cloudformation describe-stack-resource `
-    --stack-name $StackName `
-    --logical-resource-id DatabaseSecret `
-    --region $Region `
-    --query 'StackResourceDetail.PhysicalResourceId' `
-    --output text
-
-Write-Host "Database Secret: $dbSecretArn" -ForegroundColor Green
-
-# JWT secret
-$jwtSecretName = "$StackName/jwt-secret"
-$jwtSecretInfo = aws secretsmanager describe-secret --secret-id $jwtSecretName --region $Region 2>&1 | ConvertFrom-Json
-
-if ($LASTEXITCODE -eq 0) {
-    Write-Host "JWT Secret: $($jwtSecretInfo.ARN)" -ForegroundColor Green
-    
-    # Check if valid
-    $jwtValue = aws secretsmanager get-secret-value --secret-id $jwtSecretName --region $Region --query 'SecretString' --output text
-    try {
-        $parsed = $jwtValue | ConvertFrom-Json
-        if ($parsed.secret) {
-            Write-Host "  Status: Valid JSON with 'secret' key" -ForegroundColor Green
-        } else {
-            Write-Host "  Status: Missing 'secret' key" -ForegroundColor Yellow
-        }
-    } catch {
-        Write-Host "  Status: Invalid JSON format" -ForegroundColor Red
-    }
-    
-    $jwtSecretArn = $jwtSecretInfo.ARN
-} else {
-    Write-Host "JWT Secret: NOT FOUND - will create" -ForegroundColor Yellow
-    
-    # Create JWT secret
-    $jwtValue = -join ((65..90) + (97..122) + (48..57) | Get-Random -Count 64 | ForEach-Object {[char]$_})
-    $jwtSecretJson = "{`"secret`":`"$jwtValue`"}"
-    
-    $jwtSecretArn = aws secretsmanager create-secret `
-        --name $jwtSecretName `
-        --description "JWT signing secret for Hub HRMS" `
-        --secret-string $jwtSecretJson `
-        --region $Region `
-        --query 'ARN' `
-        --output text
-    
-    Write-Host "JWT Secret Created: $jwtSecretArn" -ForegroundColor Green
-}
-Write-Host ""
-
-# Get current task definition details
-Write-Host "Analyzing current task definition..." -ForegroundColor Yellow
-$taskDefJson = aws ecs describe-task-definition --task-definition $taskDefArn --region $Region --output json
-$taskDef = ($taskDefJson | ConvertFrom-Json).taskDefinition
-
-$container = $taskDef.containerDefinitions[0]
-
-Write-Host "Current Environment Variables:" -ForegroundColor White
-if ($container.environment) {
-    $container.environment | ForEach-Object {
-        Write-Host "  - $($_.name) = $($_.value)" -ForegroundColor Gray
-    }
-} else {
-    Write-Host "  (none)" -ForegroundColor Gray
-}
+Write-Host "Writing fixed template to: $OutputFile" -ForegroundColor Yellow
+$content | Set-Content $OutputFile -NoNewline
 
 Write-Host ""
-Write-Host "Current Secrets:" -ForegroundColor White
-if ($container.secrets) {
-    $container.secrets | ForEach-Object {
-        Write-Host "  - $($_.name) from $($_.valueFrom)" -ForegroundColor Gray
-    }
-} else {
-    Write-Host "  (none)" -ForegroundColor Gray
-}
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "Template Fixed Successfully!" -ForegroundColor Green
+Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
-
-# Check what needs to be fixed
-$needsFix = $false
-$issues = @()
-
-# Check for individual DB variables
-$hasDBHost = $container.secrets | Where-Object { $_.name -eq "DB_HOST" }
-$hasDBPort = $container.secrets | Where-Object { $_.name -eq "DB_PORT" }
-$hasDBName = $container.secrets | Where-Object { $_.name -eq "DB_NAME" }
-$hasDBUser = $container.secrets | Where-Object { $_.name -eq "DB_USER" }
-$hasDBPassword = $container.secrets | Where-Object { $_.name -eq "DB_PASSWORD" }
-$hasJWTSecret = $container.secrets | Where-Object { $_.name -eq "JWT_SECRET" }
-
-if (-not $hasDBHost) { $issues += "Missing DB_HOST"; $needsFix = $true }
-if (-not $hasDBPort) { $issues += "Missing DB_PORT"; $needsFix = $true }
-if (-not $hasDBName) { $issues += "Missing DB_NAME"; $needsFix = $true }
-if (-not $hasDBUser) { $issues += "Missing DB_USER"; $needsFix = $true }
-if (-not $hasDBPassword) { $issues += "Missing DB_PASSWORD"; $needsFix = $true }
-if (-not $hasJWTSecret) { $issues += "Missing JWT_SECRET"; $needsFix = $true }
-
-if ($needsFix) {
-    Write-Host "Issues Found:" -ForegroundColor Red
-    $issues | ForEach-Object {
-        Write-Host "  ✗ $_" -ForegroundColor Red
-    }
-    Write-Host ""
-    
-    $confirm = Read-Host "Apply fix? (yes/no)"
-    if ($confirm -ne "yes") {
-        Write-Host "Aborted" -ForegroundColor Yellow
-        exit 0
-    }
-    
-    Write-Host ""
-    Write-Host "Applying fix..." -ForegroundColor Yellow
-    Write-Host ""
-    
-    # Create new task definition with correct config
-    $container.environment = @(
-        @{ name = "SERVER_ADDR"; value = ":8080" }
-        @{ name = "GIN_MODE"; value = "release" }
-        @{ name = "PORT"; value = "8080" }
-        @{ name = "ENVIRONMENT"; value = "production" }
-    )
-    
-    $container.secrets = @(
-        @{ name = "DB_HOST"; valueFrom = "$dbSecretArn`:host::" }
-        @{ name = "DB_PORT"; valueFrom = "$dbSecretArn`:port::" }
-        @{ name = "DB_NAME"; valueFrom = "$dbSecretArn`:dbname::" }
-        @{ name = "DB_USER"; valueFrom = "$dbSecretArn`:username::" }
-        @{ name = "DB_PASSWORD"; valueFrom = "$dbSecretArn`:password::" }
-        @{ name = "JWT_SECRET"; valueFrom = "$jwtSecretArn`:secret::" }
-    )
-    
-    # Create new task definition
-    $newTaskDef = @{
-        family = $taskDef.family
-        networkMode = $taskDef.networkMode
-        requiresCompatibilities = $taskDef.requiresCompatibilities
-        cpu = $taskDef.cpu
-        memory = $taskDef.memory
-        executionRoleArn = $taskDef.executionRoleArn
-        containerDefinitions = @($container)
-    }
-    
-    if ($taskDef.taskRoleArn) {
-        $newTaskDef.taskRoleArn = $taskDef.taskRoleArn
-    }
-    
-    $tempFile = "$env:TEMP\hub-hrms-taskdef-fixed.json"
-    $newTaskDef | ConvertTo-Json -Depth 10 | Set-Content $tempFile
-    
-    Write-Host "Registering new task definition..." -ForegroundColor Cyan
-    $newTaskDefArn = aws ecs register-task-definition `
-        --cli-input-json "file://$tempFile" `
-        --region $Region `
-        --query 'taskDefinition.taskDefinitionArn' `
-        --output text
-    
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "✓ New task definition: $newTaskDefArn" -ForegroundColor Green
-    } else {
-        Write-Host "✗ Failed to register task definition" -ForegroundColor Red
-        Write-Host "Task def saved to: $tempFile" -ForegroundColor Yellow
-        exit 1
-    }
-    
-    # Update IAM permissions
-    Write-Host "Updating IAM permissions..." -ForegroundColor Cyan
-    $executionRoleName = $taskDef.executionRoleArn.Split("/")[-1]
-    
-    $policyDoc = @{
-        Version = "2012-10-17"
-        Statement = @(
-            @{
-                Effect = "Allow"
-                Action = @("secretsmanager:GetSecretValue")
-                Resource = @($dbSecretArn, $jwtSecretArn)
-            }
-        )
-    } | ConvertTo-Json -Depth 10
-    
-    $policyFile = "$env:TEMP\secrets-policy.json"
-    $policyDoc | Set-Content $policyFile
-    
-    aws iam put-role-policy `
-        --role-name $executionRoleName `
-        --policy-name SecretsAccess `
-        --policy-document "file://$policyFile" 2>&1 | Out-Null
-    
-    Remove-Item $policyFile -ErrorAction SilentlyContinue
-    Write-Host "✓ IAM permissions updated" -ForegroundColor Green
-    
-    # Update service
-    Write-Host "Updating ECS service..." -ForegroundColor Cyan
-    aws ecs update-service `
-        --cluster $clusterName `
-        --service $serviceName `
-        --task-definition $newTaskDefArn `
-        --force-new-deployment `
-        --region $Region 2>&1 | Out-Null
-    
-    if ($LASTEXITCODE -eq 0) {
-        Write-Host "✓ Service updated" -ForegroundColor Green
-    } else {
-        Write-Host "✗ Service update failed" -ForegroundColor Red
-        exit 1
-    }
-    
-    Write-Host ""
-    Write-Host "Waiting for new tasks to start (60 seconds)..." -ForegroundColor Yellow
-    Start-Sleep -Seconds 60
-    
-    Write-Host ""
-    Write-Host "Checking logs..." -ForegroundColor Cyan
-    $logGroup = "/ecs/$StackName-backend"
-    $logs = aws logs tail $logGroup --region $Region --since 2m --format short 2>&1
-    
-    if ($logs) {
-        $logs | Select-Object -Last 20 | ForEach-Object {
-            $line = $_.ToString()
-            if ($line -match "ResourceInitializationError|unable to pull|invalid character|Failed|error|refused") {
-                Write-Host $line -ForegroundColor Red
-            } elseif ($line -match "Successfully|Starting|listening|Database pool|Server listening") {
-                Write-Host $line -ForegroundColor Green
-            } else {
-                Write-Host $line
-            }
-        }
-    }
-    
-    Write-Host ""
-    Write-Host "============================================" -ForegroundColor Cyan
-    Write-Host "Fix Applied!" -ForegroundColor Green
-    Write-Host "============================================" -ForegroundColor Cyan
-    Write-Host ""
-    
-} else {
-    Write-Host "Configuration looks correct!" -ForegroundColor Green
-    Write-Host "All required environment variables are present." -ForegroundColor Green
-    Write-Host ""
-    
-    # Still check logs
-    Write-Host "Checking recent logs..." -ForegroundColor Cyan
-    $logGroup = "/ecs/$StackName-backend"
-    $logs = aws logs tail $logGroup --region $Region --since 3m --format short 2>&1
-    
-    if ($logs) {
-        $logs | Select-Object -Last 15 | ForEach-Object {
-            $line = $_.ToString()
-            if ($line -match "ResourceInitializationError|unable to pull|invalid character|Failed|error|refused") {
-                Write-Host $line -ForegroundColor Red
-            } elseif ($line -match "Successfully|Starting|listening|Database pool|Server listening") {
-                Write-Host $line -ForegroundColor Green
-            } else {
-                Write-Host $line
-            }
-        }
-    }
-    Write-Host ""
-}
-
-# Show next steps
-$albDns = ($stack.Outputs | Where-Object { $_.OutputKey -eq "ALBDNSName" }).OutputValue
-if ($albDns) {
-    Write-Host "Test backend:" -ForegroundColor Yellow
-    Write-Host "  curl http://$albDns/api/health" -ForegroundColor Cyan
-    Write-Host ""
-}
-
-Write-Host "Monitor logs:" -ForegroundColor Yellow
-Write-Host "  aws logs tail /ecs/$StackName-backend --follow --region $Region" -ForegroundColor Cyan
+Write-Host "Changes applied:" -ForegroundColor Yellow
+Write-Host "  * Fixed database name (ragdb -> hrmsdb)" -ForegroundColor Green
+Write-Host "  * Added JWT Secret resource" -ForegroundColor Green
+Write-Host "  * Updated IAM roles for JWT Secret access" -ForegroundColor Green
+Write-Host "  * Changed from DATABASE_URL to individual DB_* vars" -ForegroundColor Green
+Write-Host "  * Added JWT_SECRET environment variable" -ForegroundColor Green
+Write-Host "  * Added comprehensive Outputs section" -ForegroundColor Green
+Write-Host ""
+Write-Host "Next steps:" -ForegroundColor Yellow
+Write-Host ""
+Write-Host "1. Review the fixed template:" -ForegroundColor White
+Write-Host "   code $OutputFile" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "2. Validate the template:" -ForegroundColor White
+$validateCmd = "aws cloudformation validate-template --template-body file://$OutputFile"
+Write-Host "   $validateCmd" -ForegroundColor Cyan
+Write-Host ""
+Write-Host "3. Update your stack:" -ForegroundColor White
+Write-Host "   aws cloudformation update-stack --stack-name hub-hrms \`" -ForegroundColor Cyan
+Write-Host "     --template-body file://$OutputFile \`" -ForegroundColor Cyan
+Write-Host "     --capabilities CAPABILITY_NAMED_IAM \`" -ForegroundColor Cyan
+Write-Host "     --parameters ParameterKey=DBPassword,UsePreviousValue=true \`" -ForegroundColor Cyan
+Write-Host "     ParameterKey=BackendImageUri,UsePreviousValue=true \`" -ForegroundColor Cyan
+Write-Host "     ParameterKey=FrontendImageUri,UsePreviousValue=true\`" -ForegroundColor Cyan
 Write-Host ""

@@ -18,6 +18,7 @@ type Repositories struct {
 	PTO         PTORepository
 	Benefits    BenefitsRepository
 	Payroll     PayrollRepository
+	Recruiting  RecruitingRepository
 }
 
 func NewRepositories(db *pgxpool.Pool) *Repositories {
@@ -30,6 +31,7 @@ func NewRepositories(db *pgxpool.Pool) *Repositories {
 		PTO:         NewPTORepository(db),
 		Benefits:    NewBenefitsRepository(db),
 		Payroll:     NewPayrollRepository(db),
+		Recruiting:  NewRecruitingRepository(db),
 	}
 }
 
@@ -83,16 +85,47 @@ type PTORepository interface {
 }
 
 
-// PayrollRepository interface
+// PayrollRepository interface defines payroll operations
 type PayrollRepository interface {
+	// Compensation
+	CreateCompensation(ctx context.Context, comp *models.EmployeeCompensation) error
+	GetCompensationByEmployeeID(ctx context.Context, employeeID uuid.UUID) (*models.EmployeeCompensation, error)
+	UpdateCompensation(ctx context.Context, comp *models.EmployeeCompensation) error
+
+	// Tax Withholding
+	CreateTaxWithholding(ctx context.Context, tax *models.W2TaxWithholding) error
+	GetTaxWithholdingByEmployeeID(ctx context.Context, employeeID uuid.UUID) (*models.W2TaxWithholding, error)
+	UpdateTaxWithholding(ctx context.Context, tax *models.W2TaxWithholding) error
+
+	// Payroll Periods
 	CreatePeriod(ctx context.Context, period *models.PayrollPeriod) error
 	GetPeriodByID(ctx context.Context, id uuid.UUID) (*models.PayrollPeriod, error)
 	ListPeriods(ctx context.Context, filters map[string]interface{}) ([]*models.PayrollPeriod, error)
 	UpdatePeriod(ctx context.Context, period *models.PayrollPeriod) error
+
+	// Pay Stubs
 	CreatePayStub(ctx context.Context, stub *models.PayStub) error
 	GetPayStubByID(ctx context.Context, id uuid.UUID) (*models.PayStub, error)
-	GetPayStubsByEmployee(ctx context.Context, employeeID uuid.UUID) ([]*models.PayStub, error)
-	GetPayStubsByPeriod(ctx context.Context, periodID uuid.UUID) ([]*models.PayStub, error)
+	ListPayStubsByEmployee(ctx context.Context, employeeID uuid.UUID) ([]*models.PayStub, error)
+	ListPayStubsByPeriod(ctx context.Context, periodID uuid.UUID) ([]*models.PayStub, error)
+
+	// Pay Stub Details
+	CreatePayStubEarning(ctx context.Context, earning *models.PayStubEarning) error
+	CreatePayStubDeduction(ctx context.Context, deduction *models.PayStubDeduction) error
+	CreatePayStubTax(ctx context.Context, tax *models.PayStubTax) error
+	GetPayStubEarnings(ctx context.Context, payStubID uuid.UUID) ([]models.PayStubEarning, error)
+	GetPayStubDeductions(ctx context.Context, payStubID uuid.UUID) ([]models.PayStubDeduction, error)
+	GetPayStubTaxes(ctx context.Context, payStubID uuid.UUID) ([]models.PayStubTax, error)
+
+	// 1099 Forms
+	Create1099(ctx context.Context, form *models.Form1099) error
+	Get1099ByEmployeeAndYear(ctx context.Context, employeeID uuid.UUID, year int) (*models.Form1099, error)
+	List1099ByYear(ctx context.Context, year int) ([]*models.Form1099, error)
+	Update1099(ctx context.Context, form *models.Form1099) error
+
+	// YTD Calculations
+	GetYTDEarnings(ctx context.Context, employeeID uuid.UUID, year int) (float64, error)
+	GetYTDTaxes(ctx context.Context, employeeID uuid.UUID, year int) (float64, error)
 }
 
 // UserRepository implementation
@@ -514,27 +547,3 @@ func (r *onboardingRepository) DeleteTask(ctx context.Context, id uuid.UUID) err
 	_, err := r.db.Exec(ctx, query, id)
 	return err
 }
-
-
-type ptoRepository struct{ db *pgxpool.Pool }
-func NewPTORepository(db *pgxpool.Pool) PTORepository { return &ptoRepository{db: db} }
-func (r *ptoRepository) GetBalance(ctx context.Context, employeeID uuid.UUID) (*models.PTOBalance, error) { return nil, nil }
-func (r *ptoRepository) CreateBalance(ctx context.Context, balance *models.PTOBalance) error { return nil }
-func (r *ptoRepository) UpdateBalance(ctx context.Context, balance *models.PTOBalance) error { return nil }
-func (r *ptoRepository) CreateRequest(ctx context.Context, request *models.PTORequest) error { return nil }
-func (r *ptoRepository) GetRequestByID(ctx context.Context, id uuid.UUID) (*models.PTORequest, error) { return nil, nil }
-func (r *ptoRepository) GetRequestsByEmployee(ctx context.Context, employeeID uuid.UUID) ([]*models.PTORequest, error) { return nil, nil }
-func (r *ptoRepository) UpdateRequest(ctx context.Context, request *models.PTORequest) error { return nil }
-func (r *ptoRepository) ListRequests(ctx context.Context, filters map[string]interface{}) ([]*models.PTORequest, error) { return nil, nil }
-
-
-type payrollRepository struct{ db *pgxpool.Pool }
-func NewPayrollRepository(db *pgxpool.Pool) PayrollRepository { return &payrollRepository{db: db} }
-func (r *payrollRepository) CreatePeriod(ctx context.Context, period *models.PayrollPeriod) error { return nil }
-func (r *payrollRepository) GetPeriodByID(ctx context.Context, id uuid.UUID) (*models.PayrollPeriod, error) { return nil, nil }
-func (r *payrollRepository) ListPeriods(ctx context.Context, filters map[string]interface{}) ([]*models.PayrollPeriod, error) { return nil, nil }
-func (r *payrollRepository) UpdatePeriod(ctx context.Context, period *models.PayrollPeriod) error { return nil }
-func (r *payrollRepository) CreatePayStub(ctx context.Context, stub *models.PayStub) error { return nil }
-func (r *payrollRepository) GetPayStubByID(ctx context.Context, id uuid.UUID) (*models.PayStub, error) { return nil, nil }
-func (r *payrollRepository) GetPayStubsByEmployee(ctx context.Context, employeeID uuid.UUID) ([]*models.PayStub, error) { return nil, nil }
-func (r *payrollRepository) GetPayStubsByPeriod(ctx context.Context, periodID uuid.UUID) ([]*models.PayStub, error) { return nil, nil }

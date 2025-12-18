@@ -24,11 +24,11 @@ Parameters:
 
   BackendImageUri:
     Type: String
-    Description: ECR URI for backend image (e.g., 123456789.dkr.ecr.us-east-1.amazonaws.com/hrms-backend:latest)
+    Description: ECR URI for backend image (e.g., 123456789.dkr.ecr.us-east-1.amazonaws.com/rag-backend:latest)
 
   FrontendImageUri:
     Type: String
-    Description: ECR URI for frontend image (e.g., 123456789.dkr.ecr.us-east-1.amazonaws.com/hrms-frontend:latest)
+    Description: ECR URI for frontend image (e.g., 123456789.dkr.ecr.us-east-1.amazonaws.com/rag-frontend:latest)
 
 Resources:
   #============================================================================
@@ -294,7 +294,7 @@ Resources:
   JWTSecret:
       Type: AWS::SecretsManager::Secret
       Properties:
-        Name: !Sub ${EnvironmentName}/jwt-secret-dev
+        Name: !Sub ${EnvironmentName}/jwt-secret
         Description: JWT signing secret for Hub HRMS
         GenerateSecretString:
           SecretStringTemplate: '{}'
