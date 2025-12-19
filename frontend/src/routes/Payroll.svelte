@@ -178,7 +178,7 @@
       loading = true;
       error = '';
       
-      const employeeId = $authStore.employee?.id;
+      const employeeId = $authStore.user?.employee_id;
       if (!employeeId) {
         error = 'Employee ID not found';
         return;
@@ -252,7 +252,7 @@
       loading = true;
       error = '';
       
-      const employeeId = $authStore.employee?.id;
+      const employeeId = $authStore.user?.employee_id;
       if (!employeeId) {
         error = 'Employee ID not found';
         return;
@@ -284,7 +284,7 @@
       error = '';
       success = '';
       
-      const employeeId = $authStore.employee?.id;
+      const employeeId = $authStore.user?.employee_id;
       if (!employeeId) {
         error = 'Employee ID not found';
         return;
@@ -326,7 +326,7 @@
       loading = true;
       error = '';
       
-      const employeeId = $authStore.employee?.id;
+      const employeeId = $authStore.user?.employee_id;
       if (!employeeId) {
         error = 'Employee ID not found';
         return;
@@ -357,7 +357,7 @@
       error = '';
       success = '';
       
-      const employeeId = $authStore.employee?.id;
+      const employeeId = $authStore.user?.employee_id;
       if (!employeeId) {
         error = 'Employee ID not found';
         return;

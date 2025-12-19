@@ -421,7 +421,7 @@
   }
 
   function getStatusBadgeClass(status: string): string {
-    const classes = {
+    const classes: Record<string, string> = {
       pending: 'badge-warning',
       in_progress: 'badge-info',
       completed: 'badge-success',

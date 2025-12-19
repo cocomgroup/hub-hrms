@@ -139,6 +139,7 @@ func setupRouter(services *service.Services, cfg *config.Config) *chi.Mux {
 		api.RegisterBenefitsRoutes(r, services)
 		api.RegisterPayrollRoutes(r, services)
         api.RegisterRecruitingRoutes(r, services)
+        api.RegisterOrganizationRoutes(r, services)
 	})
 
 	return r

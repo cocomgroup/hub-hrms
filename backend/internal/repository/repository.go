@@ -18,6 +18,7 @@ type Repositories struct {
 	Benefits    BenefitsRepository
 	Payroll     PayrollRepository
 	Recruiting  RecruitingRepository
+	Organization organizationRepository
 }
 
 func NewRepositories(db *pgxpool.Pool) *Repositories {

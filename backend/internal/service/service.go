@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"hub-hrms/backend/internal/config"
 	"hub-hrms/backend/internal/models"
 	"hub-hrms/backend/internal/repository"
@@ -31,6 +32,7 @@ type Services struct {
 	Benefits   BenefitsService
 	Payroll    PayrollService
 	Recruiting RecruitingService
+	Organization OrganizationService
 }
 
 func NewServices(repos *repository.Repositories, cfg *config.Config) *Services {
@@ -43,6 +45,7 @@ func NewServices(repos *repository.Repositories, cfg *config.Config) *Services {
 		PTO:        NewPTOService(repos),
 		Benefits:   NewBenefitsService(repos),
 		Payroll:    NewPayrollService(repos),
+		Organization: NewOrganizationService(repos),
 	}
 }
 
@@ -65,15 +68,31 @@ func NewAuthService(repos *repository.Repositories, cfg *config.Config) AuthServ
 }
 
 func (s *authService) Login(ctx context.Context, req *models.LoginRequest) (*models.LoginResponse, error) {
+	log.Printf("=== LOGIN DEBUG START ===")
+	log.Printf("Email from request: '%s'", req.Email)
+	log.Printf("Password from request: '%s'", req.Password)
+	log.Printf("Password length: %d", len(req.Password))
+
 	user, err := s.repos.User.GetByEmail(ctx, req.Email)
 	if err != nil {
+		log.Printf("GetByEmail ERROR: %v", err)
 		return nil, ErrInvalidCredentials
 	}
+
+	log.Printf("User found in DB:")
+	log.Printf("  - Email: '%s'", user.Email)
+	log.Printf("  - Role: '%s'", user.Role)
+	log.Printf("  - Hash: '%s'", user.PasswordHash)
+	log.Printf("  - Hash length: %d", len(user.PasswordHash))
 
 	if err := s.CheckPassword(user.PasswordHash, req.Password); err != nil {
+		log.Printf("CheckPassword ERROR: %v", err)
 		return nil, ErrInvalidCredentials
 	}
 
+	log.Printf("CheckPassword SUCCESS!")
+	log.Printf("=== LOGIN DEBUG END ===")
+	
 	token, err := s.GenerateToken(user.ID, user.Email, user.Role)
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate token: %w", err)

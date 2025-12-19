@@ -10,6 +10,7 @@
   import PTO from './routes/PTO.svelte';
   import Benefits from './routes/Benefits.svelte';
   import Payroll from './routes/Payroll.svelte';
+  import HRDashboard from './routes/HRDashboard.svelte';
 
   let currentPage = $state('dashboard');
   let workflowId = $state('');
@@ -167,11 +168,21 @@
           <Benefits />
         {:else if currentPage === 'payroll'}
           <Payroll />
+        {:else if currentPage === 'hr-dashboard'}
+          <HRDashboard navigate={navigate} />
         {/if}
       </div>
     </div>
   {/if}
 </main>
+
+<button class="nav-item" class:active={currentPage === 'hr-dashboard'} 
+        onclick={() => navigate('hr-dashboard')}>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+  </svg>
+  <span>HR Dashboard</span>
+</button>
 
 <style>
   :global(*) {
