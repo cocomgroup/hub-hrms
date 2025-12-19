@@ -52,7 +52,7 @@
         return;
       }
 
-      let url = `${import.meta.env.VITE_API_URL}/api/workflows`;
+      let url = `/api/workflows`;
       
       if (statusFilter !== 'all') {
         url += `?status=${statusFilter}`;
@@ -87,7 +87,7 @@
   async function loadEmployees() {
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/employees`, {
+      const response = await fetch(`/api/employees`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
@@ -110,7 +110,7 @@
 
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/workflows`, {
+      const response = await fetch(`/api/workflows`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

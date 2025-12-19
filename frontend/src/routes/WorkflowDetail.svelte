@@ -34,7 +34,7 @@
     
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/workflows/${id}`, {
+      const response = await fetch(`/api/workflows/${id}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
@@ -51,7 +51,7 @@
   async function loadProgress() {
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/workflows/${id}/progress`, {
+      const response = await fetch(`/api/workflows/${id}/progress`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
 
@@ -67,7 +67,7 @@
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/workflows/${id}/steps/${stepId}/complete`,
+        `/api/workflows/${id}/steps/${stepId}/complete`,
         {
           method: 'PUT',
           headers: { 'Authorization': `Bearer ${token}` }
@@ -87,7 +87,7 @@
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/workflows/${id}/steps/${stepId}/start`,
+        `/api/workflows/${id}/steps/${stepId}/start`,
         {
           method: 'PUT',
           headers: { 'Authorization': `Bearer ${token}` }
@@ -111,7 +111,7 @@
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/workflows/${id}/steps/${skipStepId}/skip`,
+        `/api/workflows/${id}/steps/${skipStepId}/skip`,
         {
           method: 'PUT',
           headers: {

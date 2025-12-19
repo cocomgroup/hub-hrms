@@ -64,7 +64,7 @@
     
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/employees`, {
+      const response = await fetch(`/api/employees`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }
@@ -99,7 +99,7 @@
       
       console.log('Creating employee with data:', employeeData);
       
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/employees`, {
+      const response = await fetch(`/api/employees`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -127,7 +127,7 @@
 
     try {
       const token = localStorage.getItem('token');
-      const response = await fetch(`${import.meta.env.VITE_API_URL}/api/employees/${selectedEmployee.id}`, {
+      const response = await fetch(`/api/employees/${selectedEmployee.id}`, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${token}`,

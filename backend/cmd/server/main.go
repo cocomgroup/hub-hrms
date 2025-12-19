@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -16,16 +15,14 @@ import (
 	"hub-hrms/backend/internal/config"
 	"hub-hrms/backend/internal/repository"
 	"hub-hrms/backend/internal/service"
-    //"hub-hrms/backend/internal/storage"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
-	//cfg := loadConfig()
+
     cfg := config.Load()
 
 	log.Printf("Starting backend server...")
@@ -58,16 +55,6 @@ func main() {
 		log.Printf("Migrations completed")
 	}
 
-    	// Initialize optional S3 storage
-//	var s3Storage *storage.S3Storage
-//	if cfg.S3Bucket != "" {
-//		s3Storage, err = storage.NewS3Storage(cfg.S3Bucket, "documents")
-//		if err != nil {
-//			log.Printf("WARNING: S3 not available: %v", err)
-//		} else {
-//			log.Printf("S3 storage enabled: %s", cfg.S3Bucket)
-//		}
-//	}
 
 	// Initialize repositories
     var dbPool = database.GetPool() 
@@ -113,40 +100,6 @@ func main() {
 	log.Println("Server exited")
 }
 
-func initDB(cfg *config.Config) (*pgxpool.Pool, error) {
-	connString := fmt.Sprintf(
-		"postgres://%s:%s@%s:%s/%s?sslmode=disable",
-		cfg.DBUser,
-		cfg.DBPassword,
-		cfg.DBHost,
-		cfg.DBPort,
-		cfg.DBName,
-	)
-
-	poolConfig, err := pgxpool.ParseConfig(connString)
-	if err != nil {
-		return nil, fmt.Errorf("unable to parse connection string: %w", err)
-	}
-
-	poolConfig.MaxConns = 10
-	poolConfig.MinConns = 2
-	poolConfig.MaxConnLifetime = time.Hour
-	poolConfig.MaxConnIdleTime = 30 * time.Minute
-
-	pool, err := pgxpool.NewWithConfig(context.Background(), poolConfig)
-	if err != nil {
-		return nil, fmt.Errorf("unable to create connection pool: %w", err)
-	}
-
-	// Test connection
-	if err := pool.Ping(context.Background()); err != nil {
-		return nil, fmt.Errorf("unable to ping database: %w", err)
-	}
-
-	log.Println("Database connection established")
-	return pool, nil
-}
-
 func setupRouter(services *service.Services, cfg *config.Config) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -159,7 +112,7 @@ func setupRouter(services *service.Services, cfg *config.Config) *chi.Mux {
 
 	// CORS
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins:   []string{"http://localhost:5173", cfg.FrontendURL},
+		AllowedOrigins:   []string{"*"},
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
 		ExposedHeaders:   []string{"Link"},
@@ -220,44 +173,6 @@ type DatabaseSecret struct {
 }
 
 
-func loadConfig() Config {
-
-    cfg := Config{
-        ServerAddr:     getEnv("SERVER_ADDR", ":8080"),
-		Port:           getEnv("PORT", "8080"),
-		JWTSecret:      getEnv("JWT_SECRET", "your-secret-key-change-in-production"),
-		FrontendURL:    getEnv("FRONTEND_URL", "http://localhost:5173"),
-		Environment:    getEnv("ENVIRONMENT", "development"),
-        S3Bucket:       getEnv("S3_BUCKET", ""),
-	}
-
-	dbURL := getEnv("DATABASE_URL", "")
-	if dbURL != "" && len(dbURL) > 0 && dbURL[0] == '{' {
-		var secret DatabaseSecret
-		if err := json.Unmarshal([]byte(dbURL), &secret); err == nil {
-			cfg.DatabaseURL = fmt.Sprintf(
-				"postgres://%s:%s@%s:%s/%s?sslmode=require",
-				secret.Username, secret.Password, secret.Host, secret.Port, secret.DBName,
-			)
-		} else {
-			cfg.DatabaseURL = dbURL
-		}
-	} else if dbURL != "" {
-		cfg.DatabaseURL = dbURL
-	} else {
-		cfg.DatabaseURL = "postgres://postgres:postgresql123!@hub-hrms-postgres.cqxc6o2kin1t.us-east-1.rds.amazonaws.com:5432/hrmsdb?sslmode=disable"
-	}
-
-	return cfg
-}
-
-func getEnv(key, fallback string) string {
-	if v := os.Getenv(key); v != "" {
-		return v
-	}
-	return fallback
-}
-
 func maskPassword(connStr string) string {
 	result := connStr
 	if idx := len("postgres://"); idx < len(connStr) {
@@ -285,17 +200,18 @@ func runMigrations(database *db.Postgres) error {
 	defer cancel()
 
 	// Run migrations
+
 	migrations := []string{
-		enableExtensions,
-		createUsersTable,
-		createEmployeesTable,
-		createOnboardingTasksTable,
-		createTimesheetsTable,
-		createPTOTables,
-		createBenefitsTables,
-		createPayrollTables,
-		createWorkflowTables,
-		seedInitialData,
+		//enableExtensions,
+		//createUsersTable,
+		//createEmployeesTable,
+		//createOnboardingTasksTable,
+		//createTimesheetsTable,
+		//createPTOTables,
+		//createBenefitsTables,
+		//createPayrollTables,
+		//createWorkflowTables,
+		//seedInitialData,
 	}
 
 	for i, sql := range migrations {

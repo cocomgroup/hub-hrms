@@ -1,98 +1,20 @@
-#!/bin/bash
+-- HRMS Database Migration Script - Fixed Version
+-- This handles existing tables and fixes foreign key type mismatches
 
-# Database Initialization Script
-# Run this after the stack is deployed to set up the database schema
+-- ==========================================
+-- Drop problematic foreign keys if they exist
+-- ==========================================
 
-set -e
-
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-BLUE='\033[0;34m'
-NC='\033[0m'
-
-print_info() {
-    echo -e "${BLUE}[INFO]${NC} $1"
-}
-
-print_success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
-}
-
-print_error() {
-    echo -e "${RED}[ERROR]${NC} $1"
-}
-
-# Configuration
-STACK_NAME="hrms-prod"
-REGION="us-east-1"
-
-# Get database endpoint from CloudFormation
-get_db_endpoint() {
-    aws cloudformation describe-stacks \
-        --stack-name "$STACK_NAME" \
-        --region "$REGION" \
-        --query 'Stacks[0].Outputs[?OutputKey==`DatabaseEndpoint`].OutputValue' \
-        --output text
-}
-
-# Get database credentials
-get_db_credentials() {
-    print_info "Retrieving database credentials..."
-    
-    DB_HOST=$(get_db_endpoint)
-    DB_NAME=$(aws cloudformation describe-stacks \
-        --stack-name "$STACK_NAME" \
-        --region "$REGION" \
-        --query 'Stacks[0].Outputs[?OutputKey==`DatabaseName`].OutputValue' \
-        --output text)
-    
-    echo "Database Host: $DB_HOST"
-    echo "Database Name: $DB_NAME"
-}
-
-# Function to run SQL file via ECS task
-run_sql_via_ecs() {
-    local SQL_FILE=$1
-    
-    print_info "Running SQL file: $SQL_FILE"
-    
-    # Get cluster and service info
-    CLUSTER=$(aws cloudformation describe-stacks \
-        --stack-name "$STACK_NAME" \
-        --region "$REGION" \
-        --query 'Stacks[0].Outputs[?OutputKey==`ECSClusterName`].OutputValue' \
-        --output text)
-    
-    # Get a running task
-    TASK_ARN=$(aws ecs list-tasks \
-        --cluster "$CLUSTER" \
-        --service-name "${STACK_NAME}-backend" \
-        --desired-status RUNNING \
-        --region "$REGION" \
-        --query 'taskArns[0]' \
-        --output text)
-    
-    if [ -z "$TASK_ARN" ] || [ "$TASK_ARN" == "None" ]; then
-        print_error "No running backend tasks found"
-        return 1
-    fi
-    
-    print_info "Using task: $TASK_ARN"
-    
-    # Execute SQL commands
-    print_info "Executing migrations..."
-    
-    # Note: This requires ECS Exec to be enabled
-    print_warning "ECS Exec must be enabled for this to work"
-    print_info "Attempting to execute SQL file..."
-}
-
-# Generate SQL for all migrations
-generate_migration_sql() {
-    cat << 'EOF' > /tmp/init_database.sql
--- HRMS Database Initialization Script
--- This combines all migration files
+DO $$ 
+BEGIN
+    -- Drop foreign key if it exists with wrong type
+    IF EXISTS (
+        SELECT 1 FROM information_schema.table_constraints 
+        WHERE constraint_name = 'workflow_approvals_step_id_fkey'
+    ) THEN
+        ALTER TABLE workflow_approvals DROP CONSTRAINT workflow_approvals_step_id_fkey;
+    END IF;
+END $$;
 
 -- ==========================================
 -- PTO Tables
@@ -341,10 +263,11 @@ CREATE TABLE IF NOT EXISTS workflow_instances (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Create workflow_approvals without the foreign key first
 CREATE TABLE IF NOT EXISTS workflow_approvals (
     id SERIAL PRIMARY KEY,
     workflow_instance_id INTEGER REFERENCES workflow_instances(id) ON DELETE CASCADE,
-    step_id INTEGER REFERENCES workflow_steps(id),
+    step_id INTEGER,
     approver_id INTEGER NOT NULL,
     status VARCHAR(50) DEFAULT 'pending',
     comments TEXT,
@@ -352,6 +275,21 @@ CREATE TABLE IF NOT EXISTS workflow_approvals (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Now add the foreign key constraint properly
+DO $$ 
+BEGIN
+    -- Only add foreign key if both columns exist and are compatible
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints 
+        WHERE constraint_name = 'workflow_approvals_step_id_fkey'
+        AND table_name = 'workflow_approvals'
+    ) THEN
+        ALTER TABLE workflow_approvals 
+        ADD CONSTRAINT workflow_approvals_step_id_fkey 
+        FOREIGN KEY (step_id) REFERENCES workflow_steps(id);
+    END IF;
+END $$;
 
 -- ==========================================
 -- User and Authentication Tables
@@ -375,42 +313,43 @@ CREATE TABLE IF NOT EXISTS users (
 -- Indexes for Performance
 -- ==========================================
 
-CREATE INDEX idx_pto_requests_employee ON pto_requests(employee_id);
-CREATE INDEX idx_pto_requests_status ON pto_requests(status);
-CREATE INDEX idx_pto_balances_employee ON pto_balances(employee_id);
+CREATE INDEX IF NOT EXISTS idx_pto_requests_employee ON pto_requests(employee_id);
+CREATE INDEX IF NOT EXISTS idx_pto_requests_status ON pto_requests(status);
+CREATE INDEX IF NOT EXISTS idx_pto_balances_employee ON pto_balances(employee_id);
 
-CREATE INDEX idx_employee_benefits_employee ON employee_benefits(employee_id);
-CREATE INDEX idx_employee_benefits_plan ON employee_benefits(plan_id);
+CREATE INDEX IF NOT EXISTS idx_employee_benefits_employee ON employee_benefits(employee_id);
+CREATE INDEX IF NOT EXISTS idx_employee_benefits_plan ON employee_benefits(plan_id);
 
-CREATE INDEX idx_timesheets_employee ON timesheets(employee_id);
-CREATE INDEX idx_timesheets_status ON timesheets(status);
-CREATE INDEX idx_timesheet_entries_timesheet ON timesheet_entries(timesheet_id);
+CREATE INDEX IF NOT EXISTS idx_timesheets_employee ON timesheets(employee_id);
+CREATE INDEX IF NOT EXISTS idx_timesheets_status ON timesheets(status);
+CREATE INDEX IF NOT EXISTS idx_timesheet_entries_timesheet ON timesheet_entries(timesheet_id);
 
-CREATE INDEX idx_payroll_records_run ON payroll_records(payroll_run_id);
-CREATE INDEX idx_payroll_records_employee ON payroll_records(employee_id);
+CREATE INDEX IF NOT EXISTS idx_payroll_records_run ON payroll_records(payroll_run_id);
+CREATE INDEX IF NOT EXISTS idx_payroll_records_employee ON payroll_records(employee_id);
 
-CREATE INDEX idx_applications_candidate ON applications(candidate_id);
-CREATE INDEX idx_applications_job ON applications(job_posting_id);
-CREATE INDEX idx_interviews_application ON interviews(application_id);
+CREATE INDEX IF NOT EXISTS idx_applications_candidate ON applications(candidate_id);
+CREATE INDEX IF NOT EXISTS idx_applications_job ON applications(job_posting_id);
+CREATE INDEX IF NOT EXISTS idx_interviews_application ON interviews(application_id);
 
-CREATE INDEX idx_workflow_instances_workflow ON workflow_instances(workflow_id);
-CREATE INDEX idx_workflow_instances_entity ON workflow_instances(entity_type, entity_id);
-CREATE INDEX idx_workflow_approvals_instance ON workflow_approvals(workflow_instance_id);
+CREATE INDEX IF NOT EXISTS idx_workflow_instances_workflow ON workflow_instances(workflow_id);
+CREATE INDEX IF NOT EXISTS idx_workflow_instances_entity ON workflow_instances(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_workflow_approvals_instance ON workflow_approvals(workflow_instance_id);
 
-CREATE INDEX idx_users_email ON users(email);
-CREATE INDEX idx_users_username ON users(username);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
 
 -- ==========================================
 -- Insert Sample Data
 -- ==========================================
 
 -- Insert a default admin user (password: admin123)
--- Password hash generated with bcrypt
+-- Password hash is bcrypt of 'admin123'
+-- You should change this password immediately after first login!
 INSERT INTO users (username, email, password_hash, first_name, last_name, role, is_active)
 VALUES (
     'admin',
-    'admin@example.com',
-    '$2a$10$rQ7YXVJK5xGJ3K5jYx8b5.QZ4Y8K5K5K5K5K5K5K5K5K5K5K5K5K5',
+    'admin@cocomgroup.com',
+    '$2a$10$N9qo8uLOickgx2ZMRZoMye1J1mPGp7.EaHMgxvvvKLQYYaGZhcAXq',
     'Admin',
     'User',
     'admin',
@@ -421,7 +360,7 @@ VALUES (
 INSERT INTO pto_policies (name, description, days_per_year, carryover_days, accrual_rate, effective_date)
 VALUES (
     'Standard PTO',
-    'Standard paid time off policy',
+    'Standard paid time off policy - 20 days per year',
     20,
     5,
     1.67,
@@ -429,78 +368,22 @@ VALUES (
 ) ON CONFLICT DO NOTHING;
 
 -- ==========================================
--- Completion
+-- Verification Query
 -- ==========================================
 
-SELECT 'Database initialization completed successfully!' as status;
-EOF
+-- Show all created tables
+SELECT 
+    'Database initialization completed successfully!' as status,
+    COUNT(*) as table_count
+FROM information_schema.tables 
+WHERE table_schema = 'public' 
+AND table_type = 'BASE TABLE';
 
-    print_success "Migration SQL generated at /tmp/init_database.sql"
-}
-
-# Function to display connection instructions
-display_connection_info() {
-    DB_HOST=$(get_db_endpoint)
-    DB_NAME=$(aws cloudformation describe-stacks \
-        --stack-name "$STACK_NAME" \
-        --region "$REGION" \
-        --query 'Stacks[0].Outputs[?OutputKey==`DatabaseName`].OutputValue' \
-        --output text)
-    
-    echo ""
-    echo "======================================"
-    echo "Database Connection Information"
-    echo "======================================"
-    echo "Host: $DB_HOST"
-    echo "Port: 5432"
-    echo "Database: $DB_NAME"
-    echo "Username: postgres"
-    echo "Password: [as configured in stack]"
-    echo ""
-    echo "To connect manually:"
-    echo "psql -h $DB_HOST -U postgres -d $DB_NAME"
-    echo ""
-    echo "To run the initialization SQL:"
-    echo "psql -h $DB_HOST -U postgres -d $DB_NAME -f /tmp/init_database.sql"
-    echo ""
-}
-
-# Main function
-main() {
-    print_info "Initializing HRMS database..."
-    
-    # Parse arguments
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            --stack-name)
-                STACK_NAME="$2"
-                shift 2
-                ;;
-            --region)
-                REGION="$2"
-                shift 2
-                ;;
-            --help)
-                echo "Usage: ./init-database.sh [options]"
-                echo ""
-                echo "Options:"
-                echo "  --stack-name NAME  CloudFormation stack name (default: hrms-prod)"
-                echo "  --region REGION    AWS region (default: us-east-1)"
-                echo "  --help             Show this help message"
-                exit 0
-                ;;
-            *)
-                print_error "Unknown option: $1"
-                exit 1
-                ;;
-        esac
-    done
-    
-    generate_migration_sql
-    display_connection_info
-    
-    print_success "Database initialization script ready"
-    print_info "Please run the SQL file manually using psql or your preferred database client"
-}
-
-main "$@"
+-- Show table list
+SELECT 
+    table_name,
+    (SELECT COUNT(*) FROM information_schema.columns WHERE table_name = t.table_name) as column_count
+FROM information_schema.tables t
+WHERE table_schema = 'public' 
+AND table_type = 'BASE TABLE'
+ORDER BY table_name;
