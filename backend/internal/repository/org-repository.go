@@ -32,6 +32,7 @@ type OrganizationRepository interface {
 	GetStats(ctx context.Context, orgID uuid.UUID) (*models.OrganizationStats, error)
 }
 
+
 type organizationRepository struct {
 	db *pgxpool.Pool
 }
@@ -110,11 +111,15 @@ func (r *organizationRepository) GetByCode(ctx context.Context, code string) (*m
 func (r *organizationRepository) List(ctx context.Context, filters map[string]interface{}) ([]*models.OrganizationWithDetails, error) {
 	query := `
 		SELECT 
-			o.id, o.name, o.code, o.description, o.parent_id, o.manager_id, o.type, o.level,
-			o.cost_center, o.location, o.is_active, o.employee_count, o.created_by, o.created_at, o.updated_at,
-			m.first_name || ' ' || m.last_name as manager_name,
-			m.email as manager_email,
-			p.name as parent_name
+			o.id, o.name, o.code, 
+			COALESCE(o.description, '') as description, 
+			o.parent_id, o.manager_id, o.type, o.level,
+			COALESCE(o.cost_center, '') as cost_center, 
+			COALESCE(o.location, '') as location, 
+			o.is_active, o.employee_count, o.created_by, o.created_at, o.updated_at,
+			COALESCE(m.first_name || ' ' || m.last_name, '') as manager_name,
+			COALESCE(m.email, '') as manager_email,
+			COALESCE(p.name, '') as parent_name
 		FROM organizations o
 		LEFT JOIN employees m ON o.manager_id = m.id
 		LEFT JOIN organizations p ON o.parent_id = p.id

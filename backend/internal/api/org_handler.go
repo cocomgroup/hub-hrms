@@ -5,6 +5,7 @@ import (
 	"hub-hrms/backend/internal/models"
 	"hub-hrms/backend/internal/service"
 	"net/http"
+	"log"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -129,6 +130,7 @@ func listOrganizationsHandler(services *service.Services) http.HandlerFunc {
 		
 		orgs, err := services.Organization.ListOrganizations(r.Context(), filters)
 		if err != nil {
+			log.Printf("ERROR listing organizations: %v", err)
 			respondError(w, http.StatusInternalServerError, "failed to list organizations")
 			return
 		}

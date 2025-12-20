@@ -27,10 +27,21 @@ INSERT INTO users (username, email, password_hash, first_name, last_name, role, 
 VALUES (
     'admin',
     'admin@cocomgroup.com',
-    '$2a$10$N9qo8uLOickgx2ZMRZoMye1J1mPGp7.EaHMgxvvvKLQYYaGZhcAXq',
+    '$2a$10$r9W05gPN.BTleDt6yOghVulZ5uShQtk/sqHBswfG9ydJ8E3ZyCriG',
     'Admin',
     'User',
     'admin',
+    true
+);
+
+INSERT INTO users (username, email, password_hash, first_name, last_name, role, is_active)
+VALUES (
+    'jane_smith',
+    'jane.smith@cocomgroup.com',
+    '$2a$10$r9W05gPN.BTleDt6yOghVulZ5uShQtk/sqHBswfG9ydJ8E3ZyCriG',
+    'Jane',
+    'Smith',
+    'hr-mgr',
     true
 );
 

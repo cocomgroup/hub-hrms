@@ -15,11 +15,23 @@
   let currentPage = $state('dashboard');
   let workflowId = $state('');
   let isAuthenticated = $state(false);
+  let userRole = $state<string | null>(null);
 
   // Subscribe to auth store using $effect
   $effect(() => {
     const unsubscribe = authStore.subscribe(value => {
       isAuthenticated = value.isAuthenticated;
+      userRole = value.user?.role || null;
+      
+      // Role-based routing after login
+      if (isAuthenticated && value.user) {
+        // Redirect HR managers to HR Dashboard
+        if (value.user.role === 'hr-manager' || value.user.role === 'admin') {
+          if (currentPage === 'dashboard') {
+            currentPage = 'hr-dashboard';
+          }
+        }
+      }
     });
     return unsubscribe;
   });
@@ -58,10 +70,20 @@
               <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
             </svg>
           </div>
-          <span class="logo-text">PeopleHub</span>
+          <span class="logo-text">CoCom PeopleHub</span>
         </div>
 
         <nav class="nav">
+          <!-- HR Dashboard - Only visible to HR managers and admins -->
+          {#if userRole === 'hr-manager' || userRole === 'admin'}
+            <button class="nav-item" class:active={currentPage === 'hr-dashboard'} onclick={() => navigate('hr-dashboard')}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+              </svg>
+              <span>HR Dashboard</span>
+            </button>
+          {/if}
+
           <button class="nav-item" class:active={currentPage === 'dashboard'} onclick={() => navigate('dashboard')}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="3" y="3" width="7" height="7"></rect>
@@ -175,14 +197,6 @@
     </div>
   {/if}
 </main>
-
-<button class="nav-item" class:active={currentPage === 'hr-dashboard'} 
-        onclick={() => navigate('hr-dashboard')}>
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-  </svg>
-  <span>HR Dashboard</span>
-</button>
 
 <style>
   :global(*) {

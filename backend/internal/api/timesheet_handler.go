@@ -13,7 +13,10 @@ import (
 
 // RegisterTimesheetRoutes registers all timesheet-related routes
 func RegisterTimesheetRoutes(r chi.Router, services *service.Services) {
-	r.Route("/timesheet", func(r chi.Router) {
+	r.Route("/timesheets", func(r chi.Router) {
+		r.Use(authMiddleware(services))
+		r.Get("/", listTimesheetsHandler(services))
+
 		// Clock in/out
 		r.Post("/clock-in", clockInHandler(services))
 		r.Post("/clock-out", clockOutHandler(services))
@@ -425,6 +428,17 @@ func getEmployeeSummaryHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
+// List all timesheets with optional status filter
+func listTimesheetsHandler(services *service.Services) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		status := r.URL.Query().Get("status")
+		
+		// TODO: Implement full list when service is ready
+		// For now, return empty array
+		_ = status
+		respondJSON(w, http.StatusOK, []interface{}{})
+	}
+}
 // Helper functions
 
 

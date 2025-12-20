@@ -3,13 +3,12 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"hub-hrms/backend/internal/models"
 	"hub-hrms/backend/internal/service"
-	"fmt"
 	"log"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/golang-jwt/jwt/v5"
@@ -22,18 +21,7 @@ func RegisterAuthRoutes(r chi.Router, services *service.Services) {
 }
 
 
-// RegisterOnboardingRoutes registers onboarding routes
-func RegisterOnboardingRoutes(r chi.Router, services *service.Services) {
-	r.Route("/onboarding", func(r chi.Router) {
-		r.Use(authMiddleware(services))
-		r.Get("/{employeeId}", getOnboardingTasksHandler(services))
-		r.Put("/{employeeId}/tasks/{taskId}", updateOnboardingTaskHandler(services))
-		r.Post("/{employeeId}/tasks", createOnboardingTaskHandler(services))
-	})
-}
-
-
-// Middleware
+// Middleware - FIXED VERSION
 func authMiddleware(services *service.Services) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -64,14 +52,20 @@ func authMiddleware(services *service.Services) func(http.Handler) http.Handler 
 			// Debug: log claims
 			log.Printf("DEBUG JWT Middleware: Claims = %+v", claims)
 
-			// Add user_id to context
+			// Add both user_id and claims to context
 			ctx := r.Context()
+			
+			// Set user_id in context (as string)
 			if userID, ok := claims["user_id"].(string); ok {
 				log.Printf("DEBUG JWT Middleware: Setting user_id in context: %s", userID)
 				ctx = context.WithValue(ctx, "user_id", userID)
 			} else {
 				log.Printf("WARNING JWT Middleware: user_id not found in claims or wrong type")
 			}
+			
+			// ADDED: Set claims in context so other functions can access them
+			ctx = context.WithValue(ctx, "claims", claims)
+			log.Printf("DEBUG JWT Middleware: Set claims in context")
 
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
@@ -97,156 +91,56 @@ func loginHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
+// Helper functions - FIXED VERSION
 
-// Onboarding handlers
-func getOnboardingTasksHandler(services *service.Services) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		employeeIDStr := chi.URLParam(r, "employeeId")
-		employeeID, err := uuid.Parse(employeeIDStr)
-		if err != nil {
-			respondError(w, http.StatusBadRequest, "invalid employee ID")
-			return
-		}
-
-		tasks, err := services.Onboarding.GetTasksByEmployee(r.Context(), employeeID)
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, "failed to get tasks")
-			return
-		}
-
-		respondJSON(w, http.StatusOK, tasks)
-	}
-}
-
-func updateOnboardingTaskHandler(services *service.Services) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		taskIDStr := chi.URLParam(r, "taskId")
-		taskID, err := uuid.Parse(taskIDStr)
-		if err != nil {
-			respondError(w, http.StatusBadRequest, "invalid task ID")
-			return
-		}
-
-		// Parse update request - only status and completed_at typically updated
-		var reqBody struct {
-			Status      string  `json:"status"`
-			CompletedAt *string `json:"completed_at,omitempty"`
-		}
-		
-		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
-			respondError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
-			return
-		}
-		
-		// Parse completed_at if provided
-		var completedAt *time.Time
-		if reqBody.CompletedAt != nil && *reqBody.CompletedAt != "" {
-			parsed, err := time.Parse(time.RFC3339, *reqBody.CompletedAt)
-			if err != nil {
-				respondError(w, http.StatusBadRequest, "invalid completed_at format: "+err.Error())
-				return
-			}
-			completedAt = &parsed
-		}
-		
-		// Get existing task first
-		existingTask, err := services.Onboarding.GetTaskByID(r.Context(), taskID)
-		if err != nil {
-			respondError(w, http.StatusNotFound, "task not found")
-			return
-		}
-		
-		// Update fields
-		existingTask.Status = reqBody.Status
-		if completedAt != nil {
-			existingTask.CompletedAt = completedAt
-		}
-
-		if err := services.Onboarding.UpdateTask(r.Context(), existingTask); err != nil {
-			respondError(w, http.StatusInternalServerError, "failed to update task: "+err.Error())
-			return
-		}
-
-		respondJSON(w, http.StatusOK, existingTask)
-	}
-}
-
-func createOnboardingTaskHandler(services *service.Services) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		employeeIDStr := chi.URLParam(r, "employeeId")
-		employeeID, err := uuid.Parse(employeeIDStr)
-		if err != nil {
-			respondError(w, http.StatusBadRequest, "invalid employee ID")
-			return
-		}
-
-		// Parse into temporary struct for date handling
-		var reqBody struct {
-			TaskName          string  `json:"task_name"`
-			Description       *string `json:"description,omitempty"`
-			Category          *string `json:"category,omitempty"`
-			Status            string  `json:"status"`
-			DueDate           *string `json:"due_date,omitempty"`
-			DocumentsRequired bool    `json:"documents_required"`
-		}
-		
-		if err := json.NewDecoder(r.Body).Decode(&reqBody); err != nil {
-			respondError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
-			return
-		}
-		
-		// Parse due_date if provided
-		var dueDate *time.Time
-		if reqBody.DueDate != nil && *reqBody.DueDate != "" {
-			parsed, err := time.Parse("2006-01-02", *reqBody.DueDate)
-			if err != nil {
-				respondError(w, http.StatusBadRequest, "invalid due_date format, use YYYY-MM-DD: "+err.Error())
-				return
-			}
-			dueDate = &parsed
-		}
-		
-		task := models.OnboardingTask{
-			EmployeeID:        employeeID,
-			TaskName:          reqBody.TaskName,
-			Description:       reqBody.Description,
-			Category:          reqBody.Category,
-			Status:            reqBody.Status,
-			DueDate:           dueDate,
-			DocumentsRequired: reqBody.DocumentsRequired,
-		}
-
-		if err := services.Onboarding.CreateTask(r.Context(), &task); err != nil {
-			respondError(w, http.StatusInternalServerError, "failed to create task: "+err.Error())
-			return
-		}
-
-		respondJSON(w, http.StatusCreated, task)
-	}
-}
-
-
-// Helper functions
-func respondJSON(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(data)
-}
-
-func respondError(w http.ResponseWriter, status int, message string) {
-	respondJSON(w, status, map[string]string{"error": message})
-}
-
-// Helper functions for context
+// getUserIDFromContext extracts user ID from context (returns UUID)
 func getUserIDFromContext(ctx context.Context) (uuid.UUID, error) {
 	userIDStr, ok := ctx.Value("user_id").(string)
 	if !ok {
+		log.Printf("DEBUG getUserIDFromContext: user_id not found in context")
 		return uuid.Nil, fmt.Errorf("user_id not found in context")
 	}
+	log.Printf("DEBUG getUserIDFromContext: Found user_id: %s", userIDStr)
 	return uuid.Parse(userIDStr)
 }
 
-// getUserIDFromContext extracts user ID from JWT context
+// getEmployeeIDFromContext extracts employee/user ID from context (returns UUID)
+// FIXED: Now tries user_id first, then falls back to claims
+func getEmployeeIDFromContext(ctx context.Context) (uuid.UUID, error) {
+	// First, try to get user_id directly (most common case)
+	if userIDStr, ok := ctx.Value("user_id").(string); ok {
+		log.Printf("DEBUG getEmployeeIDFromContext: Found user_id in context: %s", userIDStr)
+		employeeID, err := uuid.Parse(userIDStr)
+		if err == nil {
+			return employeeID, nil
+		}
+		log.Printf("DEBUG getEmployeeIDFromContext: Failed to parse user_id: %v", err)
+	}
+	
+	// Fallback: try to get from claims
+	claims, ok := ctx.Value("claims").(map[string]interface{})
+	if !ok {
+		log.Printf("DEBUG getEmployeeIDFromContext: Claims not found in context")
+		return uuid.Nil, fmt.Errorf("unauthorized: user not authenticated")
+	}
+
+	// Try user_id from claims
+	if userIDStr, ok := claims["user_id"].(string); ok {
+		log.Printf("DEBUG getEmployeeIDFromContext: Found user_id in claims: %s", userIDStr)
+		return uuid.Parse(userIDStr)
+	}
+	
+	// Try employee_id from claims (if it exists)
+	if employeeIDStr, ok := claims["employee_id"].(string); ok {
+		log.Printf("DEBUG getEmployeeIDFromContext: Found employee_id in claims: %s", employeeIDStr)
+		return uuid.Parse(employeeIDStr)
+	}
+
+	log.Printf("DEBUG getEmployeeIDFromContext: No valid ID found")
+	return uuid.Nil, fmt.Errorf("unauthorized: employee ID not found")
+}
+
+// getUserIDFromJWTContext extracts user ID from JWT context (legacy function - kept for compatibility)
 func getUserIDFromJWTContext(r *http.Request) uuid.UUID {
 	// Debug: log what's in context
 	log.Printf("DEBUG: Attempting to get user_id from context")
@@ -289,18 +183,13 @@ func getUserIDFromJWTContext(r *http.Request) uuid.UUID {
 	return uuid.Nil
 }
 
-func getEmployeeIDFromContext(ctx context.Context) (uuid.UUID, error) {
-	// Extract employee ID from JWT claims in context
-	// This is a placeholder - implement based on your auth middleware
-	claims, ok := ctx.Value("claims").(map[string]interface{})
-	if !ok {
-		return uuid.Nil, service.ErrUnauthorized
-	}
+// Helper functions for responses
+func respondJSON(w http.ResponseWriter, status int, data interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(data)
+}
 
-	employeeIDStr, ok := claims["employee_id"].(string)
-	if !ok {
-		return uuid.Nil, service.ErrUnauthorized
-	}
-
-	return uuid.Parse(employeeIDStr)
+func respondError(w http.ResponseWriter, status int, message string) {
+	respondJSON(w, status, map[string]string{"error": message})
 }

@@ -14,6 +14,8 @@ import (
 // RegisterPayrollRoutes registers all payroll-related routes
 func RegisterPayrollRoutes(r chi.Router, services *service.Services) {
 	r.Route("/payroll", func(r chi.Router) {
+		r.Use(authMiddleware(services))
+		
 		// Compensation endpoints
 		r.Post("/compensation", createCompensationHandler(services))
 		r.Get("/compensation/employee/{employeeID}", getEmployeeCompensationHandler(services))

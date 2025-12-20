@@ -13,6 +13,8 @@ import (
 // RegisterPTORoutes registers all PTO-related routes
 func RegisterPTORoutes(r chi.Router, services *service.Services) {
 	r.Route("/pto", func(r chi.Router) {
+		r.Use(authMiddleware(services))
+		
 		// Balance endpoints
 		r.Get("/balance", getPTOBalanceHandler(services))
 		

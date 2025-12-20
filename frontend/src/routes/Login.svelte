@@ -25,6 +25,8 @@
 
       const data = await response.json();
       authStore.login(data.token, data.user, data.employee);
+      // Wait for localStorage to persist
+      await new Promise(resolve => setTimeout(resolve, 50));
     } catch (err: any) {
       error = err.message || 'Login failed. Please try again.';
     } finally {
@@ -44,7 +46,7 @@
           <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
         </svg>
       </div>
-      <h1>Welcome to PeopleHub</h1>
+      <h1>Welcome to CoCom PeopleHub</h1>
       <p>Sign in to manage your HR operations</p>
     </div>
 

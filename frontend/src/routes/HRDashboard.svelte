@@ -42,30 +42,78 @@
       loading = true;
       error = '';
 
-      // Fetch all dashboard data
-      const [employeesRes, organizationsRes, ptoRes, timesheetsRes, onboardingRes] = await Promise.all([
-        fetch('/api/employees', {
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-        }),
-        fetch('/api/organizations', {
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-        }),
-        fetch('/api/pto/requests?status=pending', {
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-        }),
-        fetch('/api/timesheets?status=pending', {
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-        }),
-        fetch('/api/onboarding?status=pending', {
-          headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-        })
-      ]);
+      const token = localStorage.getItem('token');
+      if (!token) {
+        console.error('No auth token - redirecting to login');
+        window.location.href = '/'; // or your login route
+        return;
+      }
+      
+      const headers = { 
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      };
 
-      const employees = await employeesRes.json();
-      const organizations = await organizationsRes.json();
-      const ptoRequests = await ptoRes.json();
-      const timesheets = await timesheetsRes.json();
-      const onboarding = await onboardingRes.json();
+      // Fetch data with proper error handling for each endpoint
+      let employees: any[] = [];
+      let organizations: any[] = [];
+      let ptoRequests: any[] = [];
+      let timesheets: any[] = [];
+      let onboarding: any[] = [];
+
+      // Fetch employees (usually exists)
+      try {
+        const employeesRes = await fetch('/api/employees', { headers });
+        if (employeesRes.ok) {
+          employees = await employeesRes.json();
+        }
+      } catch (err) {
+        console.warn('Failed to load employees:', err);
+      }
+
+      // Fetch organizations (may not exist)
+      try {
+        const organizationsRes = await fetch('/api/organizations', { headers });
+        if (organizationsRes.ok) {
+          const data = await organizationsRes.json();
+          organizations = Array.isArray(data) ? data : [];
+        }
+      } catch (err) {
+        console.warn('Organizations endpoint not available:', err);
+      }
+
+      // Fetch PTO requests (may not exist)
+      try {
+        const ptoRes = await fetch('/api/pto/requests?status=pending', { headers });
+        if (ptoRes.ok) {
+          const data = await ptoRes.json();
+          ptoRequests = Array.isArray(data) ? data : [];
+        }
+      } catch (err) {
+        console.warn('PTO endpoint not available:', err);
+      }
+
+      // Fetch timesheets (may not exist)
+      try {
+        const timesheetsRes = await fetch('/api/timesheets?status=pending', { headers });
+        if (timesheetsRes.ok) {
+          const data = await timesheetsRes.json();
+          timesheets = Array.isArray(data) ? data : [];
+        }
+      } catch (err) {
+        console.warn('Timesheets endpoint not available:', err);
+      }
+
+      // Fetch onboarding (may not exist)
+      try {
+        const onboardingRes = await fetch('/api/onboarding?status=pending', { headers });
+        if (onboardingRes.ok) {
+          const data = await onboardingRes.json();
+          onboarding = Array.isArray(data) ? data : [];
+        }
+      } catch (err) {
+        console.warn('Onboarding endpoint not available:', err);
+      }
 
       // Calculate stats
       stats = {
