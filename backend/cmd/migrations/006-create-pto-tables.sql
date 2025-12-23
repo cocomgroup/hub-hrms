@@ -18,8 +18,8 @@ CREATE TABLE IF NOT EXISTS pto_balances (
     UNIQUE(employee_id, year)
 );
 
-CREATE INDEX idx_pto_balances_employee ON pto_balances(employee_id);
-CREATE INDEX idx_pto_balances_year ON pto_balances(year);
+CREATE INDEX IF NOT EXISTS idx_pto_balances_employee ON pto_balances(employee_id);
+CREATE INDEX IF NOT EXISTS idx_pto_balances_year ON pto_balances(year);
 
 COMMENT ON TABLE pto_balances IS 'Tracks available PTO days for each employee per year';
 COMMENT ON COLUMN pto_balances.vacation_days IS 'Available vacation days';
@@ -49,10 +49,10 @@ CREATE TABLE IF NOT EXISTS pto_requests (
     CONSTRAINT valid_days CHECK (days_requested > 0)
 );
 
-CREATE INDEX idx_pto_requests_employee ON pto_requests(employee_id);
-CREATE INDEX idx_pto_requests_status ON pto_requests(status);
-CREATE INDEX idx_pto_requests_dates ON pto_requests(start_date, end_date);
-CREATE INDEX idx_pto_requests_type ON pto_requests(pto_type);
+CREATE INDEX IF NOT EXISTS idx_pto_requests_employee ON pto_requests(employee_id);
+CREATE INDEX IF NOT EXISTS idx_pto_requests_status ON pto_requests(status);
+CREATE INDEX IF NOT EXISTS idx_pto_requests_dates ON pto_requests(start_date, end_date);
+CREATE INDEX IF NOT EXISTS idx_pto_requests_type ON pto_requests(pto_type);
 
 COMMENT ON TABLE pto_requests IS 'Stores PTO requests from employees';
 COMMENT ON COLUMN pto_requests.pto_type IS 'Type of PTO: vacation, sick, or personal';
@@ -96,15 +96,17 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trigger_pto_balances_updated_at ON pto_balances;
 CREATE TRIGGER trigger_pto_balances_updated_at
     BEFORE UPDATE ON pto_balances
     FOR EACH ROW
-    EXECUTE FUNCTION update_pto_timestamp();
+    EXECUTE PROCEDURE update_pto_timestamp();
 
+DROP TRIGGER IF EXISTS trigger_pto_requests_updated_at ON pto_requests;
 CREATE TRIGGER trigger_pto_requests_updated_at
     BEFORE UPDATE ON pto_requests
     FOR EACH ROW
-    EXECUTE FUNCTION update_pto_timestamp();
+    EXECUTE PROCEDURE update_pto_timestamp();
 
 -- ============================================================================
 -- Sample Data (Optional - for testing)

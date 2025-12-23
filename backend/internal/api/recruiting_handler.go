@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"log"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -121,7 +122,8 @@ func listJobPostingsHandler(services *service.Services) http.HandlerFunc {
 
 		jobs, err := services.Recruiting.ListJobPostings(r.Context(), status)
 		if err != nil {
-			respondError(w, http.StatusInternalServerError, "failed to list job postings")
+			log.Printf("ERROR: ListJobPostings failed: %v", err)  // ← ADD THIS
+			respondError(w, http.StatusInternalServerError, err.Error())  // ← ADD err.Error()
 			return
 		}
 

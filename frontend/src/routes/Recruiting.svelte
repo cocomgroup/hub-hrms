@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { authStore } from '../stores/auth-store';
+  import { authStore } from '../stores/auth';
 
   // Types
   interface JobPosting {

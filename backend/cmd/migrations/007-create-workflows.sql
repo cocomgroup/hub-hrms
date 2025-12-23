@@ -164,10 +164,11 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Trigger to auto-update progress when step status changes
+DROP TRIGGER IF EXISTS trigger_update_workflow_progress ON workflow_steps;
 CREATE TRIGGER trigger_update_workflow_progress
 AFTER INSERT OR UPDATE OF status ON workflow_steps
 FOR EACH ROW
-EXECUTE FUNCTION update_workflow_progress();
+EXECUTE PROCEDURE update_workflow_progress();
 
 -- Function to check if step dependencies are met
 CREATE OR REPLACE FUNCTION check_step_dependencies(step_uuid UUID)

@@ -23,8 +23,8 @@ CREATE TABLE IF NOT EXISTS employee_compensation (
     )
 );
 
-CREATE INDEX idx_compensation_employee ON employee_compensation(employee_id);
-CREATE INDEX idx_compensation_dates ON employee_compensation(effective_date, end_date);
+CREATE INDEX IF NOT EXISTS idx_compensation_employee ON employee_compensation(employee_id);
+CREATE INDEX IF NOT EXISTS idx_compensation_dates ON employee_compensation(effective_date, end_date);
 
 -- W2 Tax Withholding Table
 CREATE TABLE IF NOT EXISTS w2_tax_withholding (
@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS w2_tax_withholding (
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_tax_withholding_employee ON w2_tax_withholding(employee_id);
+CREATE INDEX IF NOT EXISTS idx_tax_withholding_employee ON w2_tax_withholding(employee_id);
 
 -- Pay Stub Earnings Table
 CREATE TABLE IF NOT EXISTS pay_stub_earnings (
@@ -55,7 +55,7 @@ CREATE TABLE IF NOT EXISTS pay_stub_earnings (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_earnings_pay_stub ON pay_stub_earnings(pay_stub_id);
+CREATE INDEX IF NOT EXISTS idx_earnings_pay_stub ON pay_stub_earnings(pay_stub_id);
 
 -- Pay Stub Deductions Table
 CREATE TABLE IF NOT EXISTS pay_stub_deductions (
@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS pay_stub_deductions (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_deductions_pay_stub ON pay_stub_deductions(pay_stub_id);
+CREATE INDEX IF NOT EXISTS idx_deductions_pay_stub ON pay_stub_deductions(pay_stub_id);
 
 -- Pay Stub Taxes Table
 CREATE TABLE IF NOT EXISTS pay_stub_taxes (
@@ -83,7 +83,7 @@ CREATE TABLE IF NOT EXISTS pay_stub_taxes (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_taxes_pay_stub ON pay_stub_taxes(pay_stub_id);
+CREATE INDEX IF NOT EXISTS idx_taxes_pay_stub ON pay_stub_taxes(pay_stub_id);
 
 -- Form 1099 Table (for contractors)
 CREATE TABLE IF NOT EXISTS form_1099 (
@@ -101,9 +101,9 @@ CREATE TABLE IF NOT EXISTS form_1099 (
     UNIQUE(employee_id, tax_year)
 );
 
-CREATE INDEX idx_1099_employee ON form_1099(employee_id);
-CREATE INDEX idx_1099_year ON form_1099(tax_year);
-CREATE INDEX idx_1099_status ON form_1099(status);
+CREATE INDEX IF NOT EXISTS idx_1099_employee ON form_1099(employee_id);
+CREATE INDEX IF NOT EXISTS idx_1099_year ON form_1099(tax_year);
+CREATE INDEX IF NOT EXISTS idx_1099_status ON form_1099(status);
 
 -- Payroll Adjustments Table (for manual corrections)
 CREATE TABLE IF NOT EXISTS payroll_adjustments (
@@ -119,8 +119,8 @@ CREATE TABLE IF NOT EXISTS payroll_adjustments (
     created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_adjustments_pay_stub ON payroll_adjustments(pay_stub_id);
-CREATE INDEX idx_adjustments_employee ON payroll_adjustments(employee_id);
+CREATE INDEX IF NOT EXISTS idx_adjustments_pay_stub ON payroll_adjustments(pay_stub_id);
+CREATE INDEX IF NOT EXISTS idx_adjustments_employee ON payroll_adjustments(employee_id);
 
 -- Update existing payroll_periods table if needed
 ALTER TABLE payroll_periods ADD COLUMN IF NOT EXISTS processed_by UUID REFERENCES users(id);
@@ -204,7 +204,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Trigger to update updated_at timestamp
+-- Trigger function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -213,51 +213,57 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- FIXED: Triggers for employee_compensation
+DROP TRIGGER IF EXISTS update_employee_compensation_updated_at ON employee_compensation;
 CREATE TRIGGER update_employee_compensation_updated_at
     BEFORE UPDATE ON employee_compensation
     FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
+    EXECUTE PROCEDURE update_updated_at_column();
 
+-- FIXED: Trigger for w2_tax_withholding
+DROP TRIGGER IF EXISTS update_w2_tax_withholding_updated_at ON w2_tax_withholding;
 CREATE TRIGGER update_w2_tax_withholding_updated_at
     BEFORE UPDATE ON w2_tax_withholding
     FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
+    EXECUTE PROCEDURE update_updated_at_column();
 
+-- FIXED: Trigger for form_1099
+DROP TRIGGER IF EXISTS update_form_1099_updated_at ON form_1099;
 CREATE TRIGGER update_form_1099_updated_at
     BEFORE UPDATE ON form_1099
     FOR EACH ROW
-    EXECUTE FUNCTION update_updated_at_column();
+    EXECUTE PROCEDURE update_updated_at_column();
 
 -- Sample data (optional - for testing)
 
 -- Add sample W2 employee compensation
-INSERT INTO employee_compensation (employee_id, employment_type, pay_type, annual_salary, pay_frequency, effective_date, overtime_eligible)
-SELECT 
-    id,
-    'W2',
-    'salary',
-    75000.00,
-    'biweekly',
-    hire_date,
-    FALSE
-FROM employees 
-WHERE employment_type = 'full-time' 
-  AND NOT EXISTS (SELECT 1 FROM employee_compensation WHERE employee_id = employees.id)
-LIMIT 5;
+--INSERT INTO employee_compensation (employee_id, employment_type, pay_type, annual_salary, pay_frequency, effective_date, overtime_eligible)
+--SELECT 
+--    id,
+--    'W2',
+--    'salary',
+--    75000.00,
+--    'biweekly',
+--    hire_date,
+--    FALSE
+----FROM employees 
+--WHERE employment_type = 'full-time' 
+--  AND NOT EXISTS (SELECT 1 FROM employee_compensation WHERE employee_id = employees.id)
+--LIMIT 5;
 
 -- Add sample 1099 contractor compensation
-INSERT INTO employee_compensation (employee_id, employment_type, pay_type, hourly_rate, pay_frequency, effective_date, overtime_eligible)
-SELECT 
-    id,
-    '1099',
-    'hourly',
-    85.00,
-    'weekly',
-    hire_date,
-    FALSE
-FROM employees 
-WHERE employment_type = 'contractor' 
-  AND NOT EXISTS (SELECT 1 FROM employee_compensation WHERE employee_id = employees.id)
-LIMIT 2;
+--INSERT INTO employee_compensation (employee_id, employment_type, pay_type, hourly_rate, pay_frequency, effective_date, overtime_eligible)
+--SELECT 
+--   id,
+--    '1099',
+--    'hourly',
+--    85.00,
+--    'weekly',
+--    hire_date,
+--    FALSE
+--FROM employees 
+--WHERE employment_type = 'contractor' 
+--  AND NOT EXISTS (SELECT 1 FROM employee_compensation WHERE employee_id = employees.id)
+--LIMIT 2;
 
 COMMIT;

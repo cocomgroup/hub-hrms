@@ -104,15 +104,15 @@ CREATE TABLE IF NOT EXISTS enrollment_periods (
 );
 
 -- Create indexes
-CREATE INDEX idx_benefit_plans_category ON benefit_plans(category);
-CREATE INDEX idx_benefit_plans_active ON benefit_plans(active);
-CREATE INDEX idx_benefit_enrollments_employee ON benefit_enrollments(employee_id);
-CREATE INDEX idx_benefit_enrollments_plan ON benefit_enrollments(plan_id);
-CREATE INDEX idx_benefit_enrollments_status ON benefit_enrollments(status);
-CREATE INDEX idx_benefit_dependents_enrollment ON benefit_dependents(enrollment_id);
-CREATE INDEX idx_benefit_claims_employee ON benefit_claims(employee_id);
-CREATE INDEX idx_benefit_claims_enrollment ON benefit_claims(enrollment_id);
-CREATE INDEX idx_benefit_claims_status ON benefit_claims(status);
+CREATE INDEX IF NOT EXISTS idx_benefit_plans_category ON benefit_plans(category);
+CREATE INDEX IF NOT EXISTS idx_benefit_plans_active ON benefit_plans(active);
+CREATE INDEX IF NOT EXISTS idx_benefit_enrollments_employee ON benefit_enrollments(employee_id);
+CREATE INDEX IF NOT EXISTS idx_benefit_enrollments_plan ON benefit_enrollments(plan_id);
+CREATE INDEX IF NOT EXISTS idx_benefit_enrollments_status ON benefit_enrollments(status);
+CREATE INDEX IF NOT EXISTS idx_benefit_dependents_enrollment ON benefit_dependents(enrollment_id);
+CREATE INDEX IF NOT EXISTS idx_benefit_claims_employee ON benefit_claims(employee_id);
+CREATE INDEX IF NOT EXISTS idx_benefit_claims_enrollment ON benefit_claims(enrollment_id);
+CREATE INDEX IF NOT EXISTS idx_benefit_claims_status ON benefit_claims(status);
 
 -- Insert sample benefit plans
 INSERT INTO benefit_plans (
@@ -215,22 +215,3 @@ INSERT INTO enrollment_periods (
     2026,
     true
 ) ON CONFLICT DO NOTHING;
-
--- Migration Down
--- File: migrations/007_create_benefits_tables.down.sql
-
-DROP INDEX IF EXISTS idx_benefit_claims_status;
-DROP INDEX IF EXISTS idx_benefit_claims_enrollment;
-DROP INDEX IF EXISTS idx_benefit_claims_employee;
-DROP INDEX IF EXISTS idx_benefit_dependents_enrollment;
-DROP INDEX IF EXISTS idx_benefit_enrollments_status;
-DROP INDEX IF EXISTS idx_benefit_enrollments_plan;
-DROP INDEX IF EXISTS idx_benefit_enrollments_employee;
-DROP INDEX IF EXISTS idx_benefit_plans_active;
-DROP INDEX IF EXISTS idx_benefit_plans_category;
-
-DROP TABLE IF EXISTS enrollment_periods;
-DROP TABLE IF EXISTS benefit_claims;
-DROP TABLE IF EXISTS benefit_dependents;
-DROP TABLE IF EXISTS benefit_enrollments;
-DROP TABLE IF EXISTS benefit_plans;

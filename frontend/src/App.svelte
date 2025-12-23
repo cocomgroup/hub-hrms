@@ -11,6 +11,9 @@
   import Benefits from './routes/Benefits.svelte';
   import Payroll from './routes/Payroll.svelte';
   import HRDashboard from './routes/HRDashboard.svelte';
+  import ManagerDashboard from './routes/ManagerDashboard.svelte';
+  import Users from './routes/Users.svelte';  
+  import Recruiting from './routes/Recruiting.svelte';  
 
   let currentPage = $state('dashboard');
   let workflowId = $state('');
@@ -23,7 +26,7 @@
       isAuthenticated = value.isAuthenticated;
       userRole = value.user?.role || null;
       
-      // Role-based routing after login
+        // Role-based routing after login
       if (isAuthenticated && value.user) {
         // Redirect HR managers to HR Dashboard
         if (value.user.role === 'hr-manager' || value.user.role === 'admin') {
@@ -31,8 +34,14 @@
             currentPage = 'hr-dashboard';
           }
         }
-      }
-    });
+        // Redirect managers to Manager Dashboard
+        else if (value.user.role === 'manager') {
+          if (currentPage === 'dashboard') {
+            currentPage = 'manager-dashboard';
+          }
+        }
+      } 
+     });
     return unsubscribe;
   });
 
@@ -159,6 +168,30 @@
             </svg>
             <span>Payroll</span>
           </button>
+
+          <button class="action-btn" onclick={() => navigate('recruiting')}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="8.5" cy="7" r="4"></circle>
+            <line x1="20" y1="8" x2="20" y2="14"></line>
+            <line x1="23" y1="11" x2="17" y2="11"></line>
+            <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+          </svg>
+          <span>Recruiting</span>
+        </button>
+
+
+          <!-- ADD THIS: Users - Only visible to admins -->
+          {#if userRole === 'admin'}
+            <button class="nav-item" class:active={currentPage === 'users'} onclick={() => navigate('users')}>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                <circle cx="8.5" cy="7" r="4"></circle>
+                <line x1="20" y1="8" x2="20" y2="14"></line>
+                <line x1="23" y1="11" x2="17" y2="11"></line>
+              </svg>
+              <span>Users</span>
+            </button>
+          {/if}
         </nav>
 
         <button class="logout-btn" onclick={logout}>
@@ -180,6 +213,12 @@
           <Onboarding />
         {:else if currentPage === 'workflows'}
           <Workflows {navigate} />
+        {:else if currentPage === 'hr-dashboard'}
+          <HRDashboard navigate={navigate} />
+        {:else if currentPage === 'manager-dashboard'}
+          <ManagerDashboard navigate={navigate} />
+        {:else if currentPage === 'users'}
+          <Users />  
         {:else if currentPage === 'workflow-detail'}
           <WorkflowDetail id={workflowId} {navigate} />
         {:else if currentPage === 'timesheet'}
@@ -190,8 +229,12 @@
           <Benefits />
         {:else if currentPage === 'payroll'}
           <Payroll />
+        {:else if currentPage === 'recruiting'}
+          <Recruiting />
         {:else if currentPage === 'hr-dashboard'}
           <HRDashboard navigate={navigate} />
+        {:else if currentPage === 'users'}
+          <Users />
         {/if}
       </div>
     </div>

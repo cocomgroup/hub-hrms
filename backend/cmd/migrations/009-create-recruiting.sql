@@ -23,9 +23,9 @@ CREATE TABLE IF NOT EXISTS job_postings (
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_job_postings_status ON job_postings(status);
-CREATE INDEX idx_job_postings_department ON job_postings(department);
-CREATE INDEX idx_job_postings_created_at ON job_postings(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_job_postings_status ON job_postings(status);
+CREATE INDEX IF NOT EXISTS idx_job_postings_department ON job_postings(department);
+CREATE INDEX IF NOT EXISTS idx_job_postings_created_at ON job_postings(created_at DESC);
 
 -- Candidates Table
 CREATE TABLE IF NOT EXISTS candidates (
@@ -52,11 +52,11 @@ CREATE TABLE IF NOT EXISTS candidates (
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_candidates_job_posting ON candidates(job_posting_id);
-CREATE INDEX idx_candidates_status ON candidates(status);
-CREATE INDEX idx_candidates_email ON candidates(email);
-CREATE INDEX idx_candidates_applied_date ON candidates(applied_date DESC);
-CREATE INDEX idx_candidates_score ON candidates(score DESC);
+CREATE INDEX IF NOT EXISTS idx_candidates_job_posting ON candidates(job_posting_id);
+CREATE INDEX IF NOT EXISTS idx_candidates_status ON candidates(status);
+CREATE INDEX IF NOT EXISTS idx_candidates_email ON candidates(email);
+CREATE INDEX IF NOT EXISTS idx_candidates_applied_date ON candidates(applied_date DESC);
+CREATE INDEX IF NOT EXISTS idx_candidates_score ON candidates(score DESC);
 
 -- Interviews Table
 CREATE TABLE IF NOT EXISTS interviews (
@@ -75,10 +75,10 @@ CREATE TABLE IF NOT EXISTS interviews (
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_interviews_candidate ON interviews(candidate_id);
-CREATE INDEX idx_interviews_interviewer ON interviews(interviewer_id);
-CREATE INDEX idx_interviews_scheduled_at ON interviews(scheduled_at);
-CREATE INDEX idx_interviews_status ON interviews(status);
+CREATE INDEX IF NOT EXISTS idx_interviews_candidate ON interviews(candidate_id);
+CREATE INDEX IF NOT EXISTS idx_interviews_interviewer ON interviews(interviewer_id);
+CREATE INDEX IF NOT EXISTS idx_interviews_scheduled_at ON interviews(scheduled_at);
+CREATE INDEX IF NOT EXISTS idx_interviews_status ON interviews(status);
 
 -- Job Board Postings Table
 CREATE TABLE IF NOT EXISTS job_board_postings (
@@ -93,9 +93,9 @@ CREATE TABLE IF NOT EXISTS job_board_postings (
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_job_board_postings_job ON job_board_postings(job_posting_id);
-CREATE INDEX idx_job_board_postings_board ON job_board_postings(board_name);
-CREATE INDEX idx_job_board_postings_status ON job_board_postings(status);
+CREATE INDEX IF NOT EXISTS idx_job_board_postings_job ON job_board_postings(job_posting_id);
+CREATE INDEX IF NOT EXISTS idx_job_board_postings_board ON job_board_postings(board_name);
+CREATE INDEX IF NOT EXISTS idx_job_board_postings_status ON job_board_postings(status);
 
 -- Candidate Emails Table
 CREATE TABLE IF NOT EXISTS candidate_emails (
@@ -109,12 +109,12 @@ CREATE TABLE IF NOT EXISTS candidate_emails (
     created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_candidate_emails_candidate ON candidate_emails(candidate_id);
-CREATE INDEX idx_candidate_emails_sent_by ON candidate_emails(sent_by);
-CREATE INDEX idx_candidate_emails_sent_at ON candidate_emails(sent_at DESC);
-CREATE INDEX idx_candidate_emails_type ON candidate_emails(email_type);
+CREATE INDEX IF NOT EXISTS idx_candidate_emails_candidate ON candidate_emails(candidate_id);
+CREATE INDEX IF NOT EXISTS idx_candidate_emails_sent_by ON candidate_emails(sent_by);
+CREATE INDEX IF NOT EXISTS idx_candidate_emails_sent_at ON candidate_emails(sent_at DESC);
+CREATE INDEX IF NOT EXISTS idx_candidate_emails_type ON candidate_emails(email_type);
 
--- Create trigger to update updated_at timestamp
+-- Create trigger function to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_recruiting_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -123,28 +123,37 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- Drop and recreate trigger for job_postings
+DROP TRIGGER IF EXISTS trigger_job_postings_updated_at ON job_postings;
 CREATE TRIGGER trigger_job_postings_updated_at
     BEFORE UPDATE ON job_postings
     FOR EACH ROW
-    EXECUTE FUNCTION update_recruiting_updated_at();
+    EXECUTE PROCEDURE update_recruiting_updated_at();
 
+-- Drop and recreate trigger for candidates
+DROP TRIGGER IF EXISTS trigger_candidates_updated_at ON candidates;
 CREATE TRIGGER trigger_candidates_updated_at
     BEFORE UPDATE ON candidates
     FOR EACH ROW
-    EXECUTE FUNCTION update_recruiting_updated_at();
+    EXECUTE PROCEDURE update_recruiting_updated_at();
 
+-- Drop and recreate trigger for interviews
+DROP TRIGGER IF EXISTS trigger_interviews_updated_at ON interviews;
 CREATE TRIGGER trigger_interviews_updated_at
     BEFORE UPDATE ON interviews
     FOR EACH ROW
-    EXECUTE FUNCTION update_recruiting_updated_at();
+    EXECUTE PROCEDURE update_recruiting_updated_at();
 
+-- Drop and recreate trigger for job_board_postings
+DROP TRIGGER IF EXISTS trigger_job_board_postings_updated_at ON job_board_postings;
 CREATE TRIGGER trigger_job_board_postings_updated_at
     BEFORE UPDATE ON job_board_postings
     FOR EACH ROW
-    EXECUTE FUNCTION update_recruiting_updated_at();
+    EXECUTE PROCEDURE update_recruiting_updated_at();
 
--- Add some useful views
-CREATE OR REPLACE VIEW recruiting_pipeline_summary AS
+-- FIXED: Drop and recreate views
+DROP VIEW IF EXISTS recruiting_pipeline_summary CASCADE;
+CREATE VIEW recruiting_pipeline_summary AS
 SELECT 
     jp.id as job_id,
     jp.title as job_title,
@@ -161,7 +170,8 @@ FROM job_postings jp
 LEFT JOIN candidates c ON jp.id = c.job_posting_id
 GROUP BY jp.id, jp.title, jp.department, jp.status;
 
-CREATE OR REPLACE VIEW candidate_interview_history AS
+DROP VIEW IF EXISTS candidate_interview_history CASCADE;
+CREATE VIEW candidate_interview_history AS
 SELECT 
     c.id as candidate_id,
     c.first_name,
@@ -174,62 +184,21 @@ SELECT
     i.interview_type,
     i.status as interview_status,
     i.rating,
-    u.first_name as interviewer_first_name,
-    u.last_name as interviewer_last_name
+    u.email as interviewer_email
 FROM candidates c
 JOIN job_postings jp ON c.job_posting_id = jp.id
 LEFT JOIN interviews i ON c.id = i.candidate_id
 LEFT JOIN users u ON i.interviewer_id = u.id
 ORDER BY c.applied_date DESC, i.scheduled_at DESC;
 
--- Add sample data (optional, for testing)
--- Uncomment below to add sample job postings
-
-/*
-INSERT INTO job_postings (
-    id, title, department, location, employment_type,
-    salary_min, salary_max, description, requirements, responsibilities,
-    status, posted_date, created_by
-) VALUES (
-    gen_random_uuid(),
-    'Senior Software Engineer',
-    'Engineering',
-    'San Francisco, CA / Remote',
-    'full-time',
-    150000,
-    200000,
-    'We are seeking an experienced Senior Software Engineer to join our growing team.',
-    ARRAY['5+ years of software development experience', 'Strong proficiency in Go or Python', 'Experience with cloud platforms (AWS, GCP, or Azure)', 'Excellent problem-solving skills'],
-    ARRAY['Design and implement scalable backend services', 'Collaborate with cross-functional teams', 'Mentor junior engineers', 'Participate in code reviews'],
-    'active',
-    NOW(),
-    (SELECT id FROM users WHERE email = 'admin@cocomgroup.com' LIMIT 1)
-),
-(
-    gen_random_uuid(),
-    'Product Manager',
-    'Product',
-    'New York, NY',
-    'full-time',
-    120000,
-    160000,
-    'Looking for a Product Manager to drive our product strategy and execution.',
-    ARRAY['3+ years of product management experience', 'Strong analytical skills', 'Experience with Agile methodologies', 'Excellent communication skills'],
-    ARRAY['Define product roadmap and strategy', 'Work with engineering and design teams', 'Conduct user research', 'Analyze product metrics'],
-    'active',
-    NOW(),
-    (SELECT id FROM users WHERE email = 'admin@cocomgroup.com' LIMIT 1)
-);
-*/
-
--- Grant permissions
-GRANT SELECT, INSERT, UPDATE, DELETE ON job_postings TO hrms_user;
-GRANT SELECT, INSERT, UPDATE, DELETE ON candidates TO hrms_user;
-GRANT SELECT, INSERT, UPDATE, DELETE ON interviews TO hrms_user;
-GRANT SELECT, INSERT, UPDATE, DELETE ON job_board_postings TO hrms_user;
-GRANT SELECT, INSERT, UPDATE, DELETE ON candidate_emails TO hrms_user;
-GRANT SELECT ON recruiting_pipeline_summary TO hrms_user;
-GRANT SELECT ON candidate_interview_history TO hrms_user;
+-- Grant permissions (commented out - uncomment if using dedicated app role)
+-- GRANT SELECT, INSERT, UPDATE, DELETE ON job_postings TO hrms_user;
+-- GRANT SELECT, INSERT, UPDATE, DELETE ON candidates TO hrms_user;
+-- GRANT SELECT, INSERT, UPDATE, DELETE ON interviews TO hrms_user;
+-- GRANT SELECT, INSERT, UPDATE, DELETE ON job_board_postings TO hrms_user;
+-- GRANT SELECT, INSERT, UPDATE, DELETE ON candidate_emails TO hrms_user;
+-- GRANT SELECT ON recruiting_pipeline_summary TO hrms_user;
+-- GRANT SELECT ON candidate_interview_history TO hrms_user;
 
 -- Add comments
 COMMENT ON TABLE job_postings IS 'Job openings and their details';
