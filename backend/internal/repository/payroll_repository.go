@@ -11,6 +11,48 @@ import (
 	"hub-hrms/backend/internal/models"
 )
 
+// PayrollRepository interface defines payroll operations
+type PayrollRepository interface {
+	// Compensation
+	CreateCompensation(ctx context.Context, comp *models.EmployeeCompensation) error
+	GetCompensationByEmployeeID(ctx context.Context, employeeID uuid.UUID) (*models.EmployeeCompensation, error)
+	UpdateCompensation(ctx context.Context, comp *models.EmployeeCompensation) error
+
+	// Tax Withholding
+	CreateTaxWithholding(ctx context.Context, tax *models.W2TaxWithholding) error
+	GetTaxWithholdingByEmployeeID(ctx context.Context, employeeID uuid.UUID) (*models.W2TaxWithholding, error)
+	UpdateTaxWithholding(ctx context.Context, tax *models.W2TaxWithholding) error
+
+	// Payroll Periods
+	CreatePeriod(ctx context.Context, period *models.PayrollPeriod) error
+	GetPeriodByID(ctx context.Context, id uuid.UUID) (*models.PayrollPeriod, error)
+	ListPeriods(ctx context.Context, filters map[string]interface{}) ([]*models.PayrollPeriod, error)
+	UpdatePeriod(ctx context.Context, period *models.PayrollPeriod) error
+
+	// Pay Stubs
+	CreatePayStub(ctx context.Context, stub *models.PayStub) error
+	GetPayStubByID(ctx context.Context, id uuid.UUID) (*models.PayStub, error)
+	ListPayStubsByEmployee(ctx context.Context, employeeID uuid.UUID) ([]*models.PayStub, error)
+	ListPayStubsByPeriod(ctx context.Context, periodID uuid.UUID) ([]*models.PayStub, error)
+
+	// Pay Stub Details
+	CreatePayStubEarning(ctx context.Context, earning *models.PayStubEarning) error
+	CreatePayStubDeduction(ctx context.Context, deduction *models.PayStubDeduction) error
+	CreatePayStubTax(ctx context.Context, tax *models.PayStubTax) error
+	GetPayStubEarnings(ctx context.Context, payStubID uuid.UUID) ([]models.PayStubEarning, error)
+	GetPayStubDeductions(ctx context.Context, payStubID uuid.UUID) ([]models.PayStubDeduction, error)
+	GetPayStubTaxes(ctx context.Context, payStubID uuid.UUID) ([]models.PayStubTax, error)
+
+	// 1099 Forms
+	Create1099(ctx context.Context, form *models.Form1099) error
+	Get1099ByEmployeeAndYear(ctx context.Context, employeeID uuid.UUID, year int) (*models.Form1099, error)
+	List1099ByYear(ctx context.Context, year int) ([]*models.Form1099, error)
+	Update1099(ctx context.Context, form *models.Form1099) error
+
+	// YTD Calculations
+	GetYTDEarnings(ctx context.Context, employeeID uuid.UUID, year int) (float64, error)
+	GetYTDTaxes(ctx context.Context, employeeID uuid.UUID, year int) (float64, error)
+}
 
 type payrollRepository struct {
 	db *pgxpool.Pool

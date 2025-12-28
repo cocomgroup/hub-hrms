@@ -430,4 +430,3 @@ func advanceStageHandler(services *service.Services) http.HandlerFunc {
 		respondJSON(w, http.StatusOK, map[string]string{"message": "stage advanced"})
 	}
 }
-

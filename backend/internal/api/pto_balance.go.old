@@ -1,0 +1,66 @@
+package handlers
+
+import (
+	"database/sql"
+	"encoding/json"
+	"net/http"
+)
+
+// PTOBalance represents PTO balance information
+type PTOBalanceResponse struct {
+	VacationDays float64 `json:"vacation_days"`
+	SickDays     float64 `json:"sick_days"`
+	PersonalDays float64 `json:"personal_days"`
+}
+
+// GetPTOBalance returns PTO balance for the current user
+func (h *Handler) GetPTOBalance(w http.ResponseWriter, r *http.Request) {
+	// Get user from context
+	userID := r.Context().Value("user_id").(string)
+
+	// Get employee_id for this user
+	var employeeID *string
+	err := h.DB.QueryRow(`
+		SELECT employee_id FROM users WHERE id = $1
+	`, userID).Scan(&employeeID)
+
+	if err != nil || employeeID == nil {
+		// User has no associated employee record - return zero balances
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(PTOBalanceResponse{
+			VacationDays: 0,
+			SickDays:     0,
+			PersonalDays: 0,
+		})
+		return
+	}
+
+	// Query PTO balance for this employee
+	var balance PTOBalanceResponse
+	err = h.DB.QueryRow(`
+		SELECT 
+			COALESCE(vacation_days, 0) as vacation_days,
+			COALESCE(sick_days, 0) as sick_days,
+			COALESCE(personal_days, 0) as personal_days
+		FROM pto_balances 
+		WHERE employee_id = $1 
+		  AND year = EXTRACT(YEAR FROM CURRENT_DATE)
+		LIMIT 1
+	`, *employeeID).Scan(&balance.VacationDays, &balance.SickDays, &balance.PersonalDays)
+
+	if err == sql.ErrNoRows {
+		// No balance record exists - return zeros
+		balance = PTOBalanceResponse{
+			VacationDays: 0,
+			SickDays:     0,
+			PersonalDays: 0,
+		}
+	} else if err != nil {
+		// Database error
+		http.Error(w, "Failed to fetch PTO balance", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(balance)
+}

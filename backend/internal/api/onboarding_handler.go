@@ -16,7 +16,7 @@ func RegisterOnboardingRoutes(r chi.Router, services *service.Services) {
 	r.Route("/onboarding", func(r chi.Router) {
 		r.Use(authMiddleware(services))
 		r.Get("/", listOnboardingHandler(services))
-		r.Get("/{employeeId}", getOnboardingTasksHandler(services))
+		r.Get("/{employeeId}/tasks", getOnboardingTasksHandler(services))
 		r.Put("/{employeeId}/tasks/{taskId}", updateOnboardingTaskHandler(services))
 		r.Post("/{employeeId}/tasks", createOnboardingTaskHandler(services))
 	})

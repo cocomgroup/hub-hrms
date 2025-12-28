@@ -10,6 +10,16 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+// EmployeeRepository interface
+type EmployeeRepository interface {
+	Create(ctx context.Context, employee *models.Employee) error
+	GetByID(ctx context.Context, id uuid.UUID) (*models.Employee, error)
+	GetByEmail(ctx context.Context, email string) (*models.Employee, error)
+	List(ctx context.Context, filters map[string]interface{}) ([]*models.Employee, error)
+	Update(ctx context.Context, employee *models.Employee) error
+	Delete(ctx context.Context, id uuid.UUID) error
+}
+
 // EmployeeRepository implementation
 type employeeRepository struct {
 	db *pgxpool.Pool

@@ -957,8 +957,8 @@
 
 <!-- Pay Stub Detail Modal -->
 {#if showPayStubDetail && selectedPayStub}
-  <div class="modal" on:click={() => showPayStubDetail = false}>
-    <div class="modal-box max-w-4xl" on:click|stopPropagation>
+  <div class="modal" on:click={() => showPayStubDetail = false} on:keydown={(e) => e.key === 'Escape' && (showPayStubDetail = false)} role="button" tabindex="0">
+    <div class="modal-box max-w-4xl" on:click|stopPropagation on:keydown|stopPropagation role="dialog" aria-modal="true" tabindex="-1">
       <div class="modal-header">
         <h2>Pay Stub Details</h2>
         <button class="btn btn-circle btn-sm" on:click={() => showPayStubDetail = false}>✕</button>
@@ -1098,26 +1098,26 @@
 
 <!-- Compensation Form Modal -->
 {#if showCompensationForm}
-  <div class="modal" on:click={() => showCompensationForm = false}>
-    <div class="modal-box max-w-2xl" on:click|stopPropagation>
+  <div class="modal" on:click={() => showCompensationForm = false} on:keydown={(e) => e.key === 'Escape' && (showCompensationForm = false)} role="button" tabindex="0">
+    <div class="modal-box max-w-2xl" on:click|stopPropagation on:keydown|stopPropagation role="dialog" aria-modal="true" tabindex="-1">
       <h2>Compensation Setup</h2>
       
       <form on:submit|preventDefault={saveCompensation} class="form">
         <div class="form-control">
-          <label class="label">
+          <label class="label" for="employment_type">
             <span class="label-text">Employment Type</span>
           </label>
-          <select bind:value={compensationForm.employment_type} class="select w-full" required>
+          <select id="employment_type" bind:value={compensationForm.employment_type} class="select w-full" required>
             <option value="W2">W2 Employee</option>
             <option value="1099">1099 Contractor</option>
           </select>
         </div>
 
         <div class="form-control">
-          <label class="label">
+          <label class="label" for="pay_type">
             <span class="label-text">Pay Type</span>
           </label>
-          <select bind:value={compensationForm.pay_type} class="select w-full" required>
+          <select id="pay_type" bind:value={compensationForm.pay_type} class="select w-full" required>
             <option value="hourly">Hourly</option>
             <option value="salary">Salary</option>
             <option value="commission">Commission</option>
@@ -1126,11 +1126,11 @@
 
         {#if compensationForm.pay_type === 'hourly'}
           <div class="form-control">
-            <label class="label">
+            <label class="label" for="hourly_rate">
               <span class="label-text">Hourly Rate</span>
             </label>
             <input 
-              type="number" 
+              id="hourly_rate" type="number" 
               bind:value={compensationForm.hourly_rate} 
               class="input w-full" 
               min="0" 
@@ -1142,11 +1142,11 @@
 
         {#if compensationForm.pay_type === 'salary'}
           <div class="form-control">
-            <label class="label">
+            <label class="label" for="annual_salary">
               <span class="label-text">Annual Salary</span>
             </label>
             <input 
-              type="number" 
+              id="annual_salary" type="number" 
               bind:value={compensationForm.annual_salary} 
               class="input w-full" 
               min="0" 
@@ -1157,10 +1157,10 @@
         {/if}
 
         <div class="form-control">
-          <label class="label">
+          <label class="label" for="pay_frequency">
             <span class="label-text">Pay Frequency</span>
           </label>
-          <select bind:value={compensationForm.pay_frequency} class="select w-full" required>
+          <select id="pay_frequency" bind:value={compensationForm.pay_frequency} class="select w-full" required>
             <option value="weekly">Weekly</option>
             <option value="biweekly">Bi-Weekly</option>
             <option value="semimonthly">Semi-Monthly</option>
@@ -1169,11 +1169,11 @@
         </div>
 
         <div class="form-control">
-          <label class="label">
+          <label class="label" for="standard_hours">
             <span class="label-text">Standard Hours Per Week</span>
           </label>
           <input 
-            type="number" 
+            id="standard_hours" type="number" 
             bind:value={compensationForm.standard_hours_per_week} 
             class="input w-full" 
             min="0" 
@@ -1208,16 +1208,16 @@
 
 <!-- Tax Withholding Form Modal -->
 {#if showTaxForm}
-  <div class="modal" on:click={() => showTaxForm = false}>
-    <div class="modal-box max-w-2xl" on:click|stopPropagation>
+  <div class="modal" on:click={() => showTaxForm = false} on:keydown={(e) => e.key === 'Escape' && (showTaxForm = false)} role="button" tabindex="0">
+    <div class="modal-box max-w-2xl" on:click|stopPropagation on:keydown|stopPropagation role="dialog" aria-modal="true" tabindex="-1">
       <h2>Tax Withholding (W-4)</h2>
       
       <form on:submit|preventDefault={saveTaxWithholding} class="form">
         <div class="form-control">
-          <label class="label">
+          <label class="label" for="filing_status">
             <span class="label-text">Filing Status</span>
           </label>
-          <select bind:value={taxForm.filing_status} class="select w-full" required>
+          <select id="filing_status" bind:value={taxForm.filing_status} class="select w-full" required>
             <option value="single">Single</option>
             <option value="married">Married Filing Jointly</option>
             <option value="head_of_household">Head of Household</option>
@@ -1226,11 +1226,11 @@
 
         <div class="form-row">
           <div class="form-control">
-            <label class="label">
+            <label class="label" for="federal_allowances">
               <span class="label-text">Federal Allowances</span>
             </label>
             <input 
-              type="number" 
+              id="federal_allowances" type="number" 
               bind:value={taxForm.federal_allowances} 
               class="input w-full" 
               min="0" 
@@ -1239,11 +1239,11 @@
           </div>
 
           <div class="form-control">
-            <label class="label">
+            <label class="label" for="state_allowances">
               <span class="label-text">State Allowances</span>
             </label>
             <input 
-              type="number" 
+              id="state_allowances" type="number" 
               bind:value={taxForm.state_allowances} 
               class="input w-full" 
               min="0" 
@@ -1253,11 +1253,11 @@
         </div>
 
         <div class="form-control">
-          <label class="label">
+          <label class="label" for="additional_withholding">
             <span class="label-text">Additional Withholding (per paycheck)</span>
           </label>
           <input 
-            type="number" 
+            id="additional_withholding" type="number" 
             bind:value={taxForm.additional_withholding} 
             class="input w-full" 
             min="0" 
@@ -1313,17 +1313,17 @@
 
 <!-- Period Form Modal -->
 {#if showPeriodForm}
-  <div class="modal" on:click={() => showPeriodForm = false}>
+  <div class="modal" on:click={() => showPeriodForm = false} on:keydown={(e) => e.key === 'Escape' && (showPeriodForm = false)} role="button" tabindex="0">
     <div class="modal-box" on:click|stopPropagation>
       <h2>Create Payroll Period</h2>
       
       <form on:submit|preventDefault={createPayrollPeriod} class="form">
         <div class="form-control">
-          <label class="label">
+          <label class="label" for="period_start_date">
             <span class="label-text">Start Date</span>
           </label>
           <input 
-            type="date" 
+            id="period_start_date" type="date" 
             bind:value={periodForm.start_date} 
             class="input w-full" 
             required 
@@ -1331,11 +1331,11 @@
         </div>
 
         <div class="form-control">
-          <label class="label">
+          <label class="label" for="period_end_date">
             <span class="label-text">End Date</span>
           </label>
           <input 
-            type="date" 
+            id="period_end_date" type="date" 
             bind:value={periodForm.end_date} 
             class="input w-full" 
             required 
@@ -1343,11 +1343,11 @@
         </div>
 
         <div class="form-control">
-          <label class="label">
+          <label class="label" for="period_pay_date">
             <span class="label-text">Pay Date</span>
           </label>
           <input 
-            type="date" 
+            id="period_pay_date" type="date" 
             bind:value={periodForm.pay_date} 
             class="input w-full" 
             required 

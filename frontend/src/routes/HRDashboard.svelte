@@ -1,5 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { getApiBaseUrl } from '../lib/api';
+
+  const API_BASE_URL = getApiBaseUrl();
 
   interface DashboardStats {
     totalEmployees: number;
@@ -63,7 +66,7 @@
 
       // Fetch employees (usually exists)
       try {
-        const employeesRes = await fetch('/api/employees', { headers });
+        const employeesRes = await fetch(`${API_BASE_URL}/employees`, { headers });
         if (employeesRes.ok) {
           employees = await employeesRes.json();
         }
@@ -73,7 +76,7 @@
 
       // Fetch organizations (may not exist)
       try {
-        const organizationsRes = await fetch('/api/organizations', { headers });
+        const organizationsRes = await fetch(`${API_BASE_URL}/organizations`, { headers });
         if (organizationsRes.ok) {
           const data = await organizationsRes.json();
           organizations = Array.isArray(data) ? data : [];
@@ -84,7 +87,7 @@
 
       // Fetch PTO requests (may not exist)
       try {
-        const ptoRes = await fetch('/api/pto/requests?status=pending', { headers });
+        const ptoRes = await fetch(`${API_BASE_URL}/pto/requests?status=pending`, { headers });
         if (ptoRes.ok) {
           const data = await ptoRes.json();
           ptoRequests = Array.isArray(data) ? data : [];
@@ -95,7 +98,7 @@
 
       // Fetch timesheets (may not exist)
       try {
-        const timesheetsRes = await fetch('/api/timesheets?status=pending', { headers });
+        const timesheetsRes = await fetch(`${API_BASE_URL}/timesheet/entries?status=pending`, { headers });
         if (timesheetsRes.ok) {
           const data = await timesheetsRes.json();
           timesheets = Array.isArray(data) ? data : [];
@@ -106,7 +109,7 @@
 
       // Fetch onboarding (may not exist)
       try {
-        const onboardingRes = await fetch('/api/onboarding?status=pending', { headers });
+        const onboardingRes = await fetch(`${API_BASE_URL}/onboarding?status=pending`, { headers });
         if (onboardingRes.ok) {
           const data = await onboardingRes.json();
           onboarding = Array.isArray(data) ? data : [];
@@ -357,6 +360,14 @@
             <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
           </svg>
           <span>Run Payroll</span>
+        </button>
+
+        <button class="action-btn" onclick={() => navigate('projects')}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
+          <span>Projects</span>
         </button>
 
         <button class="action-btn" onclick={() => navigate('recruiting')}>

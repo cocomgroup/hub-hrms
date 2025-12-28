@@ -372,8 +372,8 @@
 
     <!-- Request Form Modal -->
     {#if showRequestForm}
-      <div class="modal-overlay" on:click={resetForm}>
-        <div class="modal" on:click|stopPropagation>
+      <div class="modal-overlay" on:click={resetForm} on:keydown={(e) => e.key === 'Escape' && resetForm()} role="button" tabindex="0">
+        <div class="modal" on:click|stopPropagation on:keydown|stopPropagation role="dialog" aria-modal="true" tabindex="-1">
           <div class="modal-header">
             <h2>Request Time Off</h2>
             <button class="close-btn" on:click={resetForm}>×</button>
@@ -472,8 +472,8 @@
 
     <!-- Request Detail Modal -->
     {#if showRequestDetail && selectedRequest}
-      <div class="modal-overlay" on:click={closeRequestDetail}>
-        <div class="modal modal-detail" on:click|stopPropagation>
+      <div class="modal-overlay" on:click={closeRequestDetail} on:keydown={(e) => e.key === 'Escape' && closeRequestDetail()} role="button" tabindex="0">
+        <div class="modal modal-detail" on:click|stopPropagation on:keydown|stopPropagation role="dialog" aria-modal="true" tabindex="-1">
           <div class="modal-header">
             <h2>Request Details</h2>
             <button class="close-btn" on:click={closeRequestDetail}>×</button>
@@ -482,7 +482,7 @@
           <div class="modal-body">
             <div class="detail-grid">
               <div class="detail-item">
-                <label>Type</label>
+                <span class="detail-label">Type</span>
                 <div class="detail-value">
                   <span class="type-badge type-{selectedRequest.pto_type}">
                     {getTypeIcon(selectedRequest.pto_type)} {getTypeLabel(selectedRequest.pto_type)}
@@ -491,7 +491,7 @@
               </div>
 
               <div class="detail-item">
-                <label>Status</label>
+                <span class="detail-label">Status</span>
                 <div class="detail-value">
                   <span class="status-badge {getStatusColor(selectedRequest.status)}">
                     {selectedRequest.status}
@@ -500,35 +500,35 @@
               </div>
 
               <div class="detail-item">
-                <label>Start Date</label>
+                <span class="detail-label">Start Date</span>
                 <div class="detail-value">{formatDate(selectedRequest.start_date)}</div>
               </div>
 
               <div class="detail-item">
-                <label>End Date</label>
+                <span class="detail-label">End Date</span>
                 <div class="detail-value">{formatDate(selectedRequest.end_date)}</div>
               </div>
 
               <div class="detail-item">
-                <label>Days Requested</label>
+                <span class="detail-label">Days Requested</span>
                 <div class="detail-value"><strong>{selectedRequest.days_requested}</strong></div>
               </div>
 
               <div class="detail-item">
-                <label>Submitted</label>
+                <span class="detail-label">Submitted</span>
                 <div class="detail-value">{formatDateTime(selectedRequest.created_at)}</div>
               </div>
 
               {#if selectedRequest.reason}
                 <div class="detail-item full-width">
-                  <label>Reason</label>
+                  <span class="detail-label">Reason</span>
                   <div class="detail-value reason">{selectedRequest.reason}</div>
                 </div>
               {/if}
 
               {#if selectedRequest.reviewed_by}
                 <div class="detail-item full-width review-section">
-                  <label>Review Information</label>
+                  <span class="detail-label">Review Information</span>
                   <div class="review-info">
                     <div class="review-item">
                       <span class="review-label">Reviewed by:</span>
@@ -1043,6 +1043,14 @@
     font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+  }
+  .detail-label {
+    color: #999;
+    font-size: 0.875rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    display: block;
   }
 
   .detail-value {

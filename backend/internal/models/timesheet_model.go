@@ -26,6 +26,7 @@ type Timesheet struct {
 	EmployeeName string     `json:"employee_name,omitempty" db:"employee_name"`
 }
 
+
 // TimesheetSummary provides aggregated hours information
 type TimesheetSummary struct {
 	EmployeeID    uuid.UUID `json:"employee_id"`
@@ -36,22 +37,6 @@ type TimesheetSummary struct {
 	PTOHours      float64   `json:"pto_hours"`
 	TotalHours    float64   `json:"total_hours"`
 	EntryCount    int       `json:"entry_count"`
-}
-
-// Project represents a project for time tracking
-type Project struct {
-	ID          uuid.UUID  `json:"id" db:"id"`
-	Name        string     `json:"name" db:"name"`
-	Code        string     `json:"code" db:"code"`
-	Description string     `json:"description,omitempty" db:"description"`
-	ClientName  string     `json:"client_name,omitempty" db:"client_name"`
-	StartDate   *time.Time `json:"start_date,omitempty" db:"start_date"`
-	EndDate     *time.Time `json:"end_date,omitempty" db:"end_date"`
-	BudgetHours *float64   `json:"budget_hours,omitempty" db:"budget_hours"`
-	Status      string     `json:"status" db:"status"` // active, on_hold, completed, cancelled
-	CreatedBy   *uuid.UUID `json:"created_by,omitempty" db:"created_by"`
-	CreatedAt   time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at" db:"updated_at"`
 }
 
 // TimesheetCreateRequest for creating manual time entries

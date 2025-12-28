@@ -122,8 +122,8 @@ func listJobPostingsHandler(services *service.Services) http.HandlerFunc {
 
 		jobs, err := services.Recruiting.ListJobPostings(r.Context(), status)
 		if err != nil {
-			log.Printf("ERROR: ListJobPostings failed: %v", err)  // ← ADD THIS
-			respondError(w, http.StatusInternalServerError, err.Error())  // ← ADD err.Error()
+			log.Printf("ERROR: ListJobPostings failed: %v", err)  
+			respondError(w, http.StatusInternalServerError, err.Error())  
 			return
 		}
 

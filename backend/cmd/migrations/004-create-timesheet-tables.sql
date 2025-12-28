@@ -111,9 +111,12 @@ CREATE OR REPLACE FUNCTION calculate_time_entry_hours()
 RETURNS TRIGGER AS $$
 BEGIN
     IF NEW.clock_in IS NOT NULL AND NEW.clock_out IS NOT NULL THEN
+        -- ✅ FIX: Cast to NUMERIC before ROUND to avoid double precision error
         NEW.total_hours = ROUND(
-            (EXTRACT(EPOCH FROM (NEW.clock_out - NEW.clock_in)) / 3600.0) - 
-            (COALESCE(NEW.break_duration, 0) / 60.0),
+            (
+                (EXTRACT(EPOCH FROM (NEW.clock_out - NEW.clock_in)) / 3600.0) - 
+                (COALESCE(NEW.break_duration, 0) / 60.0)
+            )::NUMERIC,  -- ✅ Cast to NUMERIC
             2
         );
     END IF;

@@ -9,6 +9,7 @@ import (
 // User represents an authenticated user
 type User struct {
 	ID           uuid.UUID  `json:"id"`
+	Username     string     `json:"username"`
 	Email        string     `json:"email"`
 	PasswordHash string     `json:"-"`
 	Role         string     `json:"role"`
@@ -31,5 +32,3 @@ type LoginResponse struct {
 	User      User      `json:"user"`
 	Employee  *Employee `json:"employee,omitempty"`
 }
-
-

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte';
   import { authStore } from './stores/auth';
   import Login from './routes/Login.svelte';
   import Dashboard from './routes/Dashboard.svelte';
@@ -12,13 +13,48 @@
   import Payroll from './routes/Payroll.svelte';
   import HRDashboard from './routes/HRDashboard.svelte';
   import ManagerDashboard from './routes/ManagerDashboard.svelte';
+  import EmployeeDashboard from './routes/EmployeeDashboard.svelte'; 
   import Users from './routes/Users.svelte';  
   import Recruiting from './routes/Recruiting.svelte';  
+  import ProjectManagement from './routes/ProjectManagement.svelte';  
 
   let currentPage = $state('dashboard');
   let workflowId = $state('');
   let isAuthenticated = $state(false);
   let userRole = $state<string | null>(null);
+
+  onMount(() => {
+    const token = localStorage.getItem('token');
+    const userStr = localStorage.getItem('user');
+    const employeeStr = localStorage.getItem('employee');
+
+    if (token && userStr) {
+      const user = JSON.parse(userStr);
+      const employee = employeeStr ? JSON.parse(employeeStr) : null;
+
+      authStore.set({
+        token,
+        user,
+        employee,
+        isAuthenticated: true
+      });
+
+      // ✅ ADD THIS: Check if employee needs onboarding
+      if (employee && employee.status === 'onboarding') {
+        currentPage = 'onboarding';
+        return;
+      }
+
+      // Set current page based on role
+      if (user.role === 'admin' || user.role === 'hr-manager') {
+        currentPage = 'hr-dashboard';
+      } else if (user.role === 'manager') {
+        currentPage = 'manager-dashboard';
+      } else {
+        currentPage = 'employee-dashboard';
+      }
+    }
+  });
 
   // Subscribe to auth store using $effect
   $effect(() => {
@@ -28,7 +64,7 @@
       
         // Role-based routing after login
       if (isAuthenticated && value.user) {
-        // Redirect HR managers to HR Dashboard
+        // Redirect HR managers to HR Manager Dashboard
         if (value.user.role === 'hr-manager' || value.user.role === 'admin') {
           if (currentPage === 'dashboard') {
             currentPage = 'hr-dashboard';
@@ -40,12 +76,76 @@
             currentPage = 'manager-dashboard';
           }
         }
+        // Redirect employees to Employee Dashboard
+        else {
+          if (currentPage === 'dashboard') {
+            currentPage = 'employee-dashboard';
+          }
+        }
       } 
      });
     return unsubscribe;
   });
 
+  async function handleLogin(credentials: LoginCredentials) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(credentials)
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        
+        // Store auth data in localStorage
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('user', JSON.stringify(data.user));
+        if (data.employee) {
+          localStorage.setItem('employee', JSON.stringify(data.employee));
+        }
+        
+        // Update auth store
+        authStore.set({
+          token: data.token,
+          user: data.user,
+          employee: data.employee,
+          isAuthenticated: true
+        });
+
+        // ✅ ADD THIS: Check if employee needs onboarding
+        if (data.employee && data.employee.status === 'onboarding') {
+          currentPage = 'onboarding';
+          return; // Stop here, don't navigate to dashboard
+        }
+
+        // Navigate based on role
+        if (data.user.role === 'admin' || data.user.role === 'hr-manager') {
+          currentPage = 'hr-dashboard';
+        } else if (data.user.role === 'manager') {
+          currentPage = 'manager-dashboard';
+        } else {
+          currentPage = 'employee-dashboard';
+        }
+      } else {
+        const error = await response.json();
+        loginError = error.error || 'Login failed';
+      }
+    } catch (err) {
+      console.error('Login error:', err);
+      loginError = 'An error occurred during login';
+    }
+  }
+
   function navigate(page: string, id?: string) {
+    const employee = $authStore.employee;
+      // ✅ ADD THIS: Block navigation if employee is onboarding
+    if (employee?.status === 'onboarding' && page !== 'onboarding') {
+      console.log('Cannot navigate: Employee must complete onboarding first');
+      return;
+    }
+  
+  currentPage = page;
     currentPage = page;
     if (id) {
       workflowId = id;
@@ -53,7 +153,17 @@
   }
 
   function logout() {
-    authStore.logout();
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    localStorage.removeItem('employee');
+    
+    authStore.set({
+      token: null,
+      user: null,
+      employee: null,
+      isAuthenticated: false
+    });
+    
     currentPage = 'dashboard';
   }
 
@@ -91,94 +201,34 @@
               </svg>
               <span>HR Dashboard</span>
             </button>
+
           {/if}
 
-          <button class="nav-item" class:active={currentPage === 'dashboard'} onclick={() => navigate('dashboard')}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="3" y="3" width="7" height="7"></rect>
-              <rect x="14" y="3" width="7" height="7"></rect>
-              <rect x="14" y="14" width="7" height="7"></rect>
-              <rect x="3" y="14" width="7" height="7"></rect>
-            </svg>
-            <span>Dashboard</span>
-          </button>
+          <!-- For Managers -->
+          {#if userRole === 'manager' || userRole === 'admin'}
+            <button 
+              class="nav-item" 
+              class:active={currentPage === 'manager-dashboard'} 
+              onclick={() => navigate('manager-dashboard')}
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                <line x1="9" y1="9" x2="15" y2="9"></line>
+                <line x1="9" y1="15" x2="15" y2="15"></line>
+              </svg>
+              <span>Manager Dashboard</span>
+            </button>
+          {/if}
 
-          <button class="nav-item" class:active={currentPage === 'employees'} onclick={() => navigate('employees')}>
+          <button class="nav-item" class:active={currentPage === 'employee-dashboard'} onclick={() => navigate('employee-dashboard')}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
               <circle cx="9" cy="7" r="4"></circle>
               <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
               <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
             </svg>
-            <span>Employees</span>
+            <span>Employee Dashboard</span>
           </button>
-
-          <button class="nav-item" class:active={currentPage === 'onboarding'} onclick={() => navigate('onboarding')}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-              <polyline points="14 2 14 8 20 8"></polyline>
-              <line x1="12" y1="18" x2="12" y2="12"></line>
-              <line x1="9" y1="15" x2="15" y2="15"></line>
-            </svg>
-            <span>Onboarding</span>
-          </button>
-
-          <button class="nav-item" class:active={currentPage === 'workflows' || currentPage === 'workflow-detail'} onclick={() => navigate('workflows')}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
-              <polyline points="7.5 4.21 12 6.81 16.5 4.21"></polyline>
-              <polyline points="7.5 19.79 7.5 14.6 3 12"></polyline>
-              <polyline points="21 12 16.5 14.6 16.5 19.79"></polyline>
-              <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
-              <line x1="12" y1="22.08" x2="12" y2="12"></line>
-            </svg>
-            <span>Workflows</span>
-          </button>
-
-          <button class="nav-item" class:active={currentPage === 'timesheet'} onclick={() => navigate('timesheet')}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10"></circle>
-              <polyline points="12 6 12 12 16 14"></polyline>
-            </svg>
-            <span>Timesheet</span>
-          </button>
-
-          <button class="nav-item" class:active={currentPage === 'pto'} onclick={() => navigate('pto')}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-              <line x1="16" y1="2" x2="16" y2="6"></line>
-              <line x1="8" y1="2" x2="8" y2="6"></line>
-              <line x1="3" y1="10" x2="21" y2="10"></line>
-            </svg>
-            <span>Time Off</span>
-          </button>
-
-          <button class="nav-item" class:active={currentPage === 'benefits'} onclick={() => navigate('benefits')}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-              <polyline points="22 4 12 14.01 9 11.01"></polyline>
-            </svg>
-            <span>Benefits</span>
-          </button>
-
-          <button class="nav-item" class:active={currentPage === 'payroll'} onclick={() => navigate('payroll')}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <line x1="12" y1="1" x2="12" y2="23"></line>
-              <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
-            </svg>
-            <span>Payroll</span>
-          </button>
-
-          <button class="action-btn" onclick={() => navigate('recruiting')}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="8.5" cy="7" r="4"></circle>
-            <line x1="20" y1="8" x2="20" y2="14"></line>
-            <line x1="23" y1="11" x2="17" y2="11"></line>
-            <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
-          </svg>
-          <span>Recruiting</span>
-        </button>
-
 
           <!-- ADD THIS: Users - Only visible to admins -->
           {#if userRole === 'admin'}
@@ -217,6 +267,8 @@
           <HRDashboard navigate={navigate} />
         {:else if currentPage === 'manager-dashboard'}
           <ManagerDashboard navigate={navigate} />
+        {:else if currentPage === 'employee-dashboard'}
+          <EmployeeDashboard navigate={navigate} />
         {:else if currentPage === 'users'}
           <Users />  
         {:else if currentPage === 'workflow-detail'}
@@ -229,6 +281,8 @@
           <Benefits />
         {:else if currentPage === 'payroll'}
           <Payroll />
+        {:else if currentPage === 'projects'}
+          <ProjectManagement {navigate} />
         {:else if currentPage === 'recruiting'}
           <Recruiting />
         {:else if currentPage === 'hr-dashboard'}

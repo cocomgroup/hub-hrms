@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { authStore } from '../stores/auth';
+  import { getApiBaseUrl } from '../lib/api'; 
+  const API_BASE_URL = getApiBaseUrl();
   
   interface TimeEntry {
     id: string;
@@ -120,7 +122,8 @@
     );
     
     if (!response.ok) throw new Error('Failed to load time entries');
-    timeEntries = await response.json();
+    const data = await response.json();
+    timeEntries = Array.isArray(data) ? data : [];
   }
 
   async function loadProjects() {
@@ -259,10 +262,22 @@
     
     try {
       const url = editingEntry 
-        ? `/api/timesheet/entries/${editingEntry.id}`
-        : '/api/timesheet/entries';
+        ? `${API_BASE_URL}/timesheet/entries/${editingEntry.id}`
+        : `${API_BASE_URL}/timesheet/entries`;
       
       const method = editingEntry ? 'PUT' : 'POST';
+      
+      // ✅ FIX: Convert time strings to ISO datetime format
+      const entryData = {
+        ...newEntry,
+        // Convert "HH:MM" to "YYYY-MM-DDTHH:MM:00Z"
+        clock_in: newEntry.clock_in 
+          ? `${newEntry.entry_date}T${newEntry.clock_in}:00Z` 
+          : null,
+        clock_out: newEntry.clock_out 
+          ? `${newEntry.entry_date}T${newEntry.clock_out}:00Z` 
+          : null
+      };
       
       const response = await fetch(url, {
         method,
@@ -270,7 +285,7 @@
           'Authorization': `Bearer ${$authStore.token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(newEntry)
+        body: JSON.stringify(entryData)
       });
       
       if (!response.ok) {
@@ -485,15 +500,15 @@
   <div class="summary-cards">
     <div class="card">
       <h4>Regular Hours</h4>
-      <div class="card-value">{currentPeriod?.total_regular_hours.toFixed(1) || '0.0'}</div>
+      <div class="card-value">{(currentPeriod?.total_regular_hours ?? 0).toFixed(1)}</div>
     </div>
     <div class="card">
       <h4>Overtime Hours</h4>
-      <div class="card-value">{currentPeriod?.total_overtime_hours.toFixed(1) || '0.0'}</div>
+      <div class="card-value">{(currentPeriod?.total_overtime_hours ?? 0).toFixed(1)}</div>
     </div>
     <div class="card">
       <h4>PTO Hours</h4>
-      <div class="card-value">{currentPeriod?.total_pto_hours.toFixed(1) || '0.0'}</div>
+      <div class="card-value">{(currentPeriod?.total_pto_hours ?? 0).toFixed(1)}</div>
     </div>
     <div class="card">
       <h4>Total Hours</h4>
@@ -530,7 +545,7 @@
         </tr>
       </thead>
       <tbody>
-        {#if timeEntries.length === 0}
+        {#if !timeEntries || timeEntries.length === 0}
           <tr>
             <td colspan="9">
               <div class="empty-state">

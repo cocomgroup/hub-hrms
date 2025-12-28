@@ -1,3 +1,4 @@
+// Svelte 5 Auth Store using writable for compatibility
 import { writable } from 'svelte/store';
 
 interface User {
@@ -11,73 +12,67 @@ interface Employee {
   first_name: string;
   last_name: string;
   email: string;
-  department?: string;
-  position?: string;
+  position: string;
+  department: string;
+  status?: string;
+  manager_id?: string;
 }
 
 interface AuthState {
-  isAuthenticated: boolean;
   token: string | null;
   user: User | null;
   employee: Employee | null;
+  isAuthenticated: boolean;
 }
 
 const initialState: AuthState = {
-  isAuthenticated: false,
   token: null,
   user: null,
   employee: null,
+  isAuthenticated: false
 };
 
-function createAuthStore() {
-  const { subscribe, set, update } = writable<AuthState>(initialState);
+// Create writable store for compatibility
+export const authStore = writable<AuthState>(initialState);
 
-  // Check for saved auth state on init
-  if (typeof window !== 'undefined') {
-    const savedToken = localStorage.getItem('token');
-    const savedUser = localStorage.getItem('user');
-    const savedEmployee = localStorage.getItem('employee');
-    
-    if (savedToken && savedUser) {
-      set({
-        isAuthenticated: true,
-        token: savedToken,
-        user: JSON.parse(savedUser),
-        employee: savedEmployee ? JSON.parse(savedEmployee) : null,
-      });
-    }
+// Helper functions
+export function login(token: string, user: User, employee: Employee | null) {
+  localStorage.setItem('token', token);
+  localStorage.setItem('user', JSON.stringify(user));
+  if (employee) {
+    localStorage.setItem('employee', JSON.stringify(employee));
   }
-
-  return {
-    subscribe,
-    login: (token: string, user: User, employee?: Employee) => {
-      localStorage.setItem('token', token);
-      localStorage.setItem('user', JSON.stringify(user));
-      if (employee) {
-        localStorage.setItem('employee', JSON.stringify(employee));
-      }
-      
-      set({
-        isAuthenticated: true,
-        token,
-        user,
-        employee: employee || null,
-      });
-    },
-    logout: () => {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      localStorage.removeItem('employee');
-      set(initialState);
-    },
-    updateEmployee: (employee: Employee) => {
-      localStorage.setItem('employee', JSON.stringify(employee));
-      update(state => ({
-        ...state,
-        employee,
-      }));
-    },
-  };
+  
+  authStore.set({
+    token,
+    user,
+    employee,
+    isAuthenticated: true
+  });
 }
 
-export const authStore = createAuthStore();
+export function logout() {
+  localStorage.removeItem('token');
+  localStorage.removeItem('user');
+  localStorage.removeItem('employee');
+  
+  authStore.set(initialState);
+}
+
+export function updateEmployee(employee: Employee) {
+  localStorage.setItem('employee', JSON.stringify(employee));
+  
+  authStore.update(state => ({
+    ...state,
+    employee
+  }));
+}
+
+export function updateUser(user: User) {
+  localStorage.setItem('user', JSON.stringify(user));
+  
+  authStore.update(state => ({
+    ...state,
+    user
+  }));
+}

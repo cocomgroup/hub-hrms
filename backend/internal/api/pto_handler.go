@@ -3,6 +3,9 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"log"
+	"database/sql"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -40,6 +43,24 @@ func getPTOBalanceHandler(services *service.Services) http.HandlerFunc {
 
 		balance, err := services.PTO.GetBalance(r.Context(), employeeID)
 		if err != nil {
+			// ✅ FIX: Return default balance instead of 500 error
+			if err.Error() == "no rows in result set" || err == sql.ErrNoRows {
+				// Return default empty balance
+				defaultBalance := &models.PTOBalance{
+					ID:           uuid.New(),
+					EmployeeID:   employeeID,
+					VacationDays: 0,
+					SickDays:     0,
+					PersonalDays: 0,
+					Year:         time.Now().Year(),
+					CreatedAt:    time.Now(),
+					UpdatedAt:    time.Now(),
+				}
+				respondJSON(w, http.StatusOK, defaultBalance)
+				return
+			}
+			
+			log.Printf("Error getting pto balance: %v", err)
 			respondError(w, http.StatusInternalServerError, "failed to get PTO balance")
 			return
 		}

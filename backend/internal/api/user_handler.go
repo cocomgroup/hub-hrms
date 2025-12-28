@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"net/http"
+	"log"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -29,6 +30,7 @@ func RegisterUserRoutes(r chi.Router, services *service.Services) {
 // CreateUserRequest for creating new users
 type CreateUserRequest struct {
 	Email      string     `json:"email" validate:"required,email"`
+	Username   string     `json:"username" validate:"required"`
 	Password   string     `json:"password" validate:"required,min=8"`
 	Role       string     `json:"role" validate:"required"`
 	EmployeeID *uuid.UUID `json:"employee_id,omitempty"`
@@ -58,16 +60,24 @@ func createUserHandler(services *service.Services) http.HandlerFunc {
 		
 		var req CreateUserRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			log.Printf("ERROR: invalid request body: %v", err)
 			respondError(w, http.StatusBadRequest, "invalid request body")
 			return
 		}
 
 		// Validate required fields
+		if req.Username == "" {
+			log.Printf("ERROR: username is required")
+			respondError(w, http.StatusBadRequest, "username is required")
+			return
+		}
 		if req.Email == "" {
+			log.Printf("ERROR: email is required")
 			respondError(w, http.StatusBadRequest, "email is required")
 			return
 		}
 		if req.Password == "" {
+			log.Printf("ERROR: password is required")
 			respondError(w, http.StatusBadRequest, "password is required")
 			return
 		}
@@ -76,6 +86,7 @@ func createUserHandler(services *service.Services) http.HandlerFunc {
 			return
 		}
 		if req.Role == "" {
+			log.Printf("ERROR: role is required")
 			respondError(w, http.StatusBadRequest, "role is required")
 			return
 		}
@@ -95,12 +106,14 @@ func createUserHandler(services *service.Services) http.HandlerFunc {
 		// Hash the password using auth service
 		hashedPassword, err := services.Auth.HashPassword(req.Password)
 		if err != nil {
+			log.Printf("ERROR: failed to encrypt password: %v", err)
 			respondError(w, http.StatusInternalServerError, "failed to encrypt password")
 			return
 		}
 
 		// Create user model
 		user := &models.User{
+			Username:     req.Username,
 			Email:        req.Email,
 			PasswordHash: hashedPassword,
 			Role:         req.Role,
@@ -109,21 +122,37 @@ func createUserHandler(services *service.Services) http.HandlerFunc {
 
 		// Save to database
 		if err := services.User.Create(r.Context(), user); err != nil {
+			log.Printf("ERROR: failed to create user: %v", err)
 			respondError(w, http.StatusInternalServerError, "failed to create user")
 			return
 		}
 
 		// Return user (without password hash)
+		user.PasswordHash = "" // Don't expose password hash
 		respondJSON(w, http.StatusCreated, user)
 	}
 }
 
-// listUsersHandler lists all users
+// listUsersHandler lists all users with optional search and role filter
 func listUsersHandler(services *service.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// TODO: Implement list all users in service/repository
-		// For now, return placeholder
-		respondJSON(w, http.StatusOK, []models.User{})
+		// Get query parameters
+		search := r.URL.Query().Get("search")
+		role := r.URL.Query().Get("role")
+
+		// Get users from service
+		users, err := services.User.List(r.Context(), search, role)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "failed to list users")
+			return
+		}
+
+		// Remove password hashes from response
+		for _, user := range users {
+			user.PasswordHash = ""
+		}
+
+		respondJSON(w, http.StatusOK, users)
 	}
 }
 
@@ -143,6 +172,8 @@ func getUserHandler(services *service.Services) http.HandlerFunc {
 			return
 		}
 
+		// Don't expose password hash
+		user.PasswordHash = ""
 		respondJSON(w, http.StatusOK, user)
 	}
 }
@@ -176,6 +207,17 @@ func updateUserHandler(services *service.Services) http.HandlerFunc {
 			user.Email = *req.Email
 		}
 		if req.Role != nil {
+			// Validate role
+			validRoles := map[string]bool{
+				"admin":       true,
+				"hr-manager":  true,
+				"manager":     true,
+				"employee":    true,
+			}
+			if !validRoles[*req.Role] {
+				respondError(w, http.StatusBadRequest, "invalid role")
+				return
+			}
 			user.Role = *req.Role
 		}
 		if req.EmployeeID != nil {
@@ -188,6 +230,8 @@ func updateUserHandler(services *service.Services) http.HandlerFunc {
 			return
 		}
 
+		// Don't expose password hash
+		user.PasswordHash = ""
 		respondJSON(w, http.StatusOK, user)
 	}
 }
@@ -202,10 +246,13 @@ func deleteUserHandler(services *service.Services) http.HandlerFunc {
 			return
 		}
 
-		// TODO: Implement Delete in repository
-		// For now, return not implemented
-		_ = id
-		respondError(w, http.StatusNotImplemented, "delete user not yet implemented")
+		// Delete user
+		if err := services.User.Delete(r.Context(), id); err != nil {
+			respondError(w, http.StatusInternalServerError, "failed to delete user")
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
 	}
 }
 

@@ -1,8 +1,9 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { authStore } from '../stores/auth';
-  import { API_BASE_URL } from '../config';
-  
+  import { getApiBaseUrl } from '../lib/api'; 
+  const API_BASE_URL = getApiBaseUrl();
+
   interface QuickAction {
     id: string;
     title: string;
@@ -47,25 +48,66 @@
     status: string;
   }
 
+  let { navigate }: { navigate: (page: string) => void } = $props();
+
   let loading = false;
-  let activeTab = 'overview';
-  let employee = $authStore.employee;
+  let activeTab = $state('overview');
+  let employee = $state($authStore.employee);
   
+
+
+  // Add employee selector state
+  let selectedEmployeeId = $state<string | null>(null);
+  let allEmployees = $state<any[]>([]);
+  let showEmployeeSelector = $state(false);
+  let isAdmin = $state(false);
+
   // Data
-  let tasks: Task[] = [];
-  let recentTimeEntries: TimeEntry[] = [];
-  let ptoBalance: PTOBalance | null = null;
-  let recentPayStubs: PayStub[] = [];
-  let upcomingPTO: any[] = [];
+  let tasks = $state([]);
+  let recentTimeEntries = $state([]);
+  let ptoBalance= $state(null);
+  let recentPayStubs= $state([]);
+  let upcomingPTO= $state([]);
 
   // Stats
-  let pendingTasksCount = 0;
-  let hoursThisWeek = 0;
-  let nextPayDate = '';
+  let pendingTasksCount = $state(0);
+  let hoursThisWeek= $state(0);
+  let nextPayDate = $state('');
 
   onMount(() => {
+    // Check if user is admin
+    isAdmin = $authStore.user?.role === 'admin' || $authStore.user?.role === 'hr-manager';
+    if (isAdmin) {
+      loadAllEmployees();
+      // Default to current user's employee if they have one
+      selectedEmployeeId = $authStore.employee?.id || null;
+    } else {
+      selectedEmployeeId = $authStore.employee?.id || null;
+    }
     loadDashboardData();
   });
+
+    // Watch for employee selection changes
+  $effect(() => {
+    if (selectedEmployeeId) {
+      loadDashboardData();
+    }
+  });
+
+  let employeeSearchTerm = $state('');
+
+  let filteredEmployees = $derived(
+    allEmployees.filter(emp => {
+      if (!employeeSearchTerm) return true;
+      const searchLower = employeeSearchTerm.toLowerCase();
+      return (
+        emp.first_name.toLowerCase().includes(searchLower) ||
+        emp.last_name.toLowerCase().includes(searchLower) ||
+        emp.email.toLowerCase().includes(searchLower) ||
+        emp.position?.toLowerCase().includes(searchLower)
+      );
+    })
+  );
 
   async function loadDashboardData() {
     loading = true;
@@ -83,76 +125,167 @@
     }
   }
 
-  async function loadTasks() {
+  async function loadAllEmployees() {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/workflows/my-tasks`, {
+      const response = await fetch(`${API_BASE_URL}/employees`, {
         headers: { 'Authorization': `Bearer ${$authStore.token}` }
       });
       
       if (response.ok) {
-        tasks = await response.json();
-        pendingTasksCount = tasks.filter(t => t.status === 'pending').length;
+        allEmployees = await response.json();
       }
     } catch (err) {
-      console.error('Error loading tasks:', err);
+      console.error('Failed to load employees:', err);
     }
   }
 
-  async function loadRecentTimeEntries() {
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/timesheet/entries`, {
-        headers: { 'Authorization': `Bearer ${$authStore.token}` }
-      });
+function selectEmployee(employeeId: string) {
+  selectedEmployeeId = employeeId;
+  showEmployeeSelector = false;
+  employee = allEmployees.find(e => e.id === employeeId);
+}
+
+async function loadTasks() {
+  if (!selectedEmployeeId) {
+    tasks = [];
+    return;
+  }
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/onboarding?status=pending`, {
+      headers: { 'Authorization': `Bearer ${$authStore.token}` }
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
       
-      if (response.ok) {
-        const entries = await response.json();
-        recentTimeEntries = entries.slice(0, 5);
+      // ✅ Check if data is an array
+      if (Array.isArray(data)) {
+        tasks = data;
+        pendingTasksCount = tasks.filter(t => t.status === 'pending').length;
+      } else {
+        console.warn('Tasks response is not an array:', data);
+        tasks = [];
+        pendingTasksCount = 0;
+      }
+    } else {
+      console.log('Tasks endpoint returned error:', response.status);
+      tasks = [];
+      pendingTasksCount = 0;
+    }
+  } catch (err) {
+    console.error('Error loading tasks:', err);
+    tasks = [];
+    pendingTasksCount = 0;
+  }
+}
+
+async function loadRecentTimeEntries() {
+  try {
+    const response = await fetch(`${API_BASE_URL}/timesheet/entries`, {
+      headers: { 'Authorization': `Bearer ${$authStore.token}` }
+    });
+    
+    if (response.ok) {
+      const entries = await response.json();
+
+      if (Array.isArray(entries)) {
+        recentTimeEntries = Array.isArray(entries) ?  entries.slice(0, 5) : [];
+
         
         // Calculate hours this week
         const weekStart = getWeekStart();
         hoursThisWeek = entries
           .filter((e: TimeEntry) => new Date(e.date) >= weekStart)
-          .reduce((sum: number, e: TimeEntry) => sum + (e.total_hours || 0), 0);
+          .reduce((sum: number, e: TimeEntry) => sum + e.total_hours, 0);
+      } else {
+        // Response was OK but not an array
+        console.log('No timesheet entries found (API returned null)');
+        recentTimeEntries = [];
+        hoursThisWeek = 0;
       }
-    } catch (err) {
-      console.error('Error loading time entries:', err);
+    } else {
+      console.log('Timesheet endpoint returned error:', response.status);
+      recentTimeEntries = [];
+      hoursThisWeek = 0;
     }
+  } catch (err) {
+    console.error('Error loading timesheet entries:', err);
+    recentTimeEntries = [];
+    hoursThisWeek = 0;
   }
+}
 
-  async function loadPTOBalance() {
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/pto/balance`, {
-        headers: { 'Authorization': `Bearer ${$authStore.token}` }
-      });
-      
-      if (response.ok) {
-        ptoBalance = await response.json();
-      }
-    } catch (err) {
-      console.error('Error loading PTO balance:', err);
+async function loadPTOBalance() {
+  try {
+    const response = await fetch(`${API_BASE_URL}/pto/balance`, {
+      headers: { 'Authorization': `Bearer ${$authStore.token}` }
+    });
+    
+    if (response.ok) {
+      ptoBalance = await response.json();
+    } else {
+      console.log('PTO endpoint not available yet:', response.status);
+      // Set default values
+      ptoBalance = {
+        vacation_days: 0,
+        sick_days: 0,
+        personal_days: 0
+      };
     }
+  } catch (err) {
+    console.log('PTO feature not implemented yet');
+    ptoBalance = {
+      vacation_days: 0,
+      sick_days: 0,
+      personal_days: 0
+    };
   }
+}
 
-  async function loadRecentPayStubs() {
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/payroll/paystubs`, {
-        headers: { 'Authorization': `Bearer ${$authStore.token}` }
-      });
+async function loadRecentPayStubs() {
+  try {
+    // ✅ Check if employee ID exists before making the call
+    if (!$authStore.employee?.id) {
+      console.log('Employee ID not available, skipping payroll load');
+      recentPayStubs = [];
+      nextPayDate = '';
+      return;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/payroll/paystubs/employee/${$authStore.employee.id}`, {
+      headers: { 'Authorization': `Bearer ${$authStore.token}` }
+    });
+    
+    if (response.ok) {
+      const stubs = await response.json();
       
-      if (response.ok) {
-        const stubs = await response.json();
+      // ✅ Check if stubs is an array
+      if (Array.isArray(stubs)) {
         recentPayStubs = stubs.slice(0, 3);
         
-        // Find next pay date
+        // Get next pay date
         if (stubs.length > 0) {
           nextPayDate = stubs[0].pay_date;
+        } else {
+          nextPayDate = '';
         }
+      } else {
+        console.warn('Pay stubs response is not an array:', stubs);
+        recentPayStubs = [];
+        nextPayDate = '';
       }
-    } catch (err) {
-      console.error('Error loading pay stubs:', err);
+    } else {
+      console.log('Payroll endpoint returned error:', response.status);
+      recentPayStubs = [];
+      nextPayDate = '';
     }
+  } catch (err) {
+    console.error('Error loading pay stubs:', err);
+    recentPayStubs = [];
+    nextPayDate = '';
   }
-
+}
   function getWeekStart(): Date {
     const now = new Date();
     const day = now.getDay();
@@ -182,7 +315,7 @@
       title: 'Submit Timesheet',
       description: 'Log your hours for the week',
       icon: '⏱️',
-      action: () => window.location.href = '/timesheet',
+      action: () => navigate('timesheet'),
       color: 'purple'
     },
     {
@@ -190,11 +323,11 @@
       title: 'Request Time Off',
       description: 'Submit a PTO request',
       icon: '🏖️',
-      action: () => window.location.href = '/pto',
+      action: () => navigate('pto'),
       color: 'blue'
     },
     {
-      id: 'paystub',
+      id: 'payroll',
       title: 'View Pay Stubs',
       description: 'Access your payment history',
       icon: '💰',
@@ -247,6 +380,59 @@
 </script>
 
 <div class="dashboard-container">
+  <!-- Employee Selector (Admin Only) -->
+  {#if isAdmin}
+    <div class="employee-selector-bar">
+      <div class="selector-label">Viewing Dashboard For:</div>
+      <button class="employee-selector-btn" onclick={() => showEmployeeSelector = !showEmployeeSelector}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+          <circle cx="12" cy="7" r="4"></circle>
+        </svg>
+        <span>
+          {employee ? `${employee.first_name} ${employee.last_name}` : 'Select Employee'}
+        </span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="chevron">
+          <polyline points="6 9 12 15 18 9"></polyline>
+        </svg>
+      </button>
+      
+      {#if showEmployeeSelector}
+        <div class="employee-dropdown">
+          <div class="dropdown-search">
+            <input 
+              type="text" 
+              placeholder="Search employees..." 
+              bind:value={employeeSearchTerm}
+              class="search-input"
+            />
+          </div>
+          <div class="employee-list">
+            {#each filteredEmployees as emp}
+              <button 
+                class="employee-item" 
+                class:active={selectedEmployeeId === emp.id}
+                onclick={() => selectEmployee(emp.id)}
+              >
+                <div class="employee-avatar">
+                  {emp.first_name[0]}{emp.last_name[0]}
+                </div>
+                <div class="employee-info">
+                  <div class="employee-name">{emp.first_name} {emp.last_name}</div>
+                  <div class="employee-position">{emp.position}</div>
+                </div>
+                {#if selectedEmployeeId === emp.id}
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="check">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                  </svg>
+                {/if}
+              </button>
+            {/each}
+          </div>
+        </div>
+      {/if}
+    </div>
+  {/if}  
   <!-- Header -->
   <div class="dashboard-header">
     <div>
@@ -275,31 +461,31 @@
   <div class="tab-nav">
     <button 
       class="tab-btn {activeTab === 'overview' ? 'active' : ''}"
-      on:click={() => activeTab = 'overview'}
+      onclick={() => activeTab = 'overview'}
     >
       Overview
     </button>
     <button 
       class="tab-btn {activeTab === 'tasks' ? 'active' : ''}"
-      on:click={() => activeTab = 'tasks'}
+      onclick={() => activeTab = 'tasks'}
     >
       My Tasks {#if pendingTasksCount > 0}<span class="badge">{pendingTasksCount}</span>{/if}
     </button>
     <button 
       class="tab-btn {activeTab === 'payroll' ? 'active' : ''}"
-      on:click={() => activeTab = 'payroll'}
+      onclick={() => activeTab = 'payroll'}
     >
       Pay Stubs
     </button>
     <button 
       class="tab-btn {activeTab === 'benefits' ? 'active' : ''}"
-      on:click={() => activeTab = 'benefits'}
+      onclick={() => activeTab = 'benefits'}
     >
       Benefits
     </button>
     <button 
       class="tab-btn {activeTab === 'profile' ? 'active' : ''}"
-      on:click={() => activeTab = 'profile'}
+      onclick={() => activeTab = 'profile'}
     >
       Profile
     </button>
@@ -315,7 +501,7 @@
           {#each quickActions as action}
             <button 
               class="quick-action-card action-{action.color}"
-              on:click={action.action}
+              onclick={action.action}
             >
               <span class="action-icon">{action.icon}</span>
               <div class="action-content">
@@ -336,7 +522,7 @@
           <section class="section card">
             <div class="section-header">
               <h2>Pending Tasks</h2>
-              <button class="link-btn" on:click={() => activeTab = 'tasks'}>
+              <button class="link-btn" onclick={() => activeTab = 'tasks'}>
                 View All →
               </button>
             </div>
@@ -372,7 +558,7 @@
           <section class="section card">
             <div class="section-header">
               <h2>Recent Time Entries</h2>
-              <button class="link-btn" on:click={() => window.location.href = '/timesheet'}>
+              <button class="link-btn" onclick={() => navigate('timesheet')}>
                 View All →
               </button>
             </div>
@@ -426,7 +612,7 @@
                   </div>
                 </div>
               </div>
-              <button class="btn btn-primary btn-block" on:click={() => window.location.href = '/pto'}>
+              <button class="btn btn-primary btn-block" onclick={() => navigate('pto')}>
                 Request Time Off
               </button>
             </section>
@@ -442,7 +628,7 @@
                   <div class="pay-date">{formatDate(nextPayDate)}</div>
                 </div>
               </div>
-              <button class="btn btn-secondary btn-block" on:click={() => activeTab = 'payroll'}>
+              <button class="btn btn-secondary btn-block" onclick={() => activeTab = 'payroll'}>
                 View Pay Stubs
               </button>
             </section>
@@ -452,7 +638,7 @@
           <section class="section card">
             <h2>Benefits Portal</h2>
             <div class="benefits-links">
-              <a href="#" class="benefit-link" on:click|preventDefault={() => activeTab = 'benefits'}>
+              <a href="#" class="benefit-link" onclick={(e) => { e.preventDefault(); activeTab = 'benefits'; }}>
                 <span class="benefit-icon">🏥</span>
                 <div>
                   <div class="benefit-title">Healthcare</div>
@@ -460,7 +646,7 @@
                 </div>
                 <span class="link-arrow">→</span>
               </a>
-              <a href="#" class="benefit-link" on:click|preventDefault={() => activeTab = 'benefits'}>
+              <a href="#" class="benefit-link" onclick={(e) => { e.preventDefault(); activeTab = 'benefits'; }}>
                 <span class="benefit-icon">💼</span>
                 <div>
                   <div class="benefit-title">Retirement</div>
@@ -651,7 +837,7 @@
 
         <div class="help-section">
           <h3>Need Help with Benefits?</h3>
-          <p>Contact HR at <a href="mailto:benefits@company.com">benefits@company.com</a> or call (555) 123-4567</p>
+          <p>Contact HR at <a href="/cdn-cgi/l/email-protection#482a2d262d2e213c3b082b272538292631662b2725"><span class="__cf_email__" data-cfemail="1577707b70737c616655767a7865747b6c3b767a78">[email&#160;protected]</span></a> or call (555) 123-4567</p>
         </div>
       </section>
     {/if}
@@ -1501,5 +1687,152 @@
     .benefits-grid {
       grid-template-columns: 1fr;
     }
+  }
+    .employee-selector-bar {
+    position: relative;
+    background: white;
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 2rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .selector-label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #6b7280;
+  }
+
+  .employee-selector-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    background: #f9fafb;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 0.875rem;
+    font-weight: 500;
+  }
+
+  .employee-selector-btn:hover {
+    background: #f3f4f6;
+    border-color: #9ca3af;
+  }
+
+  .employee-selector-btn svg:first-child {
+    width: 20px;
+    height: 20px;
+    color: #6b7280;
+  }
+
+  .employee-selector-btn .chevron {
+    width: 16px;
+    height: 16px;
+    color: #9ca3af;
+    margin-left: auto;
+  }
+
+  .employee-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 0.5rem;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    z-index: 50;
+    max-height: 400px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .dropdown-search {
+    padding: 1rem;
+    border-bottom: 1px solid #e5e7eb;
+  }
+
+  .search-input {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 0.875rem;
+  }
+
+  .search-input:focus {
+    outline: none;
+    border-color: #4f46e5;
+    ring: 2px;
+    ring-color: #e0e7ff;
+  }
+
+  .employee-list {
+    overflow-y: auto;
+    max-height: 300px;
+  }
+
+  .employee-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+    width: 100%;
+    border: none;
+    background: white;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+
+  .employee-item:hover {
+    background: #f9fafb;
+  }
+
+  .employee-item.active {
+    background: #eff6ff;
+  }
+
+  .employee-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 600;
+    font-size: 0.875rem;
+    flex-shrink: 0;
+  }
+
+  .employee-info {
+    flex: 1;
+    text-align: left;
+  }
+
+  .employee-name {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: #1f2937;
+  }
+
+  .employee-position {
+    font-size: 0.75rem;
+    color: #6b7280;
+    margin-top: 0.125rem;
+  }
+
+  .employee-item .check {
+    width: 20px;
+    height: 20px;
+    color: #4f46e5;
   }
 </style>

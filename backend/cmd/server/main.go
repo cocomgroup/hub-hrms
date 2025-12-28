@@ -53,7 +53,7 @@ func main() {
 	log.Printf("Running database migrations...")
    
 	if err := runMigrations(database); err != nil {
-		log.Printf("WARNING: Migration error: %v", err)
+		log.Fatalf("WARNING: Migration error: %v", err)
 	} else {
 		log.Printf("Migrations completed")
 	}
@@ -62,7 +62,6 @@ func main() {
 	// Initialize repositories
     var dbPool = database.GetPool() 
 	repos := repository.NewRepositories(dbPool)
-    runMigrations(database)
 
 	// Initialize services
 	services := service.NewServices(repos, cfg)
@@ -145,6 +144,7 @@ func setupRouter(services *service.Services, cfg *config.Config) *chi.Mux {
 		api.RegisterPayrollRoutes(r, services)
         api.RegisterRecruitingRoutes(r, services)
         api.RegisterOrganizationRoutes(r, services)
+        api.RegisterProjectRoutes(r, services)
 	})
 
 	return r
@@ -213,18 +213,19 @@ func runMigrations(database *db.Postgres) error {
 		"001-create-users.sql",
 		"002-create-employees.sql",
 		"003-create-onboarding-tasks.sql",
-		"004-create-time-sheet-tables.sql",
+		"004-create-timesheet-tables.sql",
 		"005-create-benefits-table.sql",
 		"006-create-pto-tables.sql",
 		"007-create-workflows.sql",
 		"008-create-payroll.sql",
 		"009-create-recruiting.sql",
 		"010-create-organizations.sql",
-        "011-seed-users.sql",
+        "011-create-project.sql",
         "012-seed-employees.sql",
         "013-seed-organizations.sql",
         "014-seed-recruiting.sql",
         "015-seed-pto-benefits.sql",
+        "016-seed-users.sql",
 	}
 
 	log.Printf("Running %d database migrations from %s/", len(migrationFiles), migrationsDir)

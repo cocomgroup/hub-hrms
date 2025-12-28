@@ -11,9 +11,17 @@ import (
 	"hub-hrms/backend/internal/models"
 )
 
-// ============================================================================
-// Interface Implementation (matches existing interface)
-// ============================================================================
+// TimesheetRepository interface
+type TimesheetRepository interface {
+	Create(ctx context.Context, timesheet *models.Timesheet) error
+	GetByID(ctx context.Context, id uuid.UUID) (*models.Timesheet, error)
+	GetByEmployee(ctx context.Context, employeeID uuid.UUID, filters map[string]interface{}) ([]*models.Timesheet, error)
+	GetActiveTimesheet(ctx context.Context, employeeID uuid.UUID) (*models.Timesheet, error)
+	Update(ctx context.Context, timesheet *models.Timesheet) error
+	List(ctx context.Context, filters map[string]interface{}) ([]*models.Timesheet, error)
+}
+
+
 type timesheetRepository struct{ db *pgxpool.Pool }
 
 func NewTimesheetRepository(db *pgxpool.Pool) TimesheetRepository { return &timesheetRepository{db: db} }

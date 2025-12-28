@@ -11,6 +11,18 @@ import (
 	"hub-hrms/backend/internal/models"
 )
 
+// PTORepository interface
+type PTORepository interface {
+	GetBalance(ctx context.Context, employeeID uuid.UUID) (*models.PTOBalance, error)
+	CreateBalance(ctx context.Context, balance *models.PTOBalance) error
+	UpdateBalance(ctx context.Context, balance *models.PTOBalance) error
+	CreateRequest(ctx context.Context, request *models.PTORequest) error
+	GetRequestByID(ctx context.Context, id uuid.UUID) (*models.PTORequest, error)
+	GetRequestsByEmployee(ctx context.Context, employeeID uuid.UUID) ([]*models.PTORequest, error)
+	UpdateRequest(ctx context.Context, request *models.PTORequest) error
+	ListRequests(ctx context.Context, filters map[string]interface{}) ([]*models.PTORequest, error)
+}
+
 type ptoRepository struct {
 	db *pgxpool.Pool
 }

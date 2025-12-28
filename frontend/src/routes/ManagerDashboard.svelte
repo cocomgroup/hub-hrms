@@ -1,12 +1,15 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { authStore } from '../stores/auth';
+  import { getApiBaseUrl } from '../lib/api';
 
   type Props = {
     navigate: (page: string) => void;
   };
   
   let { navigate }: Props = $props();
+
+  const API_BASE_URL = getApiBaseUrl();
 
   interface TeamStats {
     teamMembers: number;
@@ -23,14 +26,11 @@
     status: string;
   }
 
-  interface PTORequest {
+  interface Manager {
     id: string;
-    employeeName: string;
-    type: string;
-    startDate: string;
-    endDate: string;
-    days: number;
-    status: string;
+    name: string;
+    email: string;
+    position: string;
   }
 
   let stats = $state<TeamStats>({
@@ -41,12 +41,53 @@
   });
 
   let teamMembers = $state<TeamMember[]>([]);
-  let ptoRequests = $state<PTORequest[]>([]);
   let loading = $state(true);
   let error = $state('');
   let currentUser = $state<any>(null);
+  
+  // Manager selector state (for Admin/HR)
+  let isAdminOrHR = $state(false);
+  let managers = $state<Manager[]>([]);
+  let selectedManagerId = $state<string>('');
+  let viewingManagerName = $state<string>('');
 
-  async function fetchDashboardData() {
+  async function loadManagers() {
+    try {
+      const response = await fetch(`${API_BASE_URL}/employees`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch employees');
+      }
+
+      const allEmployees = await response.json();
+      
+      // Get all employees who are managers (have direct reports)
+      const managerIds = new Set(
+        allEmployees
+          .filter((e: any) => e.manager_id)
+          .map((e: any) => e.manager_id)
+      );
+
+      managers = allEmployees
+        .filter((e: any) => managerIds.has(e.id))
+        .map((e: any) => ({
+          id: e.id,
+          name: `${e.first_name} ${e.last_name}`,
+          email: e.email,
+          position: e.position
+        }))
+        .sort((a: Manager, b: Manager) => a.name.localeCompare(b.name));
+
+    } catch (err) {
+      console.error('Error loading managers:', err);
+    }
+  }
+
+  async function fetchDashboardData(managerId?: string) {
     try {
       loading = true;
       error = '';
@@ -54,40 +95,56 @@
       // Get current user
       authStore.subscribe(value => {
         currentUser = value.user;
+        isAdminOrHR = value.user?.role === 'admin' || value.user?.role === 'hr_manager';
       });
 
+      // Determine which manager's data to show
+      let targetManagerId = managerId || currentUser?.employee_id;
+
+      // If admin/HR and no manager selected yet, use their own employee_id as default
+      if (isAdminOrHR && !selectedManagerId && currentUser?.employee_id) {
+        selectedManagerId = currentUser.employee_id;
+        targetManagerId = currentUser.employee_id;
+      }
+
       // Fetch all employees
-      const employeesRes = await fetch('http://localhost:8080/api/employees', {
+      const employeesRes = await fetch(`${API_BASE_URL}/employees`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
       });
 
-      if (employeesRes.ok) {
-        const allEmployees = await employeesRes.json();
-        
-        // Filter team members (employees managed by current user)
-        if (currentUser?.employee_id) {
-          teamMembers = allEmployees.filter((e: any) => 
-            e.manager_id === currentUser.employee_id
-          ).map((e: any) => ({
-            id: e.id,
-            name: `${e.first_name} ${e.last_name}`,
-            email: e.email,
-            position: e.position,
-            status: e.status
-          }));
-        }
-
-        stats.teamMembers = teamMembers.length;
+      if (!employeesRes.ok) {
+        throw new Error(`Failed to fetch employees: ${employeesRes.status}`);
       }
 
-      // TODO: Fetch PTO requests when PTO API is ready
+      const allEmployees = await employeesRes.json();
+      
+      // Find the manager we're viewing
+      const viewingManager = allEmployees.find((e: any) => e.id === targetManagerId);
+      if (viewingManager) {
+        viewingManagerName = `${viewingManager.first_name} ${viewingManager.last_name}`;
+      }
+
+      // Filter team members (employees managed by target manager)
+      if (targetManagerId) {
+        teamMembers = allEmployees.filter((e: any) => 
+          e.manager_id === targetManagerId
+        ).map((e: any) => ({
+          id: e.id,
+          name: `${e.first_name} ${e.last_name}`,
+          email: e.email,
+          position: e.position,
+          status: e.status
+        }));
+      }
+
+      stats.teamMembers = teamMembers.length;
       stats.pendingPTO = 0;
       stats.upcomingReviews = 0;
       stats.openTasks = 0;
 
-    } catch (err) {
+    } catch (err: any) {
       error = 'Failed to load dashboard data';
       console.error('Dashboard error:', err);
     } finally {
@@ -95,49 +152,92 @@
     }
   }
 
-  async function handlePTOAction(requestId: string, action: 'approve' | 'deny') {
-    try {
-      // TODO: Implement PTO approval when API is ready
-      console.log(`${action} PTO request ${requestId}`);
-    } catch (err) {
-      console.error('PTO action error:', err);
-    }
+  function handleManagerChange(event: Event) {
+    const target = event.target as HTMLSelectElement;
+    selectedManagerId = target.value;
+    fetchDashboardData(selectedManagerId);
   }
 
-  onMount(() => {
-    fetchDashboardData();
+  onMount(async () => {
+    // Check if user is admin/HR
+    authStore.subscribe(value => {
+      isAdminOrHR = value.user?.role === 'admin' || value.user?.role === 'hr_manager';
+    });
+
+    if (isAdminOrHR) {
+      await loadManagers();
+    }
+    
+    await fetchDashboardData();
   });
 </script>
 
 <div class="manager-dashboard">
   <div class="dashboard-header">
-    <div>
-      <h1>Manager Dashboard</h1>
-      <p class="subtitle">Manage your team and responsibilities</p>
-    </div>
+    <h1>Manager Dashboard</h1>
+    {#if viewingManagerName && isAdminOrHR}
+      <p class="viewing-as">Viewing: <strong>{viewingManagerName}'s Team</strong></p>
+    {/if}
   </div>
+
+  {#if error}
+    <div class="error-banner">{error}</div>
+  {/if}
+
+  <!-- Manager Selector for Admin/HR -->
+  {#if isAdminOrHR && managers.length > 0}
+    <div class="manager-selector">
+      <div class="selector-card">
+        <div class="selector-header">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+            <circle cx="9" cy="7" r="4"></circle>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+          </svg>
+          <div class="selector-info">
+            <h3>Select Manager</h3>
+            <p>View dashboard for any manager</p>
+          </div>
+        </div>
+        
+        <select 
+          bind:value={selectedManagerId}
+          onchange={handleManagerChange}
+          class="manager-select"
+        >
+          <option value="">Select a manager...</option>
+          {#each managers as manager}
+            <option value={manager.id}>
+              {manager.name} - {manager.position}
+            </option>
+          {/each}
+        </select>
+      </div>
+    </div>
+  {/if}
 
   {#if loading}
     <div class="loading">
       <div class="spinner"></div>
       <p>Loading dashboard...</p>
     </div>
-  {:else if error}
-    <div class="error-state">
+  {:else if !selectedManagerId && isAdminOrHR}
+    <div class="empty-state">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="12" cy="12" r="10"></circle>
-        <line x1="12" y1="8" x2="12" y2="12"></line>
-        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+        <circle cx="9" cy="7" r="4"></circle>
+        <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+        <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
       </svg>
-      <p>{error}</p>
-      <button onclick={fetchDashboardData}>Retry</button>
+      <h3>Select a Manager</h3>
+      <p>Choose a manager from the dropdown above to view their team dashboard</p>
     </div>
   {:else}
-    <!-- Stats Grid -->
+    <!-- Stats Cards -->
     <div class="stats-grid">
-      <!-- Team Members Card -->
       <div class="stat-card">
-        <div class="stat-icon" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+        <div class="stat-icon team">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
             <circle cx="9" cy="7" r="4"></circle>
@@ -145,15 +245,14 @@
             <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
           </svg>
         </div>
-        <div class="stat-info">
-          <div class="stat-value">{stats.teamMembers}</div>
-          <div class="stat-label">Team Members</div>
+        <div class="stat-content">
+          <p class="stat-label">Team Members</p>
+          <p class="stat-value">{stats.teamMembers}</p>
         </div>
       </div>
 
-      <!-- Pending PTO Card -->
-      <div class="stat-card" onclick={() => navigate('pto')}>
-        <div class="stat-icon" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+      <div class="stat-card">
+        <div class="stat-icon pto">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
             <line x1="16" y1="2" x2="16" y2="6"></line>
@@ -161,178 +260,144 @@
             <line x1="3" y1="10" x2="21" y2="10"></line>
           </svg>
         </div>
-        <div class="stat-info">
-          <div class="stat-value">{stats.pendingPTO}</div>
-          <div class="stat-label">Pending PTO Requests</div>
-        </div>
-        <div class="stat-arrow">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="5" y1="12" x2="19" y2="12"></line>
-            <polyline points="12 5 19 12 12 19"></polyline>
-          </svg>
+        <div class="stat-content">
+          <p class="stat-label">Pending PTO</p>
+          <p class="stat-value">{stats.pendingPTO}</p>
         </div>
       </div>
 
-      <!-- Upcoming Reviews Card -->
       <div class="stat-card">
-        <div class="stat-icon" style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);">
+        <div class="stat-icon reviews">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M9 11l3 3L22 4"></path>
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+          </svg>
+        </div>
+        <div class="stat-content">
+          <p class="stat-label">Upcoming Reviews</p>
+          <p class="stat-value">{stats.upcomingReviews}</p>
+        </div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-icon tasks">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="9 11 12 14 22 4"></polyline>
             <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
           </svg>
         </div>
-        <div class="stat-info">
-          <div class="stat-value">{stats.upcomingReviews}</div>
-          <div class="stat-label">Upcoming Reviews</div>
-        </div>
-      </div>
-
-      <!-- Open Tasks Card -->
-      <div class="stat-card" onclick={() => navigate('timesheet')}>
-        <div class="stat-icon" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10"></circle>
-            <polyline points="12 6 12 12 16 14"></polyline>
-          </svg>
-        </div>
-        <div class="stat-info">
-          <div class="stat-value">{stats.openTasks}</div>
-          <div class="stat-label">Open Tasks</div>
-        </div>
-        <div class="stat-arrow">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="5" y1="12" x2="19" y2="12"></line>
-            <polyline points="12 5 19 12 12 19"></polyline>
-          </svg>
+        <div class="stat-content">
+          <p class="stat-label">Open Tasks</p>
+          <p class="stat-value">{stats.openTasks}</p>
         </div>
       </div>
     </div>
 
-    <!-- Quick Actions -->
-    <div class="quick-actions">
-      <h2>Quick Actions</h2>
-      <div class="actions-grid">
-        <button class="action-btn" onclick={() => navigate('pto')}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-            <line x1="16" y1="2" x2="16" y2="6"></line>
-            <line x1="8" y1="2" x2="8" y2="6"></line>
-            <line x1="3" y1="10" x2="21" y2="10"></line>
-          </svg>
-          <span>Review PTO</span>
-        </button>
+    <!-- Team Members Section -->
+    <div class="section">
+      <div class="section-header">
+        <h2>Team Members</h2>
+      </div>
 
-        <button class="action-btn" onclick={() => navigate('timesheet')}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10"></circle>
-            <polyline points="12 6 12 12 16 14"></polyline>
-          </svg>
-          <span>Approve Timesheets</span>
-        </button>
-
-        <button class="action-btn" onclick={() => navigate('employees')}>
+      {#if teamMembers.length === 0}
+        <div class="empty-state">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
             <circle cx="9" cy="7" r="4"></circle>
             <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
           </svg>
-          <span>View Team</span>
-        </button>
-
-        <button class="action-btn" onclick={() => navigate('onboarding')}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-            <circle cx="8.5" cy="7" r="4"></circle>
-            <line x1="20" y1="8" x2="20" y2="14"></line>
-            <line x1="23" y1="11" x2="17" y2="11"></line>
-          </svg>
-          <span>Onboarding</span>
-        </button>
-      </div>
+          <h3>No Team Members</h3>
+          <p>This manager currently has no direct reports</p>
+        </div>
+      {:else}
+        <div class="table-container">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Position</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each teamMembers as member}
+                <tr>
+                  <td>
+                    <div class="member-name">
+                      <div class="avatar">
+                        {member.name.split(' ').map(n => n[0]).join('')}
+                      </div>
+                      {member.name}
+                    </div>
+                  </td>
+                  <td>{member.email}</td>
+                  <td>{member.position}</td>
+                  <td>
+                    <span class="status-badge status-{member.status}">
+                      {member.status}
+                    </span>
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {/if}
     </div>
 
-    <div class="dashboard-content">
-      <!-- Team Members Section -->
-      <div class="section team-section">
-        <div class="section-header">
-          <h2>My Team</h2>
-          <button class="link-btn" onclick={() => navigate('employees')}>View All</button>
-        </div>
-        
-        {#if teamMembers.length === 0}
-          <div class="empty-state">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-              <circle cx="9" cy="7" r="4"></circle>
-              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-            </svg>
-            <p>No team members found</p>
-            <span class="empty-hint">Team members you manage will appear here</span>
-          </div>
-        {:else}
-          <div class="team-grid">
-            {#each teamMembers.slice(0, 6) as member}
-              <div class="team-card">
-                <div class="team-member-avatar">
-                  {member.name.split(' ').map(n => n[0]).join('')}
-                </div>
-                <div class="team-member-info">
-                  <h3>{member.name}</h3>
-                  <p class="position">{member.position}</p>
-                  <p class="email">{member.email}</p>
-                  <span class="status status-{member.status}">{member.status}</span>
-                </div>
-              </div>
-            {/each}
-          </div>
-        {/if}
+    <!-- Quick Actions -->
+    <div class="section">
+      <div class="section-header">
+        <h2>Quick Actions</h2>
       </div>
 
-      <!-- Pending PTO Requests Section -->
-      <div class="section pto-section">
-        <div class="section-header">
-          <h2>Pending PTO Requests</h2>
-          <button class="link-btn" onclick={() => navigate('pto')}>View All</button>
-        </div>
-        
-        {#if ptoRequests.length === 0}
-          <div class="empty-state">
+      <div class="actions-grid">
+        <button class="action-card" onclick={() => navigate('pto')}>
+          <div class="action-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
               <line x1="16" y1="2" x2="16" y2="6"></line>
               <line x1="8" y1="2" x2="8" y2="6"></line>
               <line x1="3" y1="10" x2="21" y2="10"></line>
             </svg>
-            <p>No pending PTO requests</p>
-            <span class="empty-hint">Time off requests awaiting approval will appear here</span>
           </div>
-        {:else}
-          <div class="pto-list">
-            {#each ptoRequests as request}
-              <div class="pto-item">
-                <div class="pto-info">
-                  <h3>{request.employeeName}</h3>
-                  <p class="pto-type">{request.type}</p>
-                  <p class="pto-dates">{request.startDate} - {request.endDate} ({request.days} days)</p>
-                </div>
-                <div class="pto-actions">
-                  <button 
-                    class="btn-approve" 
-                    onclick={() => handlePTOAction(request.id, 'approve')}
-                  >
-                    Approve
-                  </button>
-                  <button 
-                    class="btn-deny" 
-                    onclick={() => handlePTOAction(request.id, 'deny')}
-                  >
-                    Deny
-                  </button>
-                </div>
-              </div>
-            {/each}
+          <div class="action-content">
+            <h3>Review PTO Requests</h3>
+            <p>Approve or deny team time off</p>
           </div>
-        {/if}
+        </button>
+
+        <button class="action-card" onclick={() => navigate('timesheet')}>
+          <div class="action-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polyline points="12 6 12 12 16 14"></polyline>
+            </svg>
+          </div>
+          <div class="action-content">
+            <h3>View Timesheets</h3>
+            <p>Review team hours and attendance</p>
+          </div>
+        </button>
+
+        <button class="action-card" onclick={() => navigate('employees')}>
+          <div class="action-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+            </svg>
+          </div>
+          <div class="action-content">
+            <h3>Manage Team</h3>
+            <p>View and update employee info</p>
+          </div>
+        </button>
       </div>
     </div>
   {/if}
@@ -349,16 +414,90 @@
     margin-bottom: 2rem;
   }
 
-  h1 {
-    font-size: 2rem;
-    font-weight: 700;
-    color: #1f2937;
+  .dashboard-header h1 {
     margin: 0 0 0.5rem 0;
+    font-size: 2rem;
+    color: #1f2937;
   }
 
-  .subtitle {
-    color: #6b7280;
+  .viewing-as {
     margin: 0;
+    color: #6b7280;
+    font-size: 0.95rem;
+  }
+
+  .viewing-as strong {
+    color: #3b82f6;
+    font-weight: 600;
+  }
+
+  /* Manager Selector */
+  .manager-selector {
+    margin-bottom: 2rem;
+  }
+
+  .selector-card {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    border-radius: 12px;
+    padding: 1.5rem;
+    color: white;
+  }
+
+  .selector-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .selector-header svg {
+    width: 48px;
+    height: 48px;
+    opacity: 0.9;
+  }
+
+  .selector-info h3 {
+    margin: 0 0 0.25rem 0;
+    font-size: 1.25rem;
+    font-weight: 600;
+  }
+
+  .selector-info p {
+    margin: 0;
+    font-size: 0.875rem;
+    opacity: 0.9;
+  }
+
+  .manager-select {
+    width: 100%;
+    padding: 0.75rem 1rem;
+    font-size: 1rem;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.95);
+    color: #1f2937;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .manager-select:hover {
+    background: white;
+    border-color: rgba(255, 255, 255, 0.5);
+  }
+
+  .manager-select:focus {
+    outline: none;
+    border-color: white;
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.2);
+  }
+
+  .error-banner {
+    background: #fee2e2;
+    border: 1px solid #fecaca;
+    color: #991b1b;
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
   }
 
   .loading {
@@ -367,10 +506,10 @@
   }
 
   .spinner {
-    width: 50px;
-    height: 50px;
-    border: 4px solid #f3f4f6;
-    border-top-color: #4f46e5;
+    width: 48px;
+    height: 48px;
+    border: 4px solid #e5e7eb;
+    border-top-color: #3b82f6;
     border-radius: 50%;
     animation: spin 1s linear infinite;
     margin: 0 auto 1rem;
@@ -380,36 +519,34 @@
     to { transform: rotate(360deg); }
   }
 
-  .error-state {
+  .empty-state {
     text-align: center;
-    padding: 3rem 2rem;
-    background: #fef2f2;
-    border-radius: 8px;
-    border: 1px solid #fecaca;
+    padding: 4rem 2rem;
+    color: #6b7280;
   }
 
-  .error-state svg {
-    width: 48px;
-    height: 48px;
-    color: #dc2626;
-    margin-bottom: 1rem;
+  .empty-state svg {
+    width: 64px;
+    height: 64px;
+    margin: 0 auto 1rem;
+    opacity: 0.5;
   }
 
-  .error-state button {
-    margin-top: 1rem;
-    padding: 0.5rem 1.5rem;
-    background: #4f46e5;
-    color: white;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 0.875rem;
-    font-weight: 500;
+  .empty-state h3 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1.25rem;
+    color: #374151;
   }
 
+  .empty-state p {
+    margin: 0;
+    font-size: 0.95rem;
+  }
+
+  /* Stats Grid */
   .stats-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
     gap: 1.5rem;
     margin-bottom: 2rem;
   }
@@ -422,17 +559,6 @@
     display: flex;
     align-items: center;
     gap: 1rem;
-    cursor: default;
-    transition: all 0.2s;
-  }
-
-  .stat-card:has(.stat-arrow) {
-    cursor: pointer;
-  }
-
-  .stat-card:has(.stat-arrow):hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
   }
 
   .stat-icon {
@@ -442,7 +568,6 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    flex-shrink: 0;
   }
 
   .stat-icon svg {
@@ -451,34 +576,31 @@
     color: white;
   }
 
-  .stat-info {
+  .stat-icon.team { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+  .stat-icon.pto { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
+  .stat-icon.reviews { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
+  .stat-icon.tasks { background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); }
+
+  .stat-content {
     flex: 1;
   }
 
-  .stat-value {
-    font-size: 1.75rem;
-    font-weight: 700;
-    color: #1f2937;
-    margin-bottom: 0.25rem;
-  }
-
   .stat-label {
+    margin: 0 0 0.25rem 0;
     font-size: 0.875rem;
     color: #6b7280;
+    font-weight: 500;
   }
 
-  .stat-arrow {
-    width: 24px;
-    height: 24px;
-    color: #d1d5db;
+  .stat-value {
+    margin: 0;
+    font-size: 2rem;
+    font-weight: 700;
+    color: #1f2937;
   }
 
-  .stat-arrow svg {
-    width: 100%;
-    height: 100%;
-  }
-
-  .quick-actions {
+  /* Sections */
+  .section {
     background: white;
     border-radius: 12px;
     padding: 1.5rem;
@@ -486,172 +608,73 @@
     margin-bottom: 2rem;
   }
 
-  .quick-actions h2 {
-    font-size: 1.25rem;
-    font-weight: 600;
-    margin-bottom: 1rem;
-    color: #1f2937;
-  }
-
-  .actions-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1rem;
-  }
-
-  .action-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 1rem;
-    background: #f9fafb;
-    border: 1px solid #e5e7eb;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: all 0.2s;
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: #374151;
-  }
-
-  .action-btn:hover {
-    background: #4f46e5;
-    border-color: #4f46e5;
-    color: white;
-  }
-
-  .action-btn svg {
-    width: 20px;
-    height: 20px;
-  }
-
-  .dashboard-content {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1.5rem;
-  }
-
-  @media (max-width: 1024px) {
-    .dashboard-content {
-      grid-template-columns: 1fr;
-    }
-  }
-
-  .section {
-    background: white;
-    border-radius: 12px;
-    padding: 1.5rem;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  }
-
   .section-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
     margin-bottom: 1.5rem;
   }
 
   .section-header h2 {
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: #1f2937;
     margin: 0;
+    font-size: 1.5rem;
+    color: #1f2937;
   }
 
-  .link-btn {
-    background: none;
-    border: none;
-    color: #4f46e5;
-    cursor: pointer;
-    font-size: 0.875rem;
-    font-weight: 500;
-    padding: 0;
+  /* Table */
+  .table-container {
+    overflow-x: auto;
   }
 
-  .link-btn:hover {
-    text-decoration: underline;
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
   }
 
-  .empty-state {
-    text-align: center;
-    padding: 3rem 2rem;
-    color: #9ca3af;
-  }
-
-  .empty-state svg {
-    width: 48px;
-    height: 48px;
-    margin-bottom: 1rem;
-  }
-
-  .empty-state p {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: #6b7280;
-    margin: 0 0 0.5rem 0;
-  }
-
-  .empty-hint {
-    font-size: 0.75rem;
-    color: #9ca3af;
-  }
-
-  .team-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-    gap: 1rem;
-  }
-
-  .team-card {
-    padding: 1rem;
+  .data-table th {
+    text-align: left;
+    padding: 0.75rem 1rem;
     background: #f9fafb;
-    border-radius: 8px;
-    border: 1px solid #e5e7eb;
+    color: #6b7280;
+    font-weight: 600;
+    font-size: 0.875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
   }
 
-  .team-member-avatar {
-    width: 48px;
-    height: 48px;
+  .data-table td {
+    padding: 1rem;
+    border-top: 1px solid #e5e7eb;
+  }
+
+  .data-table tr:hover {
+    background: #f9fafb;
+  }
+
+  .member-name {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-weight: 500;
+    color: #1f2937;
+  }
+
+  .avatar {
+    width: 32px;
+    height: 32px;
     border-radius: 50%;
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-weight: 600;
-    font-size: 0.875rem;
-    margin-bottom: 0.75rem;
-  }
-
-  .team-member-info h3 {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: #1f2937;
-    margin: 0 0 0.25rem 0;
-  }
-
-  .team-member-info .position {
     font-size: 0.75rem;
-    color: #6b7280;
-    margin: 0 0 0.25rem 0;
+    font-weight: 600;
   }
 
-  .team-member-info .email {
-    font-size: 0.75rem;
-    color: #9ca3af;
-    margin: 0 0 0.5rem 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .status {
+  .status-badge {
     display: inline-block;
-    padding: 0.125rem 0.5rem;
+    padding: 0.25rem 0.75rem;
     border-radius: 9999px;
-    font-size: 0.625rem;
+    font-size: 0.875rem;
     font-weight: 500;
-    text-transform: uppercase;
   }
 
   .status-active {
@@ -659,80 +682,71 @@
     color: #065f46;
   }
 
+  .status-onboarding {
+    background: #dbeafe;
+    color: #1e40af;
+  }
+
   .status-inactive {
-    background: #fee2e2;
-    color: #991b1b;
-  }
-
-  .pto-list {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-
-  .pto-item {
-    padding: 1rem;
-    background: #f9fafb;
-    border-radius: 8px;
-    border: 1px solid #e5e7eb;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 1rem;
-  }
-
-  .pto-info h3 {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: #1f2937;
-    margin: 0 0 0.25rem 0;
-  }
-
-  .pto-type {
-    font-size: 0.75rem;
-    color: #4f46e5;
-    font-weight: 500;
-    margin: 0 0 0.25rem 0;
-    text-transform: capitalize;
-  }
-
-  .pto-dates {
-    font-size: 0.75rem;
+    background: #f3f4f6;
     color: #6b7280;
-    margin: 0;
   }
 
-  .pto-actions {
+  /* Actions Grid */
+  .actions-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1rem;
+  }
+
+  .action-card {
+    background: white;
+    border: 2px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 1.5rem;
     display: flex;
-    gap: 0.5rem;
-  }
-
-  .btn-approve,
-  .btn-deny {
-    padding: 0.5rem 1rem;
-    border: none;
-    border-radius: 6px;
-    font-size: 0.75rem;
-    font-weight: 500;
+    align-items: flex-start;
+    gap: 1rem;
     cursor: pointer;
     transition: all 0.2s;
   }
 
-  .btn-approve {
-    background: #d1fae5;
-    color: #065f46;
+  .action-card:hover {
+    border-color: #3b82f6;
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.1);
+    transform: translateY(-2px);
   }
 
-  .btn-approve:hover {
-    background: #a7f3d0;
+  .action-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
   }
 
-  .btn-deny {
-    background: #fee2e2;
-    color: #991b1b;
+  .action-icon svg {
+    width: 24px;
+    height: 24px;
+    color: white;
   }
 
-  .btn-deny:hover {
-    background: #fecaca;
+  .action-content {
+    text-align: left;
+  }
+
+  .action-content h3 {
+    margin: 0 0 0.25rem 0;
+    font-size: 1rem;
+    color: #1f2937;
+  }
+
+  .action-content p {
+    margin: 0;
+    font-size: 0.875rem;
+    color: #6b7280;
   }
 </style>

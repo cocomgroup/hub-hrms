@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { authStore } from '../stores/auth';
   import { onMount } from 'svelte';
+  import { authStore } from '../stores/auth';
 
   interface User {
     id: string;
@@ -33,6 +33,7 @@
 
   // Form data
   let newUser = $state({
+    username: '',
     email: '',
     password: '',
     confirmPassword: '',
@@ -104,7 +105,7 @@
     success = '';
 
     // Validation
-    if (!newUser.email || !newUser.password || !newUser.role) {
+    if (!newUser.username || !newUser.email || !newUser.password || !newUser.role) {
       error = 'Please fill in all required fields';
       return;
     }
@@ -122,6 +123,7 @@
     try {
       const token = localStorage.getItem('token');
       const userData: any = {
+        username: newUser.username,
         email: newUser.email,
         password: newUser.password,
         role: newUser.role
@@ -292,6 +294,7 @@
 
   function resetNewUserForm() {
     newUser = {
+      username: '',
       email: '',
       password: '',
       confirmPassword: '',
@@ -478,8 +481,8 @@
 
 <!-- Add User Modal -->
 {#if showAddModal}
-  <div class="modal-overlay" onclick={closeAddModal}>
-    <div class="modal" onclick={(e) => e.stopPropagation()}>
+  <div class="modal-overlay" onclick={closeAddModal} onkeydown={(e) => e.key === 'Escape' && closeAddModal()} role="button" tabindex="0">
+    <div class="modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
       <div class="modal-header">
         <h2>Add New User</h2>
         <button class="btn-close" onclick={closeAddModal}>×</button>
@@ -488,6 +491,17 @@
       <form onsubmit={(e) => { e.preventDefault(); createUser(); }}>
         <div class="modal-body">
           <div class="form-group">
+          <div class="form-group">
+            <label for="username">Username *</label>
+            <input
+              type="text"
+              id="username"
+              bind:value={newUser.username}
+              placeholder="johndoe"
+              required
+            />
+          </div>
+
             <label for="email">Email *</label>
             <input
               type="email"
@@ -569,8 +583,8 @@
 
 <!-- Edit User Modal -->
 {#if showEditModal && selectedUser}
-  <div class="modal-overlay" onclick={closeEditModal}>
-    <div class="modal" onclick={(e) => e.stopPropagation()}>
+  <div class="modal-overlay" onclick={closeEditModal} onkeydown={(e) => e.key === 'Escape' && closeEditModal()} role="button" tabindex="0">
+    <div class="modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()} role="dialog" aria-modal="true" tabindex="-1">
       <div class="modal-header">
         <h2>Edit User</h2>
         <button class="btn-close" onclick={closeEditModal}>×</button>
