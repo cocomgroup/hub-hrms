@@ -40,7 +40,7 @@
       });
 
       // ✅ ADD THIS: Check if employee needs onboarding
-      if (employee && employee.status === 'onboarding') {
+      if (employee && employee.status === 'Onboarding') {
         currentPage = 'onboarding';
         return;
       }

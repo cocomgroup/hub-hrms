@@ -311,7 +311,7 @@
         clock_out: newEntry.clock_out 
           ? `${newEntry.date}T${newEntry.clock_out}:00Z` 
           : null,
-        date: newEntry.date,  // Map to backend "date" field
+        date: `${newEntry.date}T00:00:00Z`,  // Map to backend "date" field
       };
       
       const response = await fetch(url, {
@@ -479,15 +479,31 @@
   });
 
   function formatTime(timeStr: string | undefined): string {
-    const parts = timeStr.split(' ');
-    const timePart = parts.length > 1 ? parts[1] : parts[0];
+    if (!timeStr) return '-';
     
-    const [hours, minutes] = timePart.split(':').map(Number);
-    const period = hours >= 12 ? 'PM' : 'AM';
-    const displayHours = hours % 12 || 12;
-    
-    return `${displayHours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')} ${period}`;
+    try {
+      let timeString = timeStr;
+      
+      // Handle ISO: "2025-12-22T08:00:00Z" or SQL: "2025-12-22 08:00:00"
+      if (timeString.includes('T')) {
+        timeString = timeString.split('T')[1].split('Z')[0];  // "08:00:00"
+      } else if (timeString.includes(' ')) {
+        timeString = timeString.split(' ')[1];  // "08:00:00"
+      }
+      
+      const [hours, minutes] = timeString.split(':').map(Number);
+      if (isNaN(hours) || isNaN(minutes)) return '-';
+      
+      const period = hours >= 12 ? 'PM' : 'AM';
+      const displayHours = hours % 12 || 12;
+      
+      return `${displayHours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')} ${period}`;
+    } catch (e) {
+      console.error('Error formatting time:', timeStr, e);
+      return '-';
+    }
   }
+
 
   $: periodTotal = currentPeriod 
   ? currentPeriod.total_regular_hours + currentPeriod.total_overtime_hours + currentPeriod.total_pto_hours
