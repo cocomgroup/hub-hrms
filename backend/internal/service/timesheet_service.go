@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"log"
 	"fmt"
 	"time"
 
@@ -69,6 +70,7 @@ func (s *timesheetService) ClockIn(ctx context.Context, employeeID uuid.UUID, no
 	}
 
 	if err := s.repo.Create(ctx, entry); err != nil {
+		log.Printf("Timesheet params: %s", employeeID)
 		return nil, fmt.Errorf("failed to create clock-in: %w", err)
 	}
 

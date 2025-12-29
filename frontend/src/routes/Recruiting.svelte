@@ -945,7 +945,7 @@ Best regards,
 <!-- Job Modal -->
 {#if showJobModal}
   <div class="modal" on:click={() => { showJobModal = false; resetJobForm(); }}>
-    <div class="modal-box max-w-4xl" on:click|stopPropagation>
+    <div class="modal-box max-w-4xl" on:click|stopPropagation on:keydown|stopPropagation role="dialog" aria-modal="true" tabindex="-1">
       <div class="modal-header">
         <h2>{editingJob ? 'Edit' : 'Create'} Job Posting</h2>
         <button class="btn btn-circle btn-sm" on:click={() => { showJobModal = false; resetJobForm(); }}>✕</button>
@@ -1110,7 +1110,7 @@ Best regards,
 <!-- Candidate Detail Modal -->
 {#if showCandidateDetail && selectedCandidate}
   <div class="modal" on:click={() => showCandidateDetail = false}>
-    <div class="modal-box max-w-4xl" on:click|stopPropagation>
+    <div class="modal-box max-w-4xl" on:click|stopPropagation on:keydown|stopPropagation role="dialog" aria-modal="true" tabindex="-1">
       <div class="modal-header">
         <div>
           <h2>{selectedCandidate.first_name} {selectedCandidate.last_name}</h2>
@@ -1225,7 +1225,7 @@ Best regards,
 <!-- Email Modal -->
 {#if showEmailModal}
   <div class="modal" on:click={() => { showEmailModal = false; resetEmailForm(); }}>
-    <div class="modal-box max-w-3xl" on:click|stopPropagation>
+    <div class="modal-box max-w-3xl" on:click|stopPropagation on:keydown|stopPropagation role="dialog" aria-modal="true" tabindex="-1">
       <div class="modal-header">
         <h2>Compose Email</h2>
         <button class="btn btn-circle btn-sm" on:click={() => { showEmailModal = false; resetEmailForm(); }}>✕</button>
@@ -1299,7 +1299,7 @@ Best regards,
 <!-- Job Boards Modal -->
 {#if showJobBoardsModal}
   <div class="modal" on:click={() => showJobBoardsModal = false}>
-    <div class="modal-box" on:click|stopPropagation>
+    <div class="modal-box" on:click|stopPropagation on:keydown|stopPropagation role="dialog" aria-modal="true" tabindex="-1">
       <div class="modal-header">
         <h2>Post to Job Boards</h2>
         <button class="btn btn-circle btn-sm" on:click={() => showJobBoardsModal = false}>✕</button>

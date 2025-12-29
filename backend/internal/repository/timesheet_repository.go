@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
+	"log"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -41,6 +42,7 @@ func (r *timesheetRepository) Create(ctx context.Context, timesheet *models.Time
 		timesheet.ID = uuid.New()
 	}
 	
+	log.Printf("TimesheetRepo params employee_id %s clockin %s ", timesheet.EmployeeID, timesheet.ClockIn )
 	return r.db.QueryRow(
 		ctx, query,
 		timesheet.ID, timesheet.EmployeeID, timesheet.Date, timesheet.ClockIn, timesheet.ClockOut,
@@ -95,14 +97,14 @@ func (r *timesheetRepository) GetByEmployee(ctx context.Context, employeeID uuid
 	// Add filters if provided
 	if startDate, ok := filters["start_date"].(time.Time); ok {
 		argCount++
-		query += fmt.Sprintf(" AND te.entry_date >= $%d", argCount)
-		args = append(args, startDate)
+		query += fmt.Sprintf(" AND te.entry_date >= $%d::date", argCount)
+		args = append(args, startDate.Format("2006-01-02"))
 	}
 	
 	if endDate, ok := filters["end_date"].(time.Time); ok {
 		argCount++
-		query += fmt.Sprintf(" AND te.entry_date <= $%d", argCount)
-		args = append(args, endDate)
+		query += fmt.Sprintf(" AND te.entry_date <= $%d::date", argCount)
+		args = append(args, endDate.Format("2006-01-02"))
 	}
 	
 	if status, ok := filters["status"].(string); ok && status != "" {
@@ -112,6 +114,8 @@ func (r *timesheetRepository) GetByEmployee(ctx context.Context, employeeID uuid
 	}
 	
 	query += " ORDER BY te.entry_date DESC, te.clock_in DESC"
+	log.Printf("Timesheet GetByEmployee args %s ", args)
+	log.Printf("Timesheet query %s ", query)
 	
 	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
@@ -209,14 +213,14 @@ func (r *timesheetRepository) List(ctx context.Context, filters map[string]inter
 	// Add filters
 	if startDate, ok := filters["start_date"].(time.Time); ok {
 		argCount++
-		query += fmt.Sprintf(" AND te.entry_date >= $%d", argCount)
-		args = append(args, startDate)
+		query += fmt.Sprintf(" AND te.entry_date >= $%d::date", argCount)
+		args = append(args, startDate.Format("2006-01-02"))
 	}
 	
 	if endDate, ok := filters["end_date"].(time.Time); ok {
 		argCount++
-		query += fmt.Sprintf(" AND te.entry_date <= $%d", argCount)
-		args = append(args, endDate)
+		query += fmt.Sprintf(" AND te.entry_date <= $%d::date", argCount)
+		args = append(args, endDate.Format("2006-01-02"))
 	}
 	
 	if status, ok := filters["status"].(string); ok && status != "" {

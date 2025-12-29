@@ -96,9 +96,8 @@ func (s *authService) Login(ctx context.Context, req *models.LoginRequest) (*mod
 	}
 
 	log.Printf("CheckPassword SUCCESS!")
-	log.Printf("=== LOGIN DEBUG END ===")
-	
-	// ✅ FIX: Get employee_id to include in JWT
+
+	// Get employee_id to include in JWT
 	var employeeID *uuid.UUID
 	if user.EmployeeID != nil {
 		employeeID = user.EmployeeID
@@ -106,6 +105,7 @@ func (s *authService) Login(ctx context.Context, req *models.LoginRequest) (*mod
 	} else {
 		log.Printf("WARNING: User has no employee_id, JWT will not include employee_id")
 	}
+	log.Printf("=== LOGIN DEBUG END ===")
 	
 	token, err := s.GenerateToken(user.ID, user.Email, user.Role, employeeID)
 	if err != nil {
@@ -135,8 +135,8 @@ func (s *authService) GenerateToken(userID uuid.UUID, email, role string, employ
 		"exp":     time.Now().Add(24 * time.Hour).Unix(),
 		"iat":     time.Now().Unix(),
 	}
-	
-	// ✅ FIX: Include employee_id in JWT claims
+
+	// Include employee_id in JWT claims
 	if employeeID != nil {
 		claims["employee_id"] = employeeID.String()
 	}

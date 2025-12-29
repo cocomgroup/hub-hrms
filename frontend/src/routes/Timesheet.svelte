@@ -7,12 +7,12 @@
   interface TimeEntry {
     id: string;
     employee_id: string;
-    entry_date: string;
+    date: string;  // Backend sends "date" not "entry_date"
     clock_in?: string;
     clock_out?: string;
-    break_duration: number;
+    break_minutes: number;  // Backend sends "break_minutes"
     notes: string;
-    entry_type: string;
+    type: string;  // Backend sends "type"
     status: string;
     total_hours?: number;
     projects?: TimeEntryProject[];
@@ -60,12 +60,12 @@
   
   // New entry form
   let newEntry = {
-    entry_date: new Date().toISOString().split('T')[0],
+    date: new Date().toISOString().split('T')[0],
     clock_in: '',
     clock_out: '',
-    break_duration: 0,
+    break_minutes: 0,
     notes: '',
-    entry_type: 'regular',
+    type: 'regular',
     projects: [] as { project_id: string; hours: number; notes: string }[]
   };
 
@@ -85,8 +85,8 @@
     error = '';
     
     try {
+      await loadCurrentPeriod();
       await Promise.all([
-        loadCurrentPeriod(),
         loadTimeEntries(),
         loadProjects()
       ]);
@@ -123,7 +123,28 @@
     
     if (!response.ok) throw new Error('Failed to load time entries');
     const data = await response.json();
-    timeEntries = Array.isArray(data) ? data : [];
+    console.log("=== TIMESHEET DEBUG START ===");
+    console.log("Response status:", response.status);
+    console.log("Response OK:", response.ok);
+    console.log("RAW data:", data);
+    console.log("Data type:", typeof data);
+    console.log("Is Array:", Array.isArray(data));
+    if (Array.isArray(data)) {
+      console.log("Array length:", data.length);
+      if (data.length > 0) {
+        console.log("First entry:", data[0]);
+        console.log("First entry keys:", Object.keys(data[0]));
+      }
+    }
+    console.log("=== TIMESHEET DEBUG END ===");
+    console.log("RAW response data:", data);
+    console.log("Is array?", Array.isArray(data));
+    console.log("Data type:", typeof data);
+    if (data && typeof data === "object") console.log("Data keys:", Object.keys(data));
+    console.log("About to set timeEntries, data is:", data);
+    timeEntries = Array.isArray(data) ? [...data] : []; // Force reactivity
+    console.log("timeEntries set to:", timeEntries);
+    console.log("timeEntries length:", timeEntries.length);
   }
 
   async function loadProjects() {
@@ -184,6 +205,7 @@
       success = 'Clocked in successfully!';
       setTimeout(() => success = '', 3000);
       
+      await loadCurrentPeriod();
       await loadTimeEntries();
     } catch (err: any) {
       error = err.message;
@@ -222,6 +244,7 @@
       success = `Clocked out! Total: ${activeEntry!.total_hours?.toFixed(2)} hours`;
       setTimeout(() => success = '', 3000);
       
+      await loadCurrentPeriod();
       await loadTimeEntries();
     } catch (err: any) {
       error = err.message;
@@ -260,6 +283,17 @@
     loading = true;
     error = '';
     
+    
+    // Validate time range
+    if (newEntry.clock_in && newEntry.clock_out) {
+      const clockIn = new Date(`${newEntry.date}T${newEntry.clock_in}:00`);
+      const clockOut = new Date(`${newEntry.date}T${newEntry.clock_out}:00`);
+      if (clockOut <= clockIn) {
+        error = 'Clock out time must be after clock in time';
+        loading = false;
+        return;
+      }
+    }
     try {
       const url = editingEntry 
         ? `${API_BASE_URL}/timesheet/entries/${editingEntry.id}`
@@ -272,11 +306,12 @@
         ...newEntry,
         // Convert "HH:MM" to "YYYY-MM-DDTHH:MM:00Z"
         clock_in: newEntry.clock_in 
-          ? `${newEntry.entry_date}T${newEntry.clock_in}:00Z` 
+          ? `${newEntry.date}T${newEntry.clock_in}:00Z` 
           : null,
         clock_out: newEntry.clock_out 
-          ? `${newEntry.entry_date}T${newEntry.clock_out}:00Z` 
-          : null
+          ? `${newEntry.date}T${newEntry.clock_out}:00Z` 
+          : null,
+        date: newEntry.date,  // Map to backend "date" field
       };
       
       const response = await fetch(url, {
@@ -297,6 +332,7 @@
       setTimeout(() => success = '', 3000);
       
       resetForm();
+      await loadCurrentPeriod();
       await loadTimeEntries();
     } catch (err: any) {
       error = err.message;
@@ -323,6 +359,7 @@
       
       success = 'Entry deleted!';
       setTimeout(() => success = '', 3000);
+      await loadCurrentPeriod();
       await loadTimeEntries();
     } catch (err: any) {
       error = err.message;
@@ -339,7 +376,7 @@
       clock_out: entry.clock_out?.substring(11, 16) || '',
       break_duration: entry.break_duration,
       notes: entry.notes,
-      entry_type: entry.entry_type,
+      entry_type: entry.type,
       projects: entry.projects?.map(p => ({
         project_id: p.project_id,
         hours: p.hours,
@@ -417,25 +454,52 @@
     return weekEnd.toISOString().split('T')[0];
   }
 
-  function formatDate(dateStr: string): string {
-    return new Date(dateStr).toLocaleDateString('en-US', { 
-      weekday: 'short', 
-      month: 'short', 
-      day: 'numeric' 
-    });
-  }
 
-  function formatTime(timeStr: string | undefined): string {
-    if (!timeStr) return '-';
-    return new Date(timeStr).toLocaleTimeString('en-US', { 
-      hour: '2-digit', 
-      minute: '2-digit' 
+
+  function formatDate(dateStr: string): string {
+    const dateOnly = dateStr.split('T')[0];
+    const [year, month, day] = dateOnly.split('-').map(Number);
+    const date = new Date(year, month - 1, day);
+    
+    return date.toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric'
     });
   }
 
   $: periodTotal = currentPeriod 
-    ? currentPeriod.total_regular_hours + currentPeriod.total_overtime_hours + currentPeriod.total_pto_hours
+
+  // Filter out entries with invalid dates
+  $: console.log("Valid entries:", validEntries.length, validEntries);
+  $: validEntries = timeEntries.filter(entry => {
+    if (!entry.date) return false;
+    const date = new Date(entry.date);
+    return !isNaN(date.getTime()) && date.getFullYear() >= 2000;
+  });
+
+  function formatTime(timeStr: string | undefined): string {
+    const parts = timeStr.split(' ');
+    const timePart = parts.length > 1 ? parts[1] : parts[0];
+    
+    const [hours, minutes] = timePart.split(':').map(Number);
+    const period = hours >= 12 ? 'PM' : 'AM';
+    const displayHours = hours % 12 || 12;
+    
+    return `${displayHours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')} ${period}`;
+  }
+
+  $: periodTotal = currentPeriod 
+  ? currentPeriod.total_regular_hours + currentPeriod.total_overtime_hours + currentPeriod.total_pto_hours
     : 0;
+
+  // Filter out entries with invalid dates
+  $: console.log("Valid entries:", validEntries.length, validEntries);
+  $: validEntries = timeEntries.filter(entry => {
+    if (!entry.date) return false;
+    const date = new Date(entry.date);
+    return !isNaN(date.getTime()) && date.getFullYear() >= 2000;
+  });
 </script>
 
 <div class="timesheet-container">
@@ -545,25 +609,31 @@
         </tr>
       </thead>
       <tbody>
-        {#if !timeEntries || timeEntries.length === 0}
+        {#if !validEntries || validEntries.length === 0}
           <tr>
             <td colspan="9">
               <div class="empty-state">
-                No time entries for this period. Add your first entry above!
+                No time entries found. Total loaded: {timeEntries.length}, Valid: {validEntries.length}. Add your first entry above!
+                <div style="margin-top: 20px; padding: 10px; background: #f0f0f0;">
+                  <strong>Debug Info:</strong><br/>
+                  timeEntries: {JSON.stringify(timeEntries)}<br/>
+                  validEntries: {JSON.stringify(validEntries)}<br/>
+                  currentPeriod: {JSON.stringify(currentPeriod)}
+                </div>
               </div>
             </td>
           </tr>
         {:else}
-          {#each timeEntries as entry}
+          {#each validEntries as entry}
             <tr>
-              <td>{formatDate(entry.entry_date)}</td>
+              <td>{formatDate(entry.date)}</td>
               <td>{formatTime(entry.clock_in)}</td>
               <td>{formatTime(entry.clock_out)}</td>
-              <td>{entry.break_duration}m</td>
+              <td>{entry.break_minutes}m</td>
               <td>{entry.total_hours?.toFixed(2) || '-'}</td>
               <td>
-                <span class="entry-type-badge type-{entry.entry_type}">
-                  {entry.entry_type}
+                <span class="entry-type-badge type-{entry.type}">
+                  {entry.type}
                 </span>
               </td>
               <td>
@@ -617,7 +687,7 @@
         <div class="modal-body">
           <div class="form-group">
             <label for="entry-date">Date</label>
-            <input id="entry-date" type="date" bind:value={newEntry.entry_date} />
+            <input id="entry-date" type="date" bind:value={newEntry.date} />
           </div>
 
           <div class="form-row">
@@ -634,11 +704,11 @@
           <div class="form-row">
             <div class="form-group">
               <label for="break-duration">Break Duration (minutes)</label>
-              <input id="break-duration" type="number" bind:value={newEntry.break_duration} min="0" />
+              <input id="break-duration" type="number" bind:value={newEntry.break_minutes} min="0" />
             </div>
             <div class="form-group">
               <label for="entry-type">Entry Type</label>
-              <select id="entry-type" bind:value={newEntry.entry_type}>
+              <select id="entry-type" bind:value={newEntry.type}>
                 <option value="regular">Regular</option>
                 <option value="overtime">Overtime</option>
                 <option value="pto">PTO</option>
@@ -802,7 +872,7 @@
   }
 
   .card {
-    background: white;
+    background: #f8f9fa; border: 1px solid #dee2e6;
     border-radius: 8px;
     padding: 1.5rem;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
@@ -810,7 +880,7 @@
 
   .card h4 {
     margin: 0 0 0.5rem 0;
-    color: #666;
+    color: #333;
     font-size: 0.9rem;
     font-weight: 500;
   }
@@ -837,28 +907,29 @@
   table {
     width: 100%;
     border-collapse: collapse;
+    table-layout: fixed;  /* Prevents column collapse */
   }
 
   th, td {
+    color: #212529;            /* Very dark text, was #495057 */
     padding: 1rem;
-    text-align: left;
-    border-bottom: 1px solid #eee;
+    white-space: normal;       /* Allow text wrapping */
+    vertical-align: middle;
   }
 
   th {
-    background-color: #f8f9fa;
-    font-weight: 600;
-    color: #495057;
+    background-color: #343a40;  /* Dark grey, was light grey */
+    color: white;               /* White text, was dark grey */
   }
 
   tbody tr:hover {
-    background-color: #f8f9fa;
+    background-color: #e9ecef;  /* Medium grey, was light grey */
   }
 
   .empty-state {
     text-align: center;
     padding: 3rem;
-    color: #999;
+    color: #555;
   }
 
   .status-badge {
@@ -918,7 +989,7 @@
 
   .project-item {
     font-size: 0.875rem;
-    color: #666;
+    color: #333;
   }
 
   .btn-icon {
@@ -973,7 +1044,7 @@
     border: none;
     font-size: 2rem;
     cursor: pointer;
-    color: #999;
+    color: #555;
     line-height: 1;
   }
 

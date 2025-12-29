@@ -133,50 +133,79 @@ CREATE TRIGGER trigger_calculate_time_entry_hours
     EXECUTE PROCEDURE calculate_time_entry_hours();
 
 -- Function to update timesheet period totals
+DROP FUNCTION IF EXISTS update_timesheet_period_totals() CASCADE;
+
 CREATE OR REPLACE FUNCTION update_timesheet_period_totals()
 RETURNS TRIGGER AS $$
 DECLARE
     period_record RECORD;
+    target_employee_id UUID;
+    target_entry_date DATE;
 BEGIN
-    -- Find the period for this time entry
-    SELECT * INTO period_record
-    FROM timesheet_periods
-    WHERE employee_id = NEW.employee_id
-      AND NEW.entry_date BETWEEN start_date AND end_date
-    LIMIT 1;
-    
-    IF FOUND THEN
-        -- Recalculate totals for the period
-        UPDATE timesheet_periods
-        SET total_regular_hours = (
-                SELECT COALESCE(SUM(total_hours), 0)
-                FROM time_entries
-                WHERE employee_id = period_record.employee_id
-                  AND entry_date BETWEEN period_record.start_date AND period_record.end_date
-                  AND entry_type = 'regular'
-                  AND status != 'rejected'
-            ),
-            total_overtime_hours = (
-                SELECT COALESCE(SUM(total_hours), 0)
-                FROM time_entries
-                WHERE employee_id = period_record.employee_id
-                  AND entry_date BETWEEN period_record.start_date AND period_record.end_date
-                  AND entry_type = 'overtime'
-                  AND status != 'rejected'
-            ),
-            total_pto_hours = (
-                SELECT COALESCE(SUM(total_hours), 0)
-                FROM time_entries
-                WHERE employee_id = period_record.employee_id
-                  AND entry_date BETWEEN period_record.start_date AND period_record.end_date
-                  AND entry_type IN ('pto', 'sick', 'holiday')
-                  AND status != 'rejected'
-            ),
-            updated_at = NOW()
-        WHERE id = period_record.id;
+    -- Determine which record to use based on operation
+    IF TG_OP = 'DELETE' THEN
+        -- For DELETE, use OLD record
+        target_employee_id := OLD.employee_id;
+        target_entry_date := OLD.entry_date;
+    ELSE
+        -- For INSERT/UPDATE, use NEW record
+        target_employee_id := NEW.employee_id;
+        target_entry_date := NEW.entry_date;
     END IF;
-    
-    RETURN NEW;
+
+    -- Find the period this entry belongs to
+    SELECT *
+    INTO period_record
+    FROM timesheet_periods
+    WHERE employee_id = target_employee_id
+      AND target_entry_date BETWEEN start_date AND end_date
+    LIMIT 1;
+
+    -- If no period found, skip (return appropriate record)
+    IF NOT FOUND THEN
+        IF TG_OP = 'DELETE' THEN
+            RETURN OLD;
+        ELSE
+            RETURN NEW;
+        END IF;
+    END IF;
+
+    -- Recalculate totals for this period
+    UPDATE timesheet_periods
+    SET 
+        total_regular_hours = COALESCE((
+            SELECT SUM(total_hours)
+            FROM time_entries
+            WHERE employee_id = period_record.employee_id
+              AND entry_date BETWEEN period_record.start_date AND period_record.end_date
+              AND entry_type = 'regular'
+              AND status IN ('draft', 'submitted', 'approved')
+        ), 0),
+        total_overtime_hours = COALESCE((
+            SELECT SUM(total_hours)
+            FROM time_entries
+            WHERE employee_id = period_record.employee_id
+              AND entry_date BETWEEN period_record.start_date AND period_record.end_date
+              AND entry_type = 'overtime'
+              AND status IN ('draft', 'submitted', 'approved')
+        ), 0),
+        total_pto_hours = COALESCE((
+            SELECT SUM(total_hours)
+            FROM time_entries
+            WHERE employee_id = period_record.employee_id
+              AND entry_date BETWEEN period_record.start_date AND period_record.end_date
+              AND entry_type IN ('pto', 'sick', 'holiday')
+              AND status IN ('draft', 'submitted', 'approved')
+        ), 0),
+        updated_at = NOW()
+    WHERE id = period_record.id;
+
+    -- Return appropriate record
+    IF TG_OP = 'DELETE' THEN
+        RETURN OLD;
+    ELSE
+        RETURN NEW;
+    END IF;
 END;
 $$ LANGUAGE plpgsql;
 

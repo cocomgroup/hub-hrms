@@ -42,11 +42,11 @@ func (r *userRepository) Create(ctx context.Context, user *models.User) error {
 func (r *userRepository) GetByEmail(ctx context.Context, email string) (*models.User, error) {
 	user := &models.User{}
 	query := `
-		SELECT id, email, password_hash, role, employee_id, created_at, updated_at
+		SELECT id, username, email, password_hash, role, employee_id, created_at, updated_at
 		FROM users WHERE email = $1
 	`
 	err := r.db.QueryRow(ctx, query, email).Scan(
-		&user.ID, &user.Email, &user.PasswordHash, &user.Role,
+		&user.ID, &user.Username, &user.Email, &user.PasswordHash, &user.Role,
 		&user.EmployeeID, &user.CreatedAt, &user.UpdatedAt,
 	)
 	return user, err
@@ -55,11 +55,11 @@ func (r *userRepository) GetByEmail(ctx context.Context, email string) (*models.
 func (r *userRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.User, error) {
 	user := &models.User{}
 	query := `
-		SELECT id, email, password_hash, role, employee_id, created_at, updated_at
+		SELECT id, username, email, password_hash, role, employee_id, created_at, updated_at
 		FROM users WHERE id = $1
 	`
 	err := r.db.QueryRow(ctx, query, id).Scan(
-		&user.ID, &user.Email, &user.PasswordHash, &user.Role,
+		&user.ID, &user.Username, &user.Email, &user.PasswordHash, &user.Role,
 		&user.EmployeeID, &user.CreatedAt, &user.UpdatedAt,
 	)
 	return user, err
@@ -68,19 +68,19 @@ func (r *userRepository) GetByID(ctx context.Context, id uuid.UUID) (*models.Use
 func (r *userRepository) Update(ctx context.Context, user *models.User) error {
 	query := `
 		UPDATE users
-		SET email = $1, password_hash = $2, role = $3, employee_id = $4, updated_at = NOW()
-		WHERE id = $5
+		SET username = $1, email = $2, password_hash = $3, role = $4, employee_id = $5, updated_at = NOW()
+		WHERE id = $6
 		RETURNING updated_at
 	`
 	return r.db.QueryRow(ctx, query,
-		user.Email, user.PasswordHash, user.Role, user.EmployeeID, user.ID,
+		user.Username, user.Email, user.PasswordHash, user.Role, user.EmployeeID, user.ID,
 	).Scan(&user.UpdatedAt)
 }
 
 // List returns all users with optional search and role filter
 func (r *userRepository) List(ctx context.Context, search string, role string) ([]*models.User, error) {
 	query := `
-		SELECT id, email, password_hash, role, employee_id, created_at, updated_at
+		SELECT id, username, email, password_hash, role, employee_id, created_at, updated_at
 		FROM users
 		WHERE 1=1
 	`
@@ -89,16 +89,16 @@ func (r *userRepository) List(ctx context.Context, search string, role string) (
 
 	// Add search filter
 	if search != "" {
-		query += fmt.Sprintf(" AND email ILIKE $%d", argPos)
-		args = append(args, "%"+search+"%")
-		argPos++
+		query += fmt.Sprintf(" AND (email ILIKE $%d OR username ILIKE $%d)", argPos, argPos+1)
+		searchPattern := "%" + search + "%"
+		args = append(args, searchPattern, searchPattern)
+		argPos += 2
 	}
 
 	// Add role filter
-	if role != "" && role != "all" {
+	if role != "" {
 		query += fmt.Sprintf(" AND role = $%d", argPos)
 		args = append(args, role)
-		argPos++
 	}
 
 	query += " ORDER BY created_at DESC"
@@ -113,7 +113,7 @@ func (r *userRepository) List(ctx context.Context, search string, role string) (
 	for rows.Next() {
 		user := &models.User{}
 		err := rows.Scan(
-			&user.ID, &user.Email, &user.PasswordHash, &user.Role,
+			&user.ID, &user.Username, &user.Email, &user.PasswordHash, &user.Role,
 			&user.EmployeeID, &user.CreatedAt, &user.UpdatedAt,
 		)
 		if err != nil {
@@ -125,7 +125,6 @@ func (r *userRepository) List(ctx context.Context, search string, role string) (
 	return users, rows.Err()
 }
 
-// Delete removes a user from the database
 func (r *userRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	query := `DELETE FROM users WHERE id = $1`
 	_, err := r.db.Exec(ctx, query, id)

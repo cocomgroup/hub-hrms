@@ -107,40 +107,46 @@ func getUserIDFromContext(ctx context.Context) (uuid.UUID, error) {
 // getEmployeeIDFromContext extracts employee/user ID from context (returns UUID)
 // FIXED: Now tries user_id first, then falls back to claims
 func getEmployeeIDFromContext(ctx context.Context) (uuid.UUID, error) {
-	// First, try to get user_id directly (most common case)
+	// PRIORITY: Try to get employee_id from claims FIRST
+	// This is the correct field for time entries, PTO, etc.
+	
+	// Try jwt.MapClaims type first
+	if claims, ok := ctx.Value("claims").(jwt.MapClaims); ok {
+		// Try employee_id from claims (CORRECT for most employee operations)
+		if employeeIDStr, ok := claims["employee_id"].(string); ok {
+			log.Printf("DEBUG getEmployeeIDFromContext: Found employee_id in claims: %s", employeeIDStr)
+			return uuid.Parse(employeeIDStr)
+		}
+		log.Printf("DEBUG getEmployeeIDFromContext: employee_id not found in jwt.MapClaims")
+	} else {
+		log.Printf("DEBUG getEmployeeIDFromContext: jwt.MapClaims not found, trying map[string]interface{}")
+		
+		// Try map[string]interface{} as fallback
+		if claims, ok := ctx.Value("claims").(map[string]interface{}); ok {
+			if employeeIDStr, ok := claims["employee_id"].(string); ok {
+				log.Printf("DEBUG getEmployeeIDFromContext: Found employee_id in map claims: %s", employeeIDStr)
+				return uuid.Parse(employeeIDStr)
+			}
+			log.Printf("DEBUG getEmployeeIDFromContext: employee_id not found in map claims")
+		} else {
+			log.Printf("DEBUG getEmployeeIDFromContext: Claims not found in context")
+		}
+	}
+	
+	// Fallback: try user_id from context (for backwards compatibility)
+	// This is only correct if user_id == employee_id (which is wrong design)
 	if userIDStr, ok := ctx.Value("user_id").(string); ok {
-		log.Printf("DEBUG getEmployeeIDFromContext: Found user_id in context: %s", userIDStr)
+		log.Printf("DEBUG getEmployeeIDFromContext: Falling back to user_id in context: %s", userIDStr)
 		employeeID, err := uuid.Parse(userIDStr)
 		if err == nil {
 			return employeeID, nil
 		}
 		log.Printf("DEBUG getEmployeeIDFromContext: Failed to parse user_id: %v", err)
 	}
-	
-	// Fallback: try to get from claims
-	claims, ok := ctx.Value("claims").(map[string]interface{})
-	if !ok {
-		log.Printf("DEBUG getEmployeeIDFromContext: Claims not found in context")
-		return uuid.Nil, fmt.Errorf("unauthorized: user not authenticated")
-	}
 
-	// Try user_id from claims
-	if userIDStr, ok := claims["user_id"].(string); ok {
-		log.Printf("DEBUG getEmployeeIDFromContext: Found user_id in claims: %s", userIDStr)
-		return uuid.Parse(userIDStr)
-	}
-	
-	// Try employee_id from claims (if it exists)
-	if employeeIDStr, ok := claims["employee_id"].(string); ok {
-		log.Printf("DEBUG getEmployeeIDFromContext: Found employee_id in claims: %s", employeeIDStr)
-		return uuid.Parse(employeeIDStr)
-	}
-
-	log.Printf("DEBUG getEmployeeIDFromContext: No valid ID found")
+	log.Printf("DEBUG getEmployeeIDFromContext: No valid employee ID found")
 	return uuid.Nil, fmt.Errorf("unauthorized: employee ID not found")
 }
-
-// getUserIDFromJWTContext extracts user ID from JWT context (legacy function - kept for compatibility)
 func getUserIDFromJWTContext(r *http.Request) uuid.UUID {
 	// Debug: log what's in context
 	log.Printf("DEBUG: Attempting to get user_id from context")

@@ -185,9 +185,11 @@ func createTimeEntryHandler(services *service.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		employeeID, err := getEmployeeIDFromContext(r.Context())
 		if err != nil {
+			log.Printf("ERROR: unauthorized: %s", err)
 			respondError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
+		log.Printf("createTimeEntryHandler: Employee id: %s", employeeID)
 
 		var req models.TimesheetCreateRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
