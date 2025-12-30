@@ -38,6 +38,14 @@ func RegisterWorkflowRoutes(r chi.Router, services *service.Services) {
 		// Progress monitoring
 		r.Get("/{workflowId}/progress", getProgressHandler(services))
 		r.Put("/{workflowId}/stage/advance", advanceStageHandler(services))
+
+		// Template management endpoints
+		r.Get("/templates", listWorkflowTemplatesHandler(services))
+		r.Post("/templates", createWorkflowTemplateHandler(services))
+		r.Get("/templates/{id}", getWorkflowTemplateHandler(services))
+		r.Put("/templates/{id}", updateWorkflowTemplateHandler(services))
+		r.Delete("/templates/{id}", deleteWorkflowTemplateHandler(services))
+
 	})
 }
 
@@ -428,5 +436,164 @@ func advanceStageHandler(services *service.Services) http.HandlerFunc {
 		}
 		
 		respondJSON(w, http.StatusOK, map[string]string{"message": "stage advanced"})
+	}
+}
+
+// createWorkflowTemplateHandler creates a new workflow template/definition
+func createWorkflowTemplateHandler(services *service.Services) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Name         string                    `json:"name"`
+			Description  string                    `json:"description"`
+			WorkflowType string                    `json:"workflow_type"`
+			Status       string                    `json:"status"`
+			Steps        []models.WorkflowStepDef  `json:"steps"`
+		}
+		
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			log.Printf("ERROR: invalid request body: %v", err)
+			respondError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+
+		// Validate required fields
+		if req.Name == "" {
+			respondError(w, http.StatusBadRequest, "workflow name is required")
+			return
+		}
+
+		if len(req.Steps) == 0 {
+			respondError(w, http.StatusBadRequest, "at least one step is required")
+			return
+		}
+
+		// Get user from context
+		userID := getUserIDFromJWTContext(r)
+		if userID == uuid.Nil {
+			respondError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		// Create workflow template
+		template := &models.WorkflowTemplate{
+			Name:         req.Name,
+			Description:  req.Description,
+			WorkflowType: req.WorkflowType,
+			Status:       req.Status,
+			CreatedBy:    userID,
+		}
+
+		// Create template with steps
+		err := services.Workflow.CreateWorkflowTemplate(r.Context(), template, req.Steps)
+		if err != nil {
+			log.Printf("ERROR: failed to create workflow template: %v", err)
+			respondError(w, http.StatusInternalServerError, "failed to create workflow template")
+			return
+		}
+
+		respondJSON(w, http.StatusCreated, template)
+	}
+}
+
+// updateWorkflowTemplateHandler updates an existing workflow template
+func updateWorkflowTemplateHandler(services *service.Services) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		templateID, err := uuid.Parse(chi.URLParam(r, "id"))
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid template id")
+			return
+		}
+
+		var req struct {
+			Name         string                    `json:"name"`
+			Description  string                    `json:"description"`
+			WorkflowType string                    `json:"workflow_type"`
+			Status       string                    `json:"status"`
+			Steps        []models.WorkflowStepDef  `json:"steps"`
+		}
+		
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondError(w, http.StatusBadRequest, "invalid request body")
+			return
+		}
+
+		// Get user from context
+		userID := getUserIDFromJWTContext(r)
+		if userID == uuid.Nil {
+			respondError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		// Update template
+		template := &models.WorkflowTemplate{
+			ID:           templateID,
+			Name:         req.Name,
+			Description:  req.Description,
+			WorkflowType: req.WorkflowType,
+			Status:       req.Status,
+		}
+
+		err = services.Workflow.UpdateWorkflowTemplate(r.Context(), template, req.Steps)
+		if err != nil {
+			log.Printf("ERROR: failed to update workflow template: %v", err)
+			respondError(w, http.StatusInternalServerError, "failed to update workflow template")
+			return
+		}
+
+		respondJSON(w, http.StatusOK, template)
+	}
+}
+
+// deleteWorkflowTemplateHandler deletes a workflow template
+func deleteWorkflowTemplateHandler(services *service.Services) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		templateID, err := uuid.Parse(chi.URLParam(r, "id"))
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid template id")
+			return
+		}
+
+		err = services.Workflow.DeleteWorkflowTemplate(r.Context(), templateID)
+		if err != nil {
+			log.Printf("ERROR: failed to delete workflow template: %v", err)
+			respondError(w, http.StatusInternalServerError, "failed to delete workflow template")
+			return
+		}
+
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// listWorkflowTemplatesHandler lists all workflow templates
+func listWorkflowTemplatesHandler(services *service.Services) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		templates, err := services.Workflow.ListWorkflowTemplates(r.Context())
+		if err != nil {
+			log.Printf("ERROR: failed to list workflow templates: %v", err)
+			respondError(w, http.StatusInternalServerError, "failed to list workflow templates")
+			return
+		}
+
+		respondJSON(w, http.StatusOK, templates)
+	}
+}
+
+// getWorkflowTemplateHandler gets a single workflow template with steps
+func getWorkflowTemplateHandler(services *service.Services) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		templateID, err := uuid.Parse(chi.URLParam(r, "id"))
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid template id")
+			return
+		}
+
+		template, err := services.Workflow.GetWorkflowTemplate(r.Context(), templateID)
+		if err != nil {
+			log.Printf("ERROR: failed to get workflow template: %v", err)
+			respondError(w, http.StatusNotFound, "workflow template not found")
+			return
+		}
+
+		respondJSON(w, http.StatusOK, template)
 	}
 }

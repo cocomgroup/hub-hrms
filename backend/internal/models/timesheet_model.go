@@ -88,6 +88,8 @@ type TimeEntryProject struct {
 	ID          uuid.UUID `json:"id" db:"id"`
 	TimeEntryID uuid.UUID `json:"time_entry_id" db:"time_entry_id"`
 	ProjectID   uuid.UUID `json:"project_id" db:"project_id"`
+	ProjectName string    `json:"project_name" db:"project_name"`
+	ProjectCode string    `json:"project_code" db:"project_code"`
 	Hours       float64   `json:"hours" db:"hours"`
 	Notes       string    `json:"notes,omitempty" db:"notes"`
 	CreatedAt   time.Time `json:"created_at" db:"created_at"`
@@ -103,3 +105,52 @@ type ClockOutRequest struct {
 	BreakMinutes int    `json:"break_minutes"`
 	Notes        string `json:"notes,omitempty"`
 }
+
+// TimeEntry represents a time entry record
+type TimeEntry struct {
+	ID          uuid.UUID  `json:"id" db:"id"`
+	EmployeeID  uuid.UUID  `json:"employee_id" db:"employee_id"`
+	Date        time.Time  `json:"date" db:"date"`
+	ClockIn     *time.Time `json:"clock_in" db:"clock_in"`
+	ClockOut    *time.Time `json:"clock_out" db:"clock_out"`
+	BreakMinutes int       `json:"break_minutes" db:"break_minutes"`
+	Notes       string     `json:"notes" db:"notes"`
+	Type        string     `json:"type" db:"type"` // regular, overtime, pto
+	Status      string     `json:"status" db:"status"` // draft, submitted, approved, rejected
+	TotalHours  *float64   `json:"total_hours" db:"total_hours"`
+	
+	// ADD THESE NEW FIELDS
+	SubmittedAt     *time.Time `json:"submitted_at,omitempty" db:"submitted_at"`
+	ApprovedAt      *time.Time `json:"approved_at,omitempty" db:"approved_at"`
+	ApprovedBy      *uuid.UUID `json:"approved_by,omitempty" db:"approved_by"`
+	RejectionReason *string    `json:"rejection_reason,omitempty" db:"rejection_reason"`
+	
+	CreatedAt   time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at" db:"updated_at"`
+	
+	// Optional nested data
+	Projects    []TimeEntryProject `json:"projects,omitempty"`
+}
+
+
+// TimeEntryWithEmployee includes employee information
+type TimeEntryWithEmployee struct {
+	TimeEntry
+	EmployeeName  string `json:"employee_name"`
+	EmployeeEmail string `json:"employee_email"`
+}
+
+// Status constants
+const (
+	TimeEntryStatusDraft     = "draft"
+	TimeEntryStatusSubmitted = "submitted"
+	TimeEntryStatusApproved  = "approved"
+	TimeEntryStatusRejected  = "rejected"
+)
+
+// Type constants
+const (
+	TimeEntryTypeRegular  = "regular"
+	TimeEntryTypeOvertime = "overtime"
+	TimeEntryTypePTO      = "pto"
+)

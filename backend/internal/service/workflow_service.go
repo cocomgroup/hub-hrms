@@ -37,6 +37,14 @@ type WorkflowService interface {
 	// Progress monitoring
 	CheckWorkflowProgress(ctx context.Context, workflowID uuid.UUID) (*WorkflowProgress, error)
 	AdvanceStage(ctx context.Context, workflowID uuid.UUID) error
+
+	// Template management
+	CreateWorkflowTemplate(ctx context.Context, template *models.WorkflowTemplate, steps []models.WorkflowStepDef) error
+	GetWorkflowTemplate(ctx context.Context, templateID uuid.UUID) (*models.WorkflowTemplate, error)
+	ListWorkflowTemplates(ctx context.Context) ([]*models.WorkflowTemplate, error)
+	UpdateWorkflowTemplate(ctx context.Context, template *models.WorkflowTemplate, steps []models.WorkflowStepDef) error
+	DeleteWorkflowTemplate(ctx context.Context, templateID uuid.UUID) error
+
 }
 
 type workflowService struct {
@@ -863,4 +871,225 @@ func (s *workflowService) checkDependencies(ctx context.Context, step *models.Wo
 	}
 	
 	return true
+}
+
+// CreateWorkflowTemplate creates a new workflow template with steps
+func (s *workflowService) CreateWorkflowTemplate(ctx context.Context, template *models.WorkflowTemplate, steps []models.WorkflowStepDef) error {
+	// Validate template
+	if template.Name == "" {
+		return fmt.Errorf("workflow name is required")
+	}
+
+	if len(steps) == 0 {
+		return fmt.Errorf("at least one step is required")
+	}
+
+	// Set default status if not provided
+	if template.Status == "" {
+		template.Status = "active"
+	}
+
+	// Create template
+	err := s.repos.Workflow.CreateTemplate(ctx, template)
+	if err != nil {
+		return fmt.Errorf("failed to create workflow template: %w", err)
+	}
+
+	// Create step definitions
+	for i := range steps {
+		steps[i].WorkflowID = template.ID
+
+		// Validate step order
+		if steps[i].StepOrder == 0 {
+			steps[i].StepOrder = i + 1
+		}
+
+		// Set default role if not provided
+		if steps[i].AssignedRole == "" {
+			steps[i].AssignedRole = "hr"
+		}
+
+		err := s.repos.Workflow.CreateStepDef(ctx, &steps[i])
+		if err != nil {
+			// Rollback: delete template if step creation fails
+			_ = s.repos.Workflow.DeleteTemplate(ctx, template.ID)
+			return fmt.Errorf("failed to create step definition: %w", err)
+		}
+	}
+
+	// Load steps into template
+	template.Steps = steps
+
+	return nil
+}
+
+// GetWorkflowTemplate retrieves a workflow template by ID with all steps
+func (s *workflowService) GetWorkflowTemplate(ctx context.Context, templateID uuid.UUID) (*models.WorkflowTemplate, error) {
+	template, err := s.repos.Workflow.GetTemplateByID(ctx, templateID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get workflow template: %w", err)
+	}
+
+	return template, nil
+}
+
+// ListWorkflowTemplates retrieves all workflow templates with their steps
+func (s *workflowService) ListWorkflowTemplates(ctx context.Context) ([]*models.WorkflowTemplate, error) {
+	templates, err := s.repos.Workflow.ListTemplates(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list workflow templates: %w", err)
+	}
+
+	return templates, nil
+}
+
+// UpdateWorkflowTemplate updates a workflow template and its steps
+func (s *workflowService) UpdateWorkflowTemplate(ctx context.Context, template *models.WorkflowTemplate, steps []models.WorkflowStepDef) error {
+	// Validate
+	if template.Name == "" {
+		return fmt.Errorf("workflow name is required")
+	}
+
+	if len(steps) == 0 {
+		return fmt.Errorf("at least one step is required")
+	}
+
+	// Update template
+	err := s.repos.Workflow.UpdateTemplate(ctx, template)
+	if err != nil {
+		return fmt.Errorf("failed to update workflow template: %w", err)
+	}
+
+	// Delete existing step definitions
+	err = s.repos.Workflow.DeleteStepDefsByWorkflowID(ctx, template.ID)
+	if err != nil {
+		return fmt.Errorf("failed to delete existing steps: %w", err)
+	}
+
+	// Create new step definitions
+	for i := range steps {
+		steps[i].WorkflowID = template.ID
+		steps[i].ID = uuid.Nil // Reset ID to create new
+
+		// Validate step order
+		if steps[i].StepOrder == 0 {
+			steps[i].StepOrder = i + 1
+		}
+
+		// Set default role if not provided
+		if steps[i].AssignedRole == "" {
+			steps[i].AssignedRole = "hr"
+		}
+
+		err := s.repos.Workflow.CreateStepDef(ctx, &steps[i])
+		if err != nil {
+			return fmt.Errorf("failed to create step definition: %w", err)
+		}
+	}
+
+	// Load steps into template
+	template.Steps = steps
+
+	return nil
+}
+
+// DeleteWorkflowTemplate deletes a workflow template and all its steps
+func (s *workflowService) DeleteWorkflowTemplate(ctx context.Context, templateID uuid.UUID) error {
+	// Check if template exists
+	_, err := s.repos.Workflow.GetTemplateByID(ctx, templateID)
+	if err != nil {
+		return fmt.Errorf("workflow template not found")
+	}
+
+	// TODO: Check if template is in use by any active workflow instances
+	// This would prevent deletion of templates that have active workflows
+
+	// Delete template (cascade deletes steps)
+	err = s.repos.Workflow.DeleteTemplate(ctx, templateID)
+	if err != nil {
+		return fmt.Errorf("failed to delete workflow template: %w", err)
+	}
+
+	return nil
+}
+
+// ============================================================================
+// HELPER METHODS (Optional)
+// ============================================================================
+
+// DuplicateWorkflowTemplate creates a copy of an existing template
+func (s *workflowService) DuplicateWorkflowTemplate(ctx context.Context, sourceTemplateID uuid.UUID, newName string, createdBy uuid.UUID) (*models.WorkflowTemplate, error) {
+	// Get source template
+	source, err := s.GetWorkflowTemplate(ctx, sourceTemplateID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get source template: %w", err)
+	}
+
+	// Create new template
+	newTemplate := &models.WorkflowTemplate{
+		Name:         newName,
+		Description:  source.Description + " (Copy)",
+		WorkflowType: source.WorkflowType,
+		Status:       "draft",
+		CreatedBy:    createdBy,
+	}
+
+	// Copy steps
+	newSteps := make([]models.WorkflowStepDef, len(source.Steps))
+	for i, step := range source.Steps {
+		newSteps[i] = models.WorkflowStepDef{
+			StepOrder:    step.StepOrder,
+			StepType:     step.StepType,
+			StepName:     step.StepName,
+			Description:  step.Description,
+			Required:     step.Required,
+			AutoTrigger:  step.AutoTrigger,
+			AssignedRole: step.AssignedRole,
+			DueDays:      step.DueDays,
+		}
+	}
+
+	// Create new template with steps
+	err = s.CreateWorkflowTemplate(ctx, newTemplate, newSteps)
+	if err != nil {
+		return nil, fmt.Errorf("failed to duplicate template: %w", err)
+	}
+
+	return newTemplate, nil
+}
+
+// GetTemplatesByType retrieves templates filtered by workflow type
+func (s *workflowService) GetTemplatesByType(ctx context.Context, workflowType string) ([]*models.WorkflowTemplate, error) {
+	allTemplates, err := s.ListWorkflowTemplates(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter by type
+	var filtered []*models.WorkflowTemplate
+	for _, template := range allTemplates {
+		if template.WorkflowType == workflowType {
+			filtered = append(filtered, template)
+		}
+	}
+
+	return filtered, nil
+}
+
+// GetActiveTemplates retrieves only active templates
+func (s *workflowService) GetActiveTemplates(ctx context.Context) ([]*models.WorkflowTemplate, error) {
+	allTemplates, err := s.ListWorkflowTemplates(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Filter active only
+	var active []*models.WorkflowTemplate
+	for _, template := range allTemplates {
+		if template.Status == "active" {
+			active = append(active, template)
+		}
+	}
+
+	return active, nil
 }

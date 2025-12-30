@@ -13,6 +13,8 @@ import (
 )
 
 var (
+	ErrInvalidStatus = fmt.Errorf("invalid status transition")
+	ErrNotFound      = fmt.Errorf("not found")
 	ErrAlreadyClockedIn  = errors.New("already clocked in")
 	ErrNotClockedIn      = errors.New("not clocked in")
 	ErrInvalidTimeRange  = errors.New("invalid time range")
@@ -35,22 +37,27 @@ type TimesheetService interface {
 	GetEmployeeSummary(ctx context.Context, employeeID uuid.UUID, startDate, endDate time.Time) (*models.TimesheetSummary, error)
 	GetProjects(ctx context.Context) ([]*models.Project, error)
 	CreateProject(ctx context.Context, req *models.ProjectCreateRequest) (*models.Project, error)
+	SubmitEntry(ctx context.Context, entryID uuid.UUID, userID uuid.UUID) error
+	RecallEntry(ctx context.Context, entryID uuid.UUID, userID uuid.UUID) error
+	ApproveEntry(ctx context.Context, entryID uuid.UUID, approverID uuid.UUID) error
+	RejectEntry(ctx context.Context, entryID uuid.UUID, approverID uuid.UUID, reason string) error
+	GetPendingEntriesForApproval(ctx context.Context, managerID uuid.UUID) ([]*models.TimeEntry, error)	
 }
 
 // timesheetService implements TimesheetService interface
 type timesheetService struct {
-	repo repository.TimesheetRepository
+	repos *repository.Repositories
 }
 
 // NewTimesheetService creates a new timesheet service
 func NewTimesheetService(repos *repository.Repositories) TimesheetService {
-	return &timesheetService{repo: repos.Timesheet}
+	return &timesheetService{repos: repos}
 }
 
 // ClockIn creates a clock-in entry for the employee
 func (s *timesheetService) ClockIn(ctx context.Context, employeeID uuid.UUID, notes string) (*models.Timesheet, error) {
 	// Check if already clocked in
-	active, err := s.repo.GetActiveTimesheet(ctx, employeeID)
+	active, err := s.repos.Timesheet.GetActiveTimesheet(ctx, employeeID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check active clock-in: %w", err)
 	}
@@ -69,7 +76,7 @@ func (s *timesheetService) ClockIn(ctx context.Context, employeeID uuid.UUID, no
 		Status:     "draft",
 	}
 
-	if err := s.repo.Create(ctx, entry); err != nil {
+	if err := s.repos.Timesheet.Create(ctx, entry); err != nil {
 		log.Printf("Timesheet params: %s", employeeID)
 		return nil, fmt.Errorf("failed to create clock-in: %w", err)
 	}
@@ -80,7 +87,7 @@ func (s *timesheetService) ClockIn(ctx context.Context, employeeID uuid.UUID, no
 // ClockOut updates the active clock-in with clock-out time
 func (s *timesheetService) ClockOut(ctx context.Context, employeeID uuid.UUID, breakMinutes int, notes string) (*models.Timesheet, error) {
 	// Get active clock-in
-	entry, err := s.repo.GetActiveTimesheet(ctx, employeeID)
+	entry, err := s.repos.Timesheet.GetActiveTimesheet(ctx, employeeID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get active clock-in: %w", err)
 	}
@@ -96,17 +103,17 @@ func (s *timesheetService) ClockOut(ctx context.Context, employeeID uuid.UUID, b
 		entry.Notes = notes
 	}
 
-	if err := s.repo.Update(ctx, entry); err != nil {
+	if err := s.repos.Timesheet.Update(ctx, entry); err != nil {
 		return nil, fmt.Errorf("failed to clock out: %w", err)
 	}
 
 	// Get updated entry with calculated hours
-	return s.repo.GetByID(ctx, entry.ID)
+	return s.repos.Timesheet.GetByID(ctx, entry.ID)
 }
 
 // GetActiveClockIn gets the employee's active clock-in
 func (s *timesheetService) GetActiveClockIn(ctx context.Context, employeeID uuid.UUID) (*models.Timesheet, error) {
-	return s.repo.GetActiveTimesheet(ctx, employeeID)
+	return s.repos.Timesheet.GetActiveTimesheet(ctx, employeeID)
 }
 
 // CreateTimeEntry creates a manual time entry
@@ -128,17 +135,17 @@ func (s *timesheetService) CreateTimeEntry(ctx context.Context, req *models.Time
 		Status:       "draft",
 	}
 
-	if err := s.repo.Create(ctx, entry); err != nil {
+	if err := s.repos.Timesheet.Create(ctx, entry); err != nil {
 		return nil, fmt.Errorf("failed to create time entry: %w", err)
 	}
 
-	return s.repo.GetByID(ctx, entry.ID)
+	return s.repos.Timesheet.GetByID(ctx, entry.ID)
 }
 
 // UpdateTimeEntry updates an existing time entry
 func (s *timesheetService) UpdateTimeEntry(ctx context.Context, id uuid.UUID, req *models.TimesheetUpdateRequest) (*models.Timesheet, error) {
 	// Get existing entry
-	entry, err := s.repo.GetByID(ctx, id)
+	entry, err := s.repos.Timesheet.GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get time entry: %w", err)
 	}
@@ -170,17 +177,17 @@ func (s *timesheetService) UpdateTimeEntry(ctx context.Context, id uuid.UUID, re
 		return nil, ErrInvalidTimeRange
 	}
 
-	if err := s.repo.Update(ctx, entry); err != nil {
+	if err := s.repos.Timesheet.Update(ctx, entry); err != nil {
 		return nil, fmt.Errorf("failed to update time entry: %w", err)
 	}
 
-	return s.repo.GetByID(ctx, id)
+	return s.repos.Timesheet.GetByID(ctx, id)
 }
 
 // DeleteTimeEntry deletes a time entry
 func (s *timesheetService) DeleteTimeEntry(ctx context.Context, id uuid.UUID) error {
 	// Get entry
-	entry, err := s.repo.GetByID(ctx, id)
+	entry, err := s.repos.Timesheet.GetByID(ctx, id)
 	if err != nil {
 		return fmt.Errorf("failed to get time entry: %w", err)
 	}
@@ -191,7 +198,7 @@ func (s *timesheetService) DeleteTimeEntry(ctx context.Context, id uuid.UUID) er
 	}
 
 	// Use type assertion to access Delete if available
-	if deleter, ok := s.repo.(interface {
+	if deleter, ok := s.repos.Timesheet.(interface {
 		Delete(ctx context.Context, id uuid.UUID) error
 	}); ok {
 		return deleter.Delete(ctx, id)
@@ -206,7 +213,7 @@ func (s *timesheetService) GetTimeEntries(ctx context.Context, employeeID uuid.U
 		"start_date": startDate,
 		"end_date":   endDate,
 	}
-	return s.repo.GetByEmployee(ctx, employeeID, filters)
+	return s.repos.Timesheet.GetByEmployee(ctx, employeeID, filters)
 }
 
 // GetTimesheetsByStatus gets timesheets by status (for manager approval)
@@ -214,13 +221,13 @@ func (s *timesheetService) GetTimesheetsByStatus(ctx context.Context, status str
 	filters := map[string]interface{}{
 		"status": status,
 	}
-	return s.repo.List(ctx, filters)
+	return s.repos.Timesheet.List(ctx, filters)
 }
 
 // SubmitTimesheet submits a timesheet for approval
 func (s *timesheetService) SubmitTimesheet(ctx context.Context, id uuid.UUID, employeeID uuid.UUID) (*models.Timesheet, error) {
 	// Get timesheet
-	timesheet, err := s.repo.GetByID(ctx, id)
+	timesheet, err := s.repos.Timesheet.GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get timesheet: %w", err)
 	}
@@ -238,7 +245,7 @@ func (s *timesheetService) SubmitTimesheet(ctx context.Context, id uuid.UUID, em
 	// Update status
 	timesheet.Status = "submitted"
 
-	if err := s.repo.Update(ctx, timesheet); err != nil {
+	if err := s.repos.Timesheet.Update(ctx, timesheet); err != nil {
 		return nil, fmt.Errorf("failed to submit timesheet: %w", err)
 	}
 
@@ -248,7 +255,7 @@ func (s *timesheetService) SubmitTimesheet(ctx context.Context, id uuid.UUID, em
 // ApproveTimesheet approves or rejects a timesheet
 func (s *timesheetService) ApproveTimesheet(ctx context.Context, id uuid.UUID, req *models.TimesheetApprovalRequest) (*models.Timesheet, error) {
 	// Get timesheet
-	timesheet, err := s.repo.GetByID(ctx, id)
+	timesheet, err := s.repos.Timesheet.GetByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get timesheet: %w", err)
 	}
@@ -269,7 +276,7 @@ func (s *timesheetService) ApproveTimesheet(ctx context.Context, id uuid.UUID, r
 		timesheet.Notes = req.RejectionNotes
 	}
 
-	if err := s.repo.Update(ctx, timesheet); err != nil {
+	if err := s.repos.Timesheet.Update(ctx, timesheet); err != nil {
 		return nil, fmt.Errorf("failed to approve timesheet: %w", err)
 	}
 
@@ -279,7 +286,7 @@ func (s *timesheetService) ApproveTimesheet(ctx context.Context, id uuid.UUID, r
 // GetPendingApprovals gets all timesheets pending approval
 func (s *timesheetService) GetPendingApprovals(ctx context.Context) ([]*models.Timesheet, error) {
 	// Use type assertion to access GetPendingApprovals if available
-	if getter, ok := s.repo.(interface {
+	if getter, ok := s.repos.Timesheet.(interface {
 		GetPendingApprovals(ctx context.Context) ([]*models.Timesheet, error)
 	}); ok {
 		return getter.GetPendingApprovals(ctx)
@@ -289,13 +296,13 @@ func (s *timesheetService) GetPendingApprovals(ctx context.Context) ([]*models.T
 	filters := map[string]interface{}{
 		"status": "submitted",
 	}
-	return s.repo.List(ctx, filters)
+	return s.repos.Timesheet.List(ctx, filters)
 }
 
 // GetEmployeeSummary gets hours summary for an employee
 func (s *timesheetService) GetEmployeeSummary(ctx context.Context, employeeID uuid.UUID, startDate, endDate time.Time) (*models.TimesheetSummary, error) {
 	// Use type assertion to access summary method if available
-	if summarizer, ok := s.repo.(interface {
+	if summarizer, ok := s.repos.Timesheet.(interface {
 		GetEmployeeHoursSummary(ctx context.Context, employeeID uuid.UUID, startDate, endDate time.Time) (*models.TimesheetSummary, error)
 	}); ok {
 		return summarizer.GetEmployeeHoursSummary(ctx, employeeID, startDate, endDate)
@@ -307,7 +314,7 @@ func (s *timesheetService) GetEmployeeSummary(ctx context.Context, employeeID uu
 // GetProjects gets all active projects
 func (s *timesheetService) GetProjects(ctx context.Context) ([]*models.Project, error) {
 	// Use type assertion to access projects method if available
-	if projectGetter, ok := s.repo.(interface {
+	if projectGetter, ok := s.repos.Timesheet.(interface {
 		GetProjects(ctx context.Context) ([]*models.Project, error)
 	}); ok {
 		return projectGetter.GetProjects(ctx)
@@ -330,7 +337,7 @@ func (s *timesheetService) CreateProject(ctx context.Context, req *models.Projec
 	}
 
 	// Use type assertion to access project creation if available
-	if projectCreator, ok := s.repo.(interface {
+	if projectCreator, ok := s.repos.Timesheet.(interface {
 		CreateProject(ctx context.Context, project *models.Project) error
 	}); ok {
 		if err := projectCreator.CreateProject(ctx, project); err != nil {
@@ -340,4 +347,149 @@ func (s *timesheetService) CreateProject(ctx context.Context, req *models.Projec
 	}
 
 	return nil, fmt.Errorf("project creation not supported")
+}
+// SubmitEntry submits a time entry for manager approval
+func (s *timesheetService) SubmitEntry(ctx context.Context, entryID uuid.UUID, userID uuid.UUID) error {
+	// Get the entry
+	entry, err := s.repos.Timesheet.GetEntry(ctx, entryID)
+	if err != nil {
+		return fmt.Errorf("failed to get entry: %w", err)
+	}
+	
+	// Verify ownership - user must own the employee record
+	employee, err := s.repos.Employee.GetByID(ctx, entry.EmployeeID)
+	if err != nil {
+		return fmt.Errorf("failed to get employee: %w", err)
+	}
+	
+	// Check if user owns this employee record (user_id matches)
+	if employee.UserID == nil || *employee.UserID != userID {
+		return ErrUnauthorized
+	}
+	
+	// Verify status is draft
+	if entry.Status != "draft" {
+		return fmt.Errorf("%w: can only submit draft entries", ErrInvalidStatus)
+	}
+	
+	// Validate entry has required data
+	if entry.ClockIn == nil || entry.ClockOut == nil {
+		return fmt.Errorf("entry must have clock in and clock out times")
+	}
+	
+	// Update status to submitted
+	now := time.Now()
+	err = s.repos.Timesheet.UpdateEntryStatus(ctx, entryID, "submitted", &now, nil, "")
+	if err != nil {
+		return fmt.Errorf("failed to update status: %w", err)
+	}
+	
+	return nil
+}
+
+// RecallEntry recalls a submitted entry back to draft status
+func (s *timesheetService) RecallEntry(ctx context.Context, entryID uuid.UUID, userID uuid.UUID) error {
+	// Get the entry
+	entry, err := s.repos.Timesheet.GetEntry(ctx, entryID)
+	if err != nil {
+		return fmt.Errorf("failed to get entry: %w", err)
+	}
+	
+	// Verify ownership
+	employee, err := s.repos.Employee.GetByID(ctx, entry.EmployeeID)
+	if err != nil {
+		return fmt.Errorf("failed to get employee: %w", err)
+	}
+	
+	if employee.UserID == nil || *employee.UserID != userID {
+		return ErrUnauthorized
+	}
+	
+	// Verify status is submitted
+	if entry.Status != "submitted" {
+		return fmt.Errorf("%w: can only recall submitted entries", ErrInvalidStatus)
+	}
+	
+	// Update status back to draft
+	err = s.repos.Timesheet.UpdateEntryStatus(ctx, entryID, "draft", nil, nil, "")
+	if err != nil {
+		return fmt.Errorf("failed to update status: %w", err)
+	}
+	
+	return nil
+}
+
+// ApproveEntry approves a time entry (manager action)
+func (s *timesheetService) ApproveEntry(ctx context.Context, entryID uuid.UUID, approverID uuid.UUID) error {
+	// Get the entry
+	entry, err := s.repos.Timesheet.GetEntry(ctx, entryID)
+	if err != nil {
+		return fmt.Errorf("failed to get entry: %w", err)
+	}
+	
+	// Verify status is submitted
+	if entry.Status != "submitted" {
+		return fmt.Errorf("%w: can only approve submitted entries", ErrInvalidStatus)
+	}
+	
+	// TODO: Verify approver is the manager of the employee
+	// For now, any authenticated user can approve
+	
+	// Update status to approved
+	now := time.Now()
+	err = s.repos.Timesheet.UpdateEntryStatus(ctx, entryID, "approved", nil, &now, "")
+	if err != nil {
+		return fmt.Errorf("failed to update status: %w", err)
+	}
+	
+	// Store who approved it
+	err = s.repos.Timesheet.SetApprover(ctx, entryID, approverID)
+	if err != nil {
+		return fmt.Errorf("failed to set approver: %w", err)
+	}
+	
+	return nil
+}
+
+// RejectEntry rejects a time entry with a reason (manager action)
+func (s *timesheetService) RejectEntry(ctx context.Context, entryID uuid.UUID, approverID uuid.UUID, reason string) error {
+	// Get the entry
+	entry, err := s.repos.Timesheet.GetEntry(ctx, entryID)
+	if err != nil {
+		return fmt.Errorf("failed to get entry: %w", err)
+	}
+	
+	// Verify status is submitted
+	if entry.Status != "submitted" {
+		return fmt.Errorf("%w: can only reject submitted entries", ErrInvalidStatus)
+	}
+	
+	// TODO: Verify approver is the manager of the employee
+	
+	// Update status to rejected with reason
+	err = s.repos.Timesheet.UpdateEntryStatus(ctx, entryID, "rejected", nil, nil, reason)
+	if err != nil {
+		return fmt.Errorf("failed to update status: %w", err)
+	}
+	
+	// Store who rejected it
+	err = s.repos.Timesheet.SetApprover(ctx, entryID, approverID)
+	if err != nil {
+		return fmt.Errorf("failed to set approver: %w", err)
+	}
+	
+	return nil
+}
+
+// GetPendingEntriesForApproval gets all entries pending approval for a manager
+func (s *timesheetService) GetPendingEntriesForApproval(ctx context.Context, managerID uuid.UUID) ([]*models.TimeEntry, error) {
+	// TODO: Get employees managed by this user
+	// For now, get all submitted entries
+	
+	entries, err := s.repos.Timesheet.GetEntriesByStatus(ctx, "submitted")
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pending entries: %w", err)
+	}
+	
+	return entries, nil
 }

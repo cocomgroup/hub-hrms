@@ -3,6 +3,7 @@
   import { authStore } from '../stores/auth';
   import { getApiBaseUrl } from '../lib/api';
   import EmployeeDetail from '../components/EmployeeDetail.svelte';
+  import WorkflowManager from '../components/WorkflowManager.svelte';
   
   const API_BASE_URL = getApiBaseUrl();
 
@@ -37,6 +38,9 @@
   let showEmployeeDetail = false;
   let filterStatus: string = 'all';
   let searchQuery = '';
+  let showWorkflowManager = false;
+  let currentPage = 1;
+  let itemsPerPage = 10;
 
   onMount(() => {
     loadDashboard();
@@ -97,7 +101,6 @@
     };
     return labels[status] || status;
   }
-
   $: filteredEmployees = employees.filter(emp => {
     const matchesStatus = filterStatus === 'all' || emp.status === filterStatus;
     const matchesSearch = !searchQuery || 
@@ -107,6 +110,33 @@
       emp.department.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesStatus && matchesSearch;
   });
+
+  $: totalPages = Math.ceil(filteredEmployees.length / itemsPerPage);
+  $: paginatedEmployees = filteredEmployees.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
+  function nextPage() {
+    if (currentPage < totalPages) {
+      currentPage++;
+    }
+  }
+
+  function prevPage() {
+    if (currentPage > 1) {
+      currentPage--;
+    }
+  }
+
+  function goToPage(page: number) {
+    currentPage = page;
+  }
+
+  // Reset to page 1 when filter changes
+  $: if (filterStatus || searchQuery) {
+    currentPage = 1;
+  }
 </script>
 
 <div class="hr-dashboard">
@@ -171,14 +201,14 @@
           </tr>
         </thead>
         <tbody>
-          {#if filteredEmployees.length === 0}
+          {#if paginatedEmployees.length === 0 && filteredEmployees.length === 0}
             <tr>
               <td colspan="7" class="empty-state">
                 No employees found
               </td>
             </tr>
           {:else}
-            {#each filteredEmployees as employee}
+            {#each paginatedEmployees as employee}
               <tr>
                 <td class="employee-name">
                   {employee.first_name} {employee.last_name}
@@ -206,6 +236,43 @@
         </tbody>
       </table>
     </div>
+
+    <!-- Pagination Controls -->
+    {#if filteredEmployees.length > itemsPerPage}
+      <div class="pagination">
+        <div class="pagination-info">
+          Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredEmployees.length)} of {filteredEmployees.length} employees
+        </div>
+        <div class="pagination-controls">
+          <button 
+            class="btn-page" 
+            onclick={prevPage} 
+            disabled={currentPage === 1}
+          >
+            ← Previous
+          </button>
+          
+          <div class="page-numbers">
+            {#each Array(totalPages) as _, i}
+              <button
+                class="btn-page-num {currentPage === i + 1 ? 'active' : ''}"
+                onclick={() => goToPage(i + 1)}
+              >
+                {i + 1}
+              </button>
+            {/each}
+          </div>
+          
+          <button 
+            class="btn-page" 
+            onclick={nextPage} 
+            disabled={currentPage === totalPages}
+          >
+            Next →
+          </button>
+        </div>
+      </div>
+    {/if}
   {/if}
 </div>
 
@@ -220,6 +287,28 @@
       <div class="modal-body">
         <EmployeeDetail employeeId={selectedEmployeeId} />
       </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Add Workflow QuickAction Button -->
+<div class="quick-actions">
+  <button class="quick-action-btn" onclick={() => showWorkflowManager = true}>
+    <span class="icon">⚙️</span>
+    <span>Manage Workflows</span>
+  </button>
+  <!-- ... other quick actions ... -->
+</div>
+
+<!-- Workflow Manager Modal -->
+{#if showWorkflowManager}
+  <div class="modal-overlay" onclick={() => showWorkflowManager = false}>
+    <div class="modal full-screen" onclick={(e) => e.stopPropagation()}>
+      <div class="modal-header">
+        <h2>Workflow Management</h2>
+        <button class="close-btn" onclick={() => showWorkflowManager = false}>×</button>
+      </div>
+      <WorkflowManager />
     </div>
   </div>
 {/if}
@@ -334,6 +423,7 @@
   }
 
   td {
+    color: #212529;            /* Very dark text, was #495057 */
     padding: 16px;
     border-bottom: 1px solid #e9ecef;
     font-size: 14px;
@@ -439,4 +529,75 @@
   .modal-body {
     padding: 0;
   }
+  .pagination {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px 20px;
+    background: white;
+    border-top: 1px solid #e9ecef;
+    border-radius: 0 0 8px 8px;
+  }
+
+  .pagination-info {
+    font-size: 14px;
+    color: #6b7280;
+  }
+
+  .pagination-controls {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .page-numbers {
+    display: flex;
+    gap: 4px;
+  }
+
+  .btn-page {
+    padding: 8px 16px;
+    border: 1px solid #d1d5db;
+    background: white;
+    color: #374151;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.2s;
+  }
+
+  .btn-page:hover:not(:disabled) {
+    background: #f3f4f6;
+    border-color: #9ca3af;
+  }
+
+  .btn-page:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-page-num {
+    padding: 8px 12px;
+    border: 1px solid #d1d5db;
+    background: white;
+    color: #374151;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    min-width: 40px;
+    transition: all 0.2s;
+  }
+
+  .btn-page-num:hover {
+    background: #f3f4f6;
+    border-color: #9ca3af;
+  }
+
+  .btn-page-num.active {
+    background: #3b82f6;
+    color: white;
+    border-color: #3b82f6;
+  }
+
 </style>

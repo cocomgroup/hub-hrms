@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
-	"log"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -20,6 +19,10 @@ type TimesheetRepository interface {
 	GetActiveTimesheet(ctx context.Context, employeeID uuid.UUID) (*models.Timesheet, error)
 	Update(ctx context.Context, timesheet *models.Timesheet) error
 	List(ctx context.Context, filters map[string]interface{}) ([]*models.Timesheet, error)
+	UpdateEntryStatus(ctx context.Context, entryID uuid.UUID, status string, submittedAt, approvedAt *time.Time, rejectionReason string) error
+	SetApprover(ctx context.Context, entryID uuid.UUID, approverID uuid.UUID) error
+	GetEntry(ctx context.Context, entryID uuid.UUID) (*models.TimeEntry, error)
+	GetEntriesByStatus(ctx context.Context, status string) ([]*models.TimeEntry, error)
 }
 
 
@@ -42,7 +45,6 @@ func (r *timesheetRepository) Create(ctx context.Context, timesheet *models.Time
 		timesheet.ID = uuid.New()
 	}
 	
-	log.Printf("TimesheetRepo params employee_id %s clockin %s ", timesheet.EmployeeID, timesheet.ClockIn )
 	return r.db.QueryRow(
 		ctx, query,
 		timesheet.ID, timesheet.EmployeeID, timesheet.Date, timesheet.ClockIn, timesheet.ClockOut,
@@ -114,8 +116,6 @@ func (r *timesheetRepository) GetByEmployee(ctx context.Context, employeeID uuid
 	}
 	
 	query += " ORDER BY te.entry_date DESC, te.clock_in DESC"
-	log.Printf("Timesheet GetByEmployee args %s ", args)
-	log.Printf("Timesheet query %s ", query)
 	
 	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
@@ -406,4 +406,145 @@ func (r *timesheetRepository) GetPendingApprovals(ctx context.Context) ([]*model
 	}
 	
 	return timesheets, rows.Err()
+}
+
+// UpdateEntryStatus updates the status and related timestamps of a time entry
+func (r *timesheetRepository) UpdateEntryStatus(
+	ctx context.Context,
+	entryID uuid.UUID,
+	status string,
+	submittedAt, approvedAt *time.Time,
+	rejectionReason string,
+) error {
+	query := `
+		UPDATE timesheet_entries
+		SET status = $2,
+		    submitted_at = COALESCE($3, submitted_at),
+		    approved_at = $4,
+		    rejection_reason = $5,
+		    updated_at = NOW()
+		WHERE id = $1
+	`
+	
+	_, err := r.db.Exec(ctx, query, entryID, status, submittedAt, approvedAt, rejectionReason)
+	return err
+}
+
+// SetApprover sets the approver for a time entry
+func (r *timesheetRepository) SetApprover(ctx context.Context, entryID uuid.UUID, approverID uuid.UUID) error {
+	query := `
+		UPDATE timesheet_entries
+		SET approved_by = $2,
+		    updated_at = NOW()
+		WHERE id = $1
+	`
+	
+	_, err := r.db.Exec(ctx, query, entryID, approverID)
+	return err
+}
+
+// GetEntry retrieves a single time entry by ID
+func (r *timesheetRepository) GetEntry(ctx context.Context, entryID uuid.UUID) (*models.TimeEntry, error) {
+	query := `
+		SELECT 
+			id, employee_id, date, clock_in, clock_out, break_minutes,
+			notes, type, status, total_hours,
+			submitted_at, approved_at, approved_by, rejection_reason,
+			created_at, updated_at
+		FROM timesheet_entries
+		WHERE id = $1
+	`
+	
+	var entry models.TimeEntry
+	err := r.db.QueryRow(ctx, query, entryID).Scan(
+		&entry.ID,
+		&entry.EmployeeID,
+		&entry.Date,
+		&entry.ClockIn,
+		&entry.ClockOut,
+		&entry.BreakMinutes,
+		&entry.Notes,
+		&entry.Type,
+		&entry.Status,
+		&entry.TotalHours,
+		&entry.SubmittedAt,
+		&entry.ApprovedAt,
+		&entry.ApprovedBy,
+		&entry.RejectionReason,
+		&entry.CreatedAt,
+		&entry.UpdatedAt,
+	)
+	
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("time entry not found")
+		}
+		return nil, err
+	}
+	
+	return &entry, nil
+}
+
+// GetEntriesByStatus retrieves all time entries with a specific status
+func (r *timesheetRepository) GetEntriesByStatus(ctx context.Context, status string) ([]*models.TimeEntry, error) {
+	query := `
+		SELECT 
+			te.id, te.employee_id, te.date, te.clock_in, te.clock_out, te.break_minutes,
+			te.notes, te.type, te.status, te.total_hours,
+			te.submitted_at, te.approved_at, te.approved_by, te.rejection_reason,
+			te.created_at, te.updated_at,
+			e.first_name, e.last_name, e.email
+		FROM timesheet_entries te
+		JOIN employees e ON te.employee_id = e.id
+		WHERE te.status = $1
+		ORDER BY te.date DESC, te.created_at DESC
+	`
+	
+	rows, err := r.db.Query(ctx, query, status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	
+	var entries []*models.TimeEntry
+	for rows.Next() {
+		var entry models.TimeEntry
+		var firstName, lastName, email string
+		
+		err := rows.Scan(
+			&entry.ID,
+			&entry.EmployeeID,
+			&entry.Date,
+			&entry.ClockIn,
+			&entry.ClockOut,
+			&entry.BreakMinutes,
+			&entry.Notes,
+			&entry.Type,
+			&entry.Status,
+			&entry.TotalHours,
+			&entry.SubmittedAt,
+			&entry.ApprovedAt,
+			&entry.ApprovedBy,
+			&entry.RejectionReason,
+			&entry.CreatedAt,
+			&entry.UpdatedAt,
+			&firstName,
+			&lastName,
+			&email,
+		)
+		if err != nil {
+			return nil, err
+		}
+		
+		// Optionally add employee info to entry
+		// entry.EmployeeName = firstName + " " + lastName
+		
+		entries = append(entries, &entry)
+	}
+	
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	
+	return entries, nil
 }

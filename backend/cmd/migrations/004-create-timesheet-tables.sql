@@ -22,6 +22,18 @@ CREATE TABLE IF NOT EXISTS time_entries (
     CONSTRAINT check_break_duration CHECK (break_duration >= 0)
 );
 
+ALTER TABLE time_entries
+ADD COLUMN IF NOT EXISTS submitted_at TIMESTAMP WITH TIME ZONE,
+ADD COLUMN IF NOT EXISTS approved_at TIMESTAMP WITH TIME ZONE,
+ADD COLUMN IF NOT EXISTS approved_by UUID REFERENCES users(id),
+ADD COLUMN IF NOT EXISTS rejection_reason TEXT;
+
+CREATE INDEX IF NOT EXISTS idx_time_entries_status 
+ON time_entries(status);
+
+CREATE INDEX IF NOT EXISTS idx_time_entries_approved_by 
+ON time_entries(approved_by);
+
 -- Timesheet periods table (weekly or bi-weekly periods)
 CREATE TABLE IF NOT EXISTS timesheet_periods (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

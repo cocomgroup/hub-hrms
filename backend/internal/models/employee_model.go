@@ -9,6 +9,7 @@ import (
 // Employee represents an employee record
 type Employee struct {
 	ID                     uuid.UUID  `json:"id"`
+	UserID                 *uuid.UUID `json:"user_id,omitempty" db:"user_id"`
 	FirstName              string     `json:"first_name"`
 	LastName               string     `json:"last_name"`
 	Email                  string     `json:"email"`

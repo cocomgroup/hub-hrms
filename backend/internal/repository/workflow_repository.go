@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"time"
 	"hub-hrms/backend/internal/models"
 
 	"github.com/google/uuid"
@@ -43,6 +44,18 @@ type WorkflowRepository interface {
 	CreateDocument(ctx context.Context, doc *models.WorkflowDocument) error
 	GetDocuments(ctx context.Context, workflowID uuid.UUID) ([]*models.WorkflowDocument, error)
 	UpdateDocument(ctx context.Context, doc *models.WorkflowDocument) error
+
+	// Template Management
+	CreateTemplate(ctx context.Context, template *models.WorkflowTemplate) error
+	GetTemplateByID(ctx context.Context, templateID uuid.UUID) (*models.WorkflowTemplate, error)
+	ListTemplates(ctx context.Context) ([]*models.WorkflowTemplate, error)
+	UpdateTemplate(ctx context.Context, template *models.WorkflowTemplate) error
+	DeleteTemplate(ctx context.Context, templateID uuid.UUID) error
+	
+	// Step Definition Management
+	CreateStepDef(ctx context.Context, step *models.WorkflowStepDef) error
+	GetStepDefsByWorkflowID(ctx context.Context, workflowID uuid.UUID) ([]*models.WorkflowStepDef, error)
+	DeleteStepDefsByWorkflowID(ctx context.Context, workflowID uuid.UUID) error
 }
 
 type workflowRepository struct {
@@ -851,5 +864,276 @@ func (r *workflowRepository) UpdateDocument(ctx context.Context, doc *models.Wor
 		doc.ID,
 	)
 	
+	return err
+}
+
+// CreateTemplate creates a new workflow template
+func (r *workflowRepository) CreateTemplate(ctx context.Context, template *models.WorkflowTemplate) error {
+	template.ID = uuid.New()
+	template.CreatedAt = time.Now()
+	template.UpdatedAt = time.Now()
+
+	query := `
+		INSERT INTO workflows (
+			id, name, description, workflow_type, status, created_by, created_at, updated_at
+		) VALUES (
+			$1, $2, $3, $4, $5, $6, $7, $8
+		)
+	`
+
+	_, err := r.db.Exec(ctx, query,
+		template.ID,
+		template.Name,
+		template.Description,
+		template.WorkflowType,
+		template.Status,
+		template.CreatedBy,
+		template.CreatedAt,
+		template.UpdatedAt,
+	)
+
+	return err
+}
+
+// GetTemplateByID retrieves a workflow template by ID
+func (r *workflowRepository) GetTemplateByID(ctx context.Context, templateID uuid.UUID) (*models.WorkflowTemplate, error) {
+	template := &models.WorkflowTemplate{}
+
+	query := `
+		SELECT id, name, description, workflow_type, status, created_by, created_at, updated_at
+		FROM workflows
+		WHERE id = $1
+	`
+
+	err := r.db.QueryRow(ctx, query, templateID).Scan(
+		&template.ID,
+		&template.Name,
+		&template.Description,
+		&template.WorkflowType,
+		&template.Status,
+		&template.CreatedBy,
+		&template.CreatedAt,
+		&template.UpdatedAt,
+	)
+	
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, fmt.Errorf("workflow template not found")
+		}
+		return nil, err
+	}
+
+	// Load steps
+	steps, err := r.GetStepDefsByWorkflowID(ctx, templateID)
+	if err != nil {
+		return nil, err
+	}
+
+	template.Steps = make([]models.WorkflowStepDef, len(steps))
+	for i, step := range steps {
+		template.Steps[i] = *step
+	}
+
+	return template, nil
+}
+
+
+// ListTemplates retrieves all workflow templates
+func (r *workflowRepository) ListTemplates(ctx context.Context) ([]*models.WorkflowTemplate, error) {
+	query := `
+		SELECT id, name, description, workflow_type, status, created_by, created_at, updated_at
+		FROM workflows
+		ORDER BY created_at DESC
+	`
+
+	rows, err := r.db.Query(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var templates []*models.WorkflowTemplate
+	for rows.Next() {
+		template := &models.WorkflowTemplate{}
+		err := rows.Scan(
+			&template.ID,
+			&template.Name,
+			&template.Description,
+			&template.WorkflowType,
+			&template.Status,
+			&template.CreatedBy,
+			&template.CreatedAt,
+			&template.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		templates = append(templates, template)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Load steps for each template
+	for _, template := range templates {
+		steps, err := r.GetStepDefsByWorkflowID(ctx, template.ID)
+		if err != nil {
+			return nil, err
+		}
+
+		template.Steps = make([]models.WorkflowStepDef, len(steps))
+		for i, step := range steps {
+			template.Steps[i] = *step
+		}
+	}
+
+	return templates, nil
+}
+
+
+// UpdateTemplate updates an existing workflow template
+func (r *workflowRepository) UpdateTemplate(ctx context.Context, template *models.WorkflowTemplate) error {
+	template.UpdatedAt = time.Now()
+
+	query := `
+		UPDATE workflows
+		SET name = $2,
+		    description = $3,
+		    workflow_type = $4,
+		    status = $5,
+		    updated_at = $6
+		WHERE id = $1
+	`
+
+	result, err := r.db.Exec(ctx, query,
+		template.ID,
+		template.Name,
+		template.Description,
+		template.WorkflowType,
+		template.Status,
+		template.UpdatedAt,
+	)
+
+	if err != nil {
+		return err
+	}
+
+	rows := result.RowsAffected()
+
+	if rows == 0 {
+		return fmt.Errorf("workflow template not found")
+	}
+
+	return nil
+}
+
+// DeleteTemplate deletes a workflow template and its step definitions
+func (r *workflowRepository) DeleteTemplate(ctx context.Context, templateID uuid.UUID) error {
+	// Delete step definitions first (foreign key constraint)
+	err := r.DeleteStepDefsByWorkflowID(ctx, templateID)
+	if err != nil {
+		return err
+	}
+
+	// Delete template
+	query := `DELETE FROM workflows WHERE id = $1`
+
+	result, err := r.db.Exec(ctx, query, templateID)
+	if err != nil {
+		return err
+	}
+
+	rows := result.RowsAffected()
+
+	if rows == 0 {
+		return fmt.Errorf("workflow template not found")
+	}
+
+	return nil
+}
+
+// CreateStepDef creates a new workflow step definition
+func (r *workflowRepository) CreateStepDef(ctx context.Context, step *models.WorkflowStepDef) error {
+	step.ID = uuid.New()
+	step.CreatedAt = time.Now()
+
+	query := `
+		INSERT INTO workflow_steps (
+			id, workflow_id, step_order, step_type, step_name, description,
+			required, auto_trigger, assigned_role, due_days, created_at
+		) VALUES (
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
+		)
+	`
+
+	_, err := r.db.Exec(ctx, query,
+		step.ID,
+		step.WorkflowID,
+		step.StepOrder,
+		step.StepType,
+		step.StepName,
+		step.Description,
+		step.Required,
+		step.AutoTrigger,
+		step.AssignedRole,
+		step.DueDays,
+		step.CreatedAt,
+	)
+
+	return err
+}
+
+// GetStepDefsByWorkflowID retrieves all step definitions for a workflow template
+func (r *workflowRepository) GetStepDefsByWorkflowID(ctx context.Context, workflowID uuid.UUID) ([]*models.WorkflowStepDef, error) {
+	query := `
+		SELECT id, workflow_id, step_order, step_type, step_name, description,
+		       required, auto_trigger, assigned_role, due_days, created_at
+		FROM workflow_steps
+		WHERE workflow_id = $1
+		ORDER BY step_order ASC
+	`
+
+	rows, err := r.db.Query(ctx, query, workflowID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var steps []*models.WorkflowStepDef
+	for rows.Next() {
+		step := &models.WorkflowStepDef{}
+		err := rows.Scan(
+			&step.ID,
+			&step.WorkflowID,
+			&step.StepOrder,
+			&step.StepType,
+			&step.StepName,
+			&step.Description,
+			&step.Required,
+			&step.AutoTrigger,
+			&step.AssignedRole,
+			&step.DueDays,
+			&step.CreatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		steps = append(steps, step)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return steps, nil
+}
+
+
+// DeleteStepDefsByWorkflowID deletes all step definitions for a workflow template
+func (r *workflowRepository) DeleteStepDefsByWorkflowID(ctx context.Context, workflowID uuid.UUID) error {
+	query := `DELETE FROM workflow_steps WHERE workflow_id = $1`
+
+	_, err := r.db.Exec(ctx, query, workflowID)
 	return err
 }

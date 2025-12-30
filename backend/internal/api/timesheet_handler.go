@@ -29,11 +29,13 @@ func RegisterTimesheetRoutes(r chi.Router, services *service.Services) {
 		r.Post("/entries", createTimeEntryHandler(services))
 		r.Get("/entries/{id}", getTimeEntryHandler(services))
 		r.Put("/entries/{id}", updateTimeEntryHandler(services))
-		r.Delete("/entries/{id}", deleteTimeEntryHandler(services))
+		r.Put("/entries/{id}/submit", submitEntryHandler(services))
+		r.Put("/entries/{id}/submit", recallEntryHandler(services))
+		r.Put("/entries/{id}/approve", approveEntryHandler(services))
+		r.Put("/entries/{id}/reject", rejectEntryHandler(services))
 		
 		// Submit and approval
-		r.Post("/entries/{id}/submit", submitTimesheetHandler(services))
-		r.Post("/entries/{id}/approve", approveTimesheetHandler(services))
+
 		r.Get("/pending", getPendingApprovalsHandler(services))
 
 		r.Get("/projects", getProjectsHandler(services))
@@ -310,59 +312,169 @@ func deleteTimeEntryHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-// submitTimesheetHandler submits a timesheet for approval
-func submitTimesheetHandler(services *service.Services) http.HandlerFunc {
+// submitEntryHandler submits an individual time entry for approval
+func submitEntryHandler(services *service.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		idStr := chi.URLParam(r, "id")
-		id, err := uuid.Parse(idStr)
+		entryIDStr := chi.URLParam(r, "id")
+		entryID, err := uuid.Parse(entryIDStr)
 		if err != nil {
-			respondError(w, http.StatusBadRequest, "invalid timesheet ID")
+			respondError(w, http.StatusBadRequest, "invalid entry ID")
 			return
 		}
 
-		employeeID, err := getEmployeeIDFromContext(r.Context())
-		if err != nil {
+		userID := getUserIDFromJWTContext(r)
+		if userID == uuid.Nil {
 			respondError(w, http.StatusUnauthorized, "unauthorized")
 			return
 		}
 
-		timesheet, err := services.Timesheet.SubmitTimesheet(r.Context(), id, employeeID)
+		err = services.Timesheet.SubmitEntry(r.Context(), entryID, userID)
 		if err != nil {
+			log.Printf("ERROR: failed to submit entry: %v", err)
 			if err == service.ErrUnauthorized {
 				respondError(w, http.StatusForbidden, "unauthorized")
 				return
 			}
-			respondError(w, http.StatusInternalServerError, "failed to submit timesheet")
+			if err == service.ErrInvalidStatus {
+				respondError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			respondError(w, http.StatusInternalServerError, "failed to submit entry")
 			return
 		}
 
-		respondJSON(w, http.StatusOK, timesheet)
+		respondJSON(w, http.StatusOK, map[string]string{
+			"message": "Time entry submitted for approval",
+		})
 	}
 }
 
-// approveTimesheetHandler approves or rejects a timesheet
-func approveTimesheetHandler(services *service.Services) http.HandlerFunc {
+// recallEntryHandler recalls a submitted entry back to draft
+func recallEntryHandler(services *service.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		idStr := chi.URLParam(r, "id")
-		id, err := uuid.Parse(idStr)
+		entryIDStr := chi.URLParam(r, "id")
+		entryID, err := uuid.Parse(entryIDStr)
 		if err != nil {
-			respondError(w, http.StatusBadRequest, "invalid timesheet ID")
+			respondError(w, http.StatusBadRequest, "invalid entry ID")
 			return
 		}
 
-		var req models.TimesheetApprovalRequest
+		userID := getUserIDFromJWTContext(r)
+		if userID == uuid.Nil {
+			respondError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		err = services.Timesheet.RecallEntry(r.Context(), entryID, userID)
+		if err != nil {
+			log.Printf("ERROR: failed to recall entry: %v", err)
+			if err == service.ErrUnauthorized {
+				respondError(w, http.StatusForbidden, "unauthorized")
+				return
+			}
+			if err == service.ErrInvalidStatus {
+				respondError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			respondError(w, http.StatusInternalServerError, "failed to recall entry")
+			return
+		}
+
+		respondJSON(w, http.StatusOK, map[string]string{
+			"message": "Time entry recalled to draft",
+		})
+	}
+}
+
+// approveEntryHandler approves a time entry (manager only)
+func approveEntryHandler(services *service.Services) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		entryIDStr := chi.URLParam(r, "id")
+		entryID, err := uuid.Parse(entryIDStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid entry ID")
+			return
+		}
+
+		userID := getUserIDFromJWTContext(r)
+		if userID == uuid.Nil {
+			respondError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		// TODO: Verify user is manager of the employee
+		// For now, any authenticated user can approve
+
+		err = services.Timesheet.ApproveEntry(r.Context(), entryID, userID)
+		if err != nil {
+			log.Printf("ERROR: failed to approve entry: %v", err)
+			if err == service.ErrUnauthorized {
+				respondError(w, http.StatusForbidden, "unauthorized")
+				return
+			}
+			if err == service.ErrInvalidStatus {
+				respondError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			respondError(w, http.StatusInternalServerError, "failed to approve entry")
+			return
+		}
+
+		respondJSON(w, http.StatusOK, map[string]string{
+			"message": "Time entry approved",
+		})
+	}
+}
+
+// rejectEntryHandler rejects a time entry with a reason (manager only)
+func rejectEntryHandler(services *service.Services) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		entryIDStr := chi.URLParam(r, "id")
+		entryID, err := uuid.Parse(entryIDStr)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid entry ID")
+			return
+		}
+
+		userID := getUserIDFromJWTContext(r)
+		if userID == uuid.Nil {
+			respondError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		var req struct {
+			Reason string `json:"reason"`
+		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			respondError(w, http.StatusBadRequest, "invalid request body")
 			return
 		}
 
-		timesheet, err := services.Timesheet.ApproveTimesheet(r.Context(), id, &req)
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, "failed to approve timesheet")
+		if req.Reason == "" {
+			respondError(w, http.StatusBadRequest, "rejection reason is required")
 			return
 		}
 
-		respondJSON(w, http.StatusOK, timesheet)
+		// TODO: Verify user is manager of the employee
+
+		err = services.Timesheet.RejectEntry(r.Context(), entryID, userID, req.Reason)
+		if err != nil {
+			log.Printf("ERROR: failed to reject entry: %v", err)
+			if err == service.ErrUnauthorized {
+				respondError(w, http.StatusForbidden, "unauthorized")
+				return
+			}
+			if err == service.ErrInvalidStatus {
+				respondError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			respondError(w, http.StatusInternalServerError, "failed to reject entry")
+			return
+		}
+
+		respondJSON(w, http.StatusOK, map[string]string{
+			"message": "Time entry rejected",
+		})
 	}
 }
 

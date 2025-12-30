@@ -1,11 +1,15 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  //import { goto } from '$app/navigation';
   import { authStore } from '../stores/auth';
   import { getApiBaseUrl } from '../lib/api';
   
   const API_BASE_URL = getApiBaseUrl();
   
+  // Make navigate optional with default fallback
+  //let { navigate = goto }: { navigate?: (page: string) => void } = $props();
   let { navigate }: { navigate: (page: string) => void } = $props();
+  
   let employee = $state($authStore.employee);
   let allTasksCompleted = $state(false);
   
@@ -101,6 +105,29 @@
 </div>
 
 <style>
+  .onboarding-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 2rem;
+  }
+  
+  .onboarding-header {
+    text-align: center;
+    margin-bottom: 3rem;
+  }
+  
+  .onboarding-header h1 {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: #111827;
+    margin-bottom: 0.5rem;
+  }
+  
+  .onboarding-header p {
+    font-size: 1.125rem;
+    color: #6b7280;
+  }
+  
   .status-badge {
     display: inline-flex;
     align-items: center;
@@ -117,6 +144,10 @@
   .status-badge svg {
     width: 16px;
     height: 16px;
+  }
+  
+  .tasks-section {
+    margin-bottom: 2rem;
   }
   
   .completion-section {

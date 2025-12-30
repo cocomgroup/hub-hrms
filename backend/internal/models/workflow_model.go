@@ -144,3 +144,37 @@ type DocSearchDocument struct {
 	UploadedAt   time.Time              `json:"uploaded_at"`
 	Metadata     map[string]interface{} `json:"metadata,omitempty"`
 }
+
+// WorkflowTemplate represents a reusable workflow definition/template
+type WorkflowTemplate struct {
+	ID           uuid.UUID    `json:"id" db:"id"`
+	Name         string       `json:"name" db:"name"`
+	Description  string       `json:"description" db:"description"`
+	WorkflowType string       `json:"workflow_type" db:"workflow_type"` // onboarding, offboarding, etc.
+	Status       string       `json:"status" db:"status"`               // active, inactive, draft
+	CreatedBy    uuid.UUID    `json:"created_by" db:"created_by"`
+	CreatedAt    time.Time    `json:"created_at" db:"created_at"`
+	UpdatedAt    time.Time    `json:"updated_at" db:"updated_at"`
+	Steps        []WorkflowStepDef `json:"steps,omitempty"` // Not in DB, loaded separately
+}
+
+// WorkflowStepDef represents a step definition in a workflow template
+type WorkflowStepDef struct {
+	ID            uuid.UUID  `json:"id" db:"id"`
+	WorkflowID    uuid.UUID  `json:"workflow_id" db:"workflow_id"`
+	StepOrder     int        `json:"step_order" db:"step_order"`
+	StepType      string     `json:"step_type" db:"step_type"`         // document, approval, background_check, etc.
+	StepName      string     `json:"step_name" db:"step_name"`
+	Description   string     `json:"description" db:"description"`
+	Required      bool       `json:"required" db:"required"`
+	AutoTrigger   bool       `json:"auto_trigger" db:"auto_trigger"`
+	AssignedRole  string     `json:"assigned_role" db:"assigned_role"` // hr, manager, it, employee, etc.
+	DueDays       *int       `json:"due_days" db:"due_days"`           // Days to complete from workflow start or previous step
+	CreatedAt     time.Time  `json:"created_at" db:"created_at"`
+}
+
+// WorkflowTemplateWithSteps includes template and its steps
+type WorkflowTemplateWithSteps struct {
+	Template WorkflowTemplate  `json:"template"`
+	Steps    []WorkflowStepDef `json:"steps"`
+}

@@ -7,15 +7,19 @@
   interface TimeEntry {
     id: string;
     employee_id: string;
-    date: string;  // Backend sends "date" not "entry_date"
+    date: string;
     clock_in?: string;
     clock_out?: string;
-    break_minutes: number;  // Backend sends "break_minutes"
+    break_minutes: number;
     notes: string;
-    type: string;  // Backend sends "type"
-    status: string;
+    type: string;
+    status: string;  // 'draft', 'submitted', 'approved', 'rejected'
     total_hours?: number;
     projects?: TimeEntryProject[];
+    submitted_at?: string;  // ADD THIS
+    approved_at?: string;   // ADD THIS
+    approved_by?: string;   // ADD THIS
+    rejection_reason?: string;  // ADD THIS
   }
 
   interface TimeEntryProject {
@@ -410,10 +414,82 @@
     newEntry = newEntry;
   }
 
+async function submitEntry(entryId: string) {
+  if (!confirm('Submit this time entry for manager approval?')) return;
+  
+  try {
+    loading = true;
+    error = '';
+    
+    const response = await fetch(`${API_BASE_URL}/timesheet/entries/${entryId}/submit`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${$authStore.token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (!response.ok) throw new Error('Failed to submit entry');
+    
+    success = 'Time entry submitted for approval!';
+    await loadTimeEntries();
+  } catch (err: any) {
+    error = err.message || 'Failed to submit entry';
+  } finally {
+    loading = false;
+  }
+}
+
+async function recallEntry(entryId: string) {
+  if (!confirm('Recall this time entry back to draft?')) return;
+  
+  try {
+    loading = true;
+    error = '';
+    
+    const response = await fetch(`${API_BASE_URL}/timesheet/entries/${entryId}/recall`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${$authStore.token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    if (!response.ok) throw new Error('Failed to recall entry');
+    
+    success = 'Time entry recalled to draft status';
+    await loadTimeEntries();
+  } catch (err: any) {
+    error = err.message || 'Failed to recall entry';
+  } finally {
+    loading = false;
+  }
+}
+
+function getStatusLabel(status: string): string {
+  const labels = {
+    'draft': 'Draft',
+    'submitted': 'Pending Approval',
+    'approved': 'Approved',
+    'rejected': 'Rejected'
+  };
+  return labels[status] || status;
+}
+
+function getStatusIcon(status: string): string {
+  const icons = {
+    'draft': '📝',
+    'submitted': '⏳',
+    'approved': '✅',
+    'rejected': '❌'
+  };
+  return icons[status] || '';
+}
+
   async function submitTimesheet() {
     if (!currentPeriod) return;
     
-    if (!confirm('Submit timesheet for approval?')) return;
+    if (!confirm(`Submit timesheet period with ${timeEntries.length} entries for manager approval?`)) return;
     
     loading = true;
     error = '';
@@ -565,11 +641,11 @@
     </div>
     <div class="clock-actions">
       {#if !clockedIn}
-        <button class="btn btn-success btn-lg" on:click={clockIn} disabled={loading}>
+        <button class="btn btn-success btn-lg" onclick={clockIn} disabled={loading}>
           Clock In
         </button>
       {:else}
-        <button class="btn btn-danger btn-lg" on:click={clockOut} disabled={loading}>
+        <button class="btn btn-danger btn-lg" onclick={clockOut} disabled={loading}>
           Clock Out
         </button>
       {/if}
@@ -598,13 +674,26 @@
 
   <!-- Actions Bar -->
   <div class="actions-bar">
-    <button class="btn btn-primary" on:click={() => showAddEntry = true}>
-      + Add Entry
-    </button>
-    {#if currentPeriod?.status === 'draft'}
-      <button class="btn btn-success" on:click={submitTimesheet} disabled={loading || timeEntries.length === 0}>
-        Submit Timesheet
+    <div class="actions-left">
+      <button class="btn btn-primary" onclick={() => showAddEntry = true}>
+        + Add Entry
       </button>
+      {#if currentPeriod?.status === 'draft' || currentPeriod?.status === 'open'}
+        <button class="btn btn-success" onclick={submitTimesheet}>
+          📋 Submit Period for Approval ({timeEntries.length} entries)
+        </button>
+      {/if}
+    </div>
+    {#if currentPeriod}
+      <div class="period-status-bar">
+        <span class="period-label">Period:</span>
+        <span class="period-dates">
+          {formatDate(currentPeriod.start_date)} - {formatDate(currentPeriod.end_date)}
+        </span>
+        <span class="status-badge status-{currentPeriod.status}">
+          {currentPeriod.status}
+        </span>
+      </div>
     {/if}
   </div>
 
@@ -672,10 +761,10 @@
               </td>
               <td>
                 {#if entry.status === 'draft'}
-                  <button class="btn-icon" on:click={() => editEntry(entry)} title="Edit entry" aria-label="Edit entry">
+                  <button class="btn-icon" onclick={() => editEntry(entry)} title="Edit entry" aria-label="Edit entry">
                     ✏️
                   </button>
-                  <button class="btn-icon" on:click={() => deleteEntry(entry.id)} title="Delete entry" aria-label="Delete entry">
+                  <button class="btn-icon" onclick={() => deleteEntry(entry.id)} title="Delete entry" aria-label="Delete entry">
                     🗑️
                   </button>
                 {/if}
@@ -691,13 +780,13 @@
   {#if showAddEntry}
     <!-- svelte-ignore a11y-click-events-have-key-events -->
     <!-- svelte-ignore a11y-no-static-element-interactions -->
-    <div class="modal-overlay" on:click={resetForm}>
+    <div class="modal-overlay" onclick={resetForm}>
       <!-- svelte-ignore a11y-click-events-have-key-events -->
       <!-- svelte-ignore a11y-no-static-element-interactions -->
-      <div class="modal" on:click|stopPropagation>
+      <div class="modal" onclick={(e) => e.stopPropagation()}>
         <div class="modal-header">
           <h2>{editingEntry ? 'Edit' : 'Add'} Time Entry</h2>
-          <button class="close-btn" on:click={resetForm}>×</button>
+          <button class="close-btn" onclick={resetForm}>×</button>
         </div>
         
         <div class="modal-body">
@@ -743,7 +832,7 @@
           <div class="form-section">
             <div class="section-header">
               <h3>Project Allocations</h3>
-              <button class="btn btn-sm btn-secondary" on:click={addProjectAllocation}>
+              <button class="btn btn-sm btn-secondary" onclick={addProjectAllocation}>
                 + Add Project
               </button>
             </div>
@@ -766,7 +855,7 @@
                 />
                 <button 
                   class="btn-icon" 
-                  on:click={() => removeProjectAllocation(i)}
+                  onclick={() => removeProjectAllocation(i)}
                   title="Remove project allocation"
                   aria-label="Remove project allocation"
                 >
@@ -778,10 +867,10 @@
         </div>
 
         <div class="modal-footer">
-          <button class="btn btn-secondary" on:click={resetForm}>
+          <button class="btn btn-secondary" onclick={resetForm}>
             Cancel
           </button>
-          <button class="btn btn-primary" on:click={saveEntry} disabled={loading}>
+          <button class="btn btn-primary" onclick={saveEntry} disabled={loading}>
             {editingEntry ? 'Update' : 'Save'} Entry
           </button>
         </div>
@@ -894,10 +983,32 @@
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
   }
 
-  .card h4 {
-    margin: 0 0 0.5rem 0;
-    color: #333;
+  .actions-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    padding: 1rem;
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  }
+
+  .actions-left {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+  }
+
+  .period-info {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+  }
+
+  .period-dates {
     font-size: 0.9rem;
+    color: #6b7280;
     font-weight: 500;
   }
 
@@ -1188,4 +1299,89 @@
     padding: 1rem 2rem;
     font-size: 1.1rem;
   }
+
+  .status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.status-draft {
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.status-submitted {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status-approved {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.status-rejected {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.btn-sm {
+  padding: 4px 8px;
+  font-size: 12px;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn-success {
+  background: #10b981;
+  color: white;
+}
+
+.btn-success:hover {
+  background: #059669;
+}
+
+.btn-warning {
+  background: #f59e0b;
+  color: white;
+}
+
+.btn-warning:hover {
+  background: #d97706;
+}
+
+.actions-cell {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.text-muted {
+  color: #9ca3af;
+  font-size: 12px;
+}
+/* Changed from light gray to dark gray */
+.period-dates {
+  color: #374151;  /* Was #6b7280 */
+}
+.period-label {
+  color: #374151;  /* Dark gray */
+  font-weight: 600;  /* Bold */
+}
+.status-open {
+  background: #dbeafe;  /* Light blue */
+  color: #1e40af;       /* Dark blue */
+  font-weight: 600;
+}
+
 </style>

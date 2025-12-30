@@ -23,6 +23,12 @@ CREATE TABLE IF NOT EXISTS employees (
     FOREIGN KEY (manager_id) REFERENCES employees(id) ON DELETE SET NULL
 );
 
+ALTER TABLE employees 
+ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id);
+
+CREATE INDEX IF NOT EXISTS idx_employees_user_id ON employees(user_id);
 CREATE INDEX IF NOT EXISTS idx_employees_email ON employees(email);
 CREATE INDEX IF NOT EXISTS idx_employees_department ON employees(department);
 CREATE INDEX IF NOT EXISTS idx_employees_manager_id ON employees(manager_id);
+
+COMMENT ON COLUMN employees.user_id IS 'Links employee to their user account (nullable if employee has no login)';
