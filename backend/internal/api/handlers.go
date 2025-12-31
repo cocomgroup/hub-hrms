@@ -92,8 +92,6 @@ func loginHandler(services *service.Services) http.HandlerFunc {
 }
 
 // Helper functions - FIXED VERSION
-
-// getUserIDFromContext extracts user ID from context (returns UUID)
 func getUserIDFromContext(ctx context.Context) (uuid.UUID, error) {
 	userIDStr, ok := ctx.Value("user_id").(string)
 	if !ok {

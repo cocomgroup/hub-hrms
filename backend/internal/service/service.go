@@ -35,6 +35,7 @@ type Services struct {
 	Recruiting RecruitingService
 	Organization OrganizationService
 	Project    ProjectService
+	Compensation CompensationService
 }
 
 func NewServices(repos *repository.Repositories, cfg *config.Config) *Services {
@@ -51,6 +52,7 @@ func NewServices(repos *repository.Repositories, cfg *config.Config) *Services {
 		Recruiting: NewRecruitingService(repos),
 		Organization: NewOrganizationService(repos),
 		Project:	NewProjectService(repos),
+		Compensation: NewCompensationService(repos),
 	}
 }
 

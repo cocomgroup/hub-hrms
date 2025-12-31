@@ -4,6 +4,8 @@
   import { getApiBaseUrl } from '../lib/api';
   import EmployeeDetail from '../components/EmployeeDetail.svelte';
   import WorkflowManager from '../components/WorkflowManager.svelte';
+  import Compensation from '../components/Compensation.svelte';
+  import EmployeeList from '../components/EmployeeList.svelte';
   
   const API_BASE_URL = getApiBaseUrl();
 
@@ -36,11 +38,9 @@
   let error = '';
   let selectedEmployeeId: string | null = null;
   let showEmployeeDetail = false;
-  let filterStatus: string = 'all';
-  let searchQuery = '';
+  let showCompensation = false;
   let showWorkflowManager = false;
-  let currentPage = 1;
-  let itemsPerPage = 10;
+  let showEmployeeList = false; // New: for Quick Actions employee list modal
 
   onMount(() => {
     loadDashboard();
@@ -52,24 +52,28 @@
       error = '';
 
       const response = await fetch(`${API_BASE_URL}/employees`, {
-        headers: { 'Authorization': `Bearer ${$authStore.token}` }
+        headers: {
+          'Authorization': `Bearer ${$authStore.token}`
+        }
       });
 
       if (!response.ok) throw new Error('Failed to load employees');
-      
-      employees = await response.json();
-      
-      // Calculate stats
-      stats.totalEmployees = employees.length;
-      stats.activeEmployees = employees.filter(e => e.status === 'active').length;
-      stats.onboardingEmployees = employees.filter(e => e.status === 'onboarding').length;
-      stats.onLeaveEmployees = employees.filter(e => e.status === 'on-leave').length;
 
+      employees = await response.json();
+      calculateStats();
     } catch (err: any) {
       error = err.message;
+      console.error('Dashboard error:', err);
     } finally {
       loading = false;
     }
+  }
+
+  function calculateStats() {
+    stats.totalEmployees = employees.length;
+    stats.activeEmployees = employees.filter(e => e.status === 'active').length;
+    stats.onboardingEmployees = employees.filter(e => e.status === 'onboarding').length;
+    stats.onLeaveEmployees = employees.filter(e => e.status === 'on-leave').length;
   }
 
   function openEmployeeDetail(employeeId: string) {
@@ -82,60 +86,8 @@
     selectedEmployeeId = null;
   }
 
-  function getStatusBadgeClass(status: string): string {
-    const classes = {
-      'onboarding': 'status-onboarding',
-      'active': 'status-active',
-      'on-leave': 'status-leave',
-      'separated': 'status-separated'
-    };
-    return classes[status] || 'status-default';
-  }
-
-  function getStatusLabel(status: string): string {
-    const labels = {
-      'onboarding': 'Onboarding',
-      'active': 'Active',
-      'on-leave': 'On Leave',
-      'separated': 'Separated'
-    };
-    return labels[status] || status;
-  }
-  $: filteredEmployees = employees.filter(emp => {
-    const matchesStatus = filterStatus === 'all' || emp.status === filterStatus;
-    const matchesSearch = !searchQuery || 
-      emp.first_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      emp.last_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      emp.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      emp.department.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesStatus && matchesSearch;
-  });
-
-  $: totalPages = Math.ceil(filteredEmployees.length / itemsPerPage);
-  $: paginatedEmployees = filteredEmployees.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
-
-  function nextPage() {
-    if (currentPage < totalPages) {
-      currentPage++;
-    }
-  }
-
-  function prevPage() {
-    if (currentPage > 1) {
-      currentPage--;
-    }
-  }
-
-  function goToPage(page: number) {
-    currentPage = page;
-  }
-
-  // Reset to page 1 when filter changes
-  $: if (filterStatus || searchQuery) {
-    currentPage = 1;
+  function openEmployeeListModal() {
+    showEmployeeList = true;
   }
 </script>
 
@@ -144,142 +96,114 @@
     <h1>HR Dashboard</h1>
   </div>
 
-  {#if loading}
+  {#if loading && employees.length === 0}
     <div class="loading">Loading dashboard...</div>
   {:else if error}
-    <div class="error">{error}</div>
+    <div class="error">
+      <p>Error: {error}</p>
+      <button onclick={loadDashboard}>Retry</button>
+    </div>
   {:else}
     <!-- Stats Cards -->
     <div class="stats-grid">
       <div class="stat-card">
-        <div class="stat-value">{stats.totalEmployees}</div>
-        <div class="stat-label">Total Employees</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-value">{stats.activeEmployees}</div>
-        <div class="stat-label">Active</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-value">{stats.onboardingEmployees}</div>
-        <div class="stat-label">Onboarding</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-value">{stats.onLeaveEmployees}</div>
-        <div class="stat-label">On Leave</div>
-      </div>
-    </div>
-
-    <!-- Filters -->
-    <div class="filters">
-      <input 
-        type="text" 
-        placeholder="Search employees..."
-        bind:value={searchQuery}
-        class="search-input"
-      />
-      <select bind:value={filterStatus} class="filter-select">
-        <option value="all">All Statuses</option>
-        <option value="active">Active</option>
-        <option value="onboarding">Onboarding</option>
-        <option value="on-leave">On Leave</option>
-        <option value="separated">Separated</option>
-      </select>
-    </div>
-
-    <!-- Employees Table -->
-    <div class="employees-table">
-      <table>
-        <thead>
-          <tr>
-            <th>Name</th>
-            <th>Email</th>
-            <th>Department</th>
-            <th>Position</th>
-            <th>Status</th>
-            <th>Hire Date</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#if paginatedEmployees.length === 0 && filteredEmployees.length === 0}
-            <tr>
-              <td colspan="7" class="empty-state">
-                No employees found
-              </td>
-            </tr>
-          {:else}
-            {#each paginatedEmployees as employee}
-              <tr>
-                <td class="employee-name">
-                  {employee.first_name} {employee.last_name}
-                </td>
-                <td>{employee.email}</td>
-                <td>{employee.department}</td>
-                <td>{employee.position}</td>
-                <td>
-                  <span class="status-badge {getStatusBadgeClass(employee.status)}">
-                    {getStatusLabel(employee.status)}
-                  </span>
-                </td>
-                <td>{new Date(employee.hire_date).toLocaleDateString()}</td>
-                <td>
-                  <button 
-                    class="btn-view"
-                    onclick={() => openEmployeeDetail(employee.id)}
-                  >
-                    View Details
-                  </button>
-                </td>
-              </tr>
-            {/each}
-          {/if}
-        </tbody>
-      </table>
-    </div>
-
-    <!-- Pagination Controls -->
-    {#if filteredEmployees.length > itemsPerPage}
-      <div class="pagination">
-        <div class="pagination-info">
-          Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredEmployees.length)} of {filteredEmployees.length} employees
+        <div class="stat-icon">👥</div>
+        <div class="stat-content">
+          <div class="stat-value">{stats.totalEmployees}</div>
+          <div class="stat-label">Total Employees</div>
         </div>
-        <div class="pagination-controls">
-          <button 
-            class="btn-page" 
-            onclick={prevPage} 
-            disabled={currentPage === 1}
-          >
-            ← Previous
-          </button>
-          
-          <div class="page-numbers">
-            {#each Array(totalPages) as _, i}
-              <button
-                class="btn-page-num {currentPage === i + 1 ? 'active' : ''}"
-                onclick={() => goToPage(i + 1)}
-              >
-                {i + 1}
-              </button>
-            {/each}
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-icon">✓</div>
+        <div class="stat-content">
+          <div class="stat-value">{stats.activeEmployees}</div>
+          <div class="stat-label">Active</div>
+        </div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-icon">🚀</div>
+        <div class="stat-content">
+          <div class="stat-value">{stats.onboardingEmployees}</div>
+          <div class="stat-label">Onboarding</div>
+        </div>
+      </div>
+
+      <div class="stat-card">
+        <div class="stat-icon">🏖️</div>
+        <div class="stat-content">
+          <div class="stat-value">{stats.onLeaveEmployees}</div>
+          <div class="stat-label">On Leave</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="section">
+      <h2>Quick Actions</h2>
+      <div class="quick-actions-grid">
+        
+        <button class="action-card" onclick={openEmployeeListModal}>
+          <div class="action-icon">👥</div>
+          <div class="action-content">
+            <h3>View All Employees</h3>
+            <p>Search, filter & manage employees</p>
           </div>
-          
-          <button 
-            class="btn-page" 
-            onclick={nextPage} 
-            disabled={currentPage === totalPages}
-          >
-            Next →
-          </button>
-        </div>
+        </button>
+
+        <button class="action-card" onclick={() => showWorkflowManager = true}>
+          <div class="action-icon">⚙️</div>
+          <div class="action-content">
+            <h3>Workflows</h3>
+            <p>Manage HR workflows</p>
+          </div>
+        </button>
+
+        <button class="action-card" onclick={() => showCompensation = true}>
+          <div class="action-icon">💰</div>
+          <div class="action-content">
+            <h3>Compensation</h3>
+            <p>Manage salaries & bonuses</p>
+          </div>
+        </button>
+
       </div>
-    {/if}
+    </div>
+
+    <!-- Recent Activity / Summary can go here -->
+    <div class="section">
+      <h2>Recent Activity</h2>
+      <div class="recent-activity">
+        <p class="text-muted">Recent employee activities will appear here</p>
+      </div>
+    </div>
   {/if}
 </div>
 
+<!-- Employee List Modal -->
+{#if showEmployeeList}
+  <div class="modal-overlay" onclick={() => showEmployeeList = false} onkeydown={(e) => e.key === 'Escape' && (showEmployeeList = false)} role="button" tabindex="0">
+    <div class="modal full-screen" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Escape' && (showEmployeeList = false)} role="dialog" aria-modal="true" tabindex="-1">
+      <div class="modal-header">
+        <h2>All Employees</h2>
+        <button class="close-btn" onclick={() => showEmployeeList = false}>×</button>
+      </div>
+      <div class="modal-body">
+        <EmployeeList 
+          {employees} 
+          loading={false}
+          onViewDetails={openEmployeeDetail}
+        />
+      </div>
+    </div>
+  </div>
+{/if}
+
 <!-- Employee Detail Modal -->
 {#if showEmployeeDetail && selectedEmployeeId}
-  <div class="modal-overlay" onclick={closeEmployeeDetail} role="button" tabindex="0">
-    <div class="modal" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+  <div class="modal-overlay" onclick={closeEmployeeDetail} onkeydown={(e) => e.key === 'Escape' && closeEmployeeDetail()} role="button" tabindex="0">
+    <div class="modal" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Escape' && closeEmployeeDetail()} role="dialog" aria-modal="true" tabindex="-1">
       <div class="modal-header">
         <h2>Employee Details</h2>
         <button class="close-btn" onclick={closeEmployeeDetail}>×</button>
@@ -291,19 +215,10 @@
   </div>
 {/if}
 
-<!-- Add Workflow QuickAction Button -->
-<div class="quick-actions">
-  <button class="quick-action-btn" onclick={() => showWorkflowManager = true}>
-    <span class="icon">⚙️</span>
-    <span>Manage Workflows</span>
-  </button>
-  <!-- ... other quick actions ... -->
-</div>
-
 <!-- Workflow Manager Modal -->
 {#if showWorkflowManager}
-  <div class="modal-overlay" onclick={() => showWorkflowManager = false}>
-    <div class="modal full-screen" onclick={(e) => e.stopPropagation()}>
+  <div class="modal-overlay" onclick={() => showWorkflowManager = false} onkeydown={(e) => e.key === 'Escape' && (showWorkflowManager = false)} role="button" tabindex="0">
+    <div class="modal full-screen" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Escape' && (showWorkflowManager = false)} role="dialog" aria-modal="true" tabindex="-1">
       <div class="modal-header">
         <h2>Workflow Management</h2>
         <button class="close-btn" onclick={() => showWorkflowManager = false}>×</button>
@@ -313,21 +228,154 @@
   </div>
 {/if}
 
+<!-- Compensation Modal -->
+{#if showCompensation}
+  <div class="modal-overlay" onclick={() => showCompensation = false} onkeydown={(e) => e.key === 'Escape' && (showCompensation = false)} role="button" tabindex="0">
+    <div class="modal full-screen" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Escape' && (showCompensation = false)} role="dialog" aria-modal="true" tabindex="-1">
+      <div class="modal-header">
+        <h2>Compensation Management</h2>
+        <button class="close-btn" onclick={() => showCompensation = false}>×</button>
+      </div>
+      <Compensation />
+    </div>
+  </div>
+{/if}
+
 <style>
   .hr-dashboard {
-    padding: 24px;
     max-width: 1400px;
     margin: 0 auto;
+    padding: 24px;
   }
 
   .dashboard-header {
-    margin-bottom: 24px;
+    margin-bottom: 32px;
   }
 
   .dashboard-header h1 {
+    font-size: 32px;
+    font-weight: 700;
+    color: #111827;
     margin: 0;
+  }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 20px;
+    margin-bottom: 32px;
+  }
+
+  .stat-card {
+    background: white;
+    padding: 24px;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .stat-icon {
+    font-size: 36px;
+    width: 60px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f3f4f6;
+    border-radius: 12px;
+  }
+
+  .stat-content {
+    flex: 1;
+  }
+
+  .stat-value {
     font-size: 28px;
     font-weight: 600;
+    color: #111827;
+    margin-bottom: 4px;
+  }
+
+  .stat-label {
+    font-size: 14px;
+    color: #6b7280;
+  }
+
+  .section {
+    background: white;
+    padding: 24px;
+    border-radius: 12px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    margin-bottom: 24px;
+  }
+
+  .section h2 {
+    font-size: 20px;
+    font-weight: 600;
+    color: #111827;
+    margin: 0 0 20px 0;
+  }
+
+  .quick-actions-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+  }
+
+  .action-card {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 20px;
+    background: white;
+    border: 2px solid #e5e7eb;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: left;
+    width: 100%;
+  }
+
+  .action-card:hover {
+    border-color: #3b82f6;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+  }
+
+  .action-icon {
+    font-size: 32px;
+    width: 60px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #f3f4f6;
+    border-radius: 12px;
+  }
+
+  .action-content h3 {
+    margin: 0 0 4px 0;
+    font-size: 16px;
+    font-weight: 600;
+    color: #111827;
+  }
+
+  .action-content p {
+    margin: 0;
+    font-size: 14px;
+    color: #6b7280;
+  }
+
+  .recent-activity {
+    padding: 32px;
+    text-align: center;
+  }
+
+  .text-muted {
+    color: #6b7280;
+    font-style: italic;
   }
 
   .loading, .error {
@@ -340,140 +388,17 @@
     color: #dc3545;
   }
 
-  /* Stats Cards */
-  .stats-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 16px;
-    margin-bottom: 32px;
-  }
-
-  .stat-card {
-    background: white;
-    padding: 24px;
-    border-radius: 8px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    text-align: center;
-  }
-
-  .stat-value {
-    font-size: 36px;
-    font-weight: 700;
-    color: #007bff;
-    margin-bottom: 8px;
-  }
-
-  .stat-label {
-    font-size: 14px;
-    color: #666;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-  }
-
-  /* Filters */
-  .filters {
-    display: flex;
-    gap: 16px;
-    margin-bottom: 24px;
-  }
-
-  .search-input {
-    flex: 1;
-    padding: 10px 16px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    font-size: 14px;
-  }
-
-  .filter-select {
-    padding: 10px 16px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    font-size: 14px;
-    background: white;
-    cursor: pointer;
-  }
-
-  /* Table */
-  .employees-table {
-    background: white;
-    border-radius: 8px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    overflow: hidden;
-  }
-
-  table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-
-  thead {
-    background: #f8f9fa;
-  }
-
-  th {
-    padding: 16px;
-    text-align: left;
-    font-size: 12px;
-    font-weight: 600;
-    color: #666;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    border-bottom: 2px solid #e9ecef;
-  }
-
-  td {
-    color: #212529;            /* Very dark text, was #495057 */
-    padding: 16px;
-    border-bottom: 1px solid #e9ecef;
-    font-size: 14px;
-  }
-
-  tr:hover {
-    background: #f8f9fa;
-  }
-
-  .employee-name {
-    font-weight: 500;
-  }
-
-  .status-badge {
-    padding: 4px 12px;
-    border-radius: 12px;
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-  }
-
-  .status-onboarding { background: #fff3cd; color: #856404; }
-  .status-active { background: #d4edda; color: #155724; }
-  .status-leave { background: #d1ecf1; color: #0c5460; }
-  .status-separated { background: #f8d7da; color: #721c24; }
-
-  .btn-view {
-    padding: 6px 16px;
-    background: #007bff;
+  .error button {
+    margin-top: 16px;
+    padding: 10px 20px;
+    background: #3b82f6;
     color: white;
     border: none;
-    border-radius: 4px;
-    font-size: 13px;
-    font-weight: 500;
+    border-radius: 6px;
     cursor: pointer;
-    transition: background 0.2s;
   }
 
-  .btn-view:hover {
-    background: #0056b3;
-  }
-
-  .empty-state {
-    text-align: center;
-    padding: 48px;
-    color: #999;
-    font-style: italic;
-  }
-
-  /* Modal */
+  /* Modal Styles */
   .modal-overlay {
     position: fixed;
     top: 0;
@@ -485,119 +410,87 @@
     align-items: center;
     justify-content: center;
     z-index: 1000;
+    padding: 20px;
   }
 
   .modal {
     background: white;
-    border-radius: 8px;
-    width: 90%;
-    max-width: 900px;
+    border-radius: 12px;
+    max-width: 800px;
+    width: 100%;
     max-height: 90vh;
     overflow-y: auto;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+  }
+
+  .modal.full-screen {
+    max-width: 95vw;
+    max-height: 95vh;
+    width: 95vw;
+    height: 95vh;
   }
 
   .modal-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 20px 24px;
-    border-bottom: 1px solid #e9ecef;
+    padding: 24px;
+    border-bottom: 1px solid #e5e7eb;
   }
 
   .modal-header h2 {
     margin: 0;
-    font-size: 20px;
+    font-size: 24px;
+    font-weight: 600;
+    color: #111827;
   }
 
   .close-btn {
     background: none;
     border: none;
     font-size: 32px;
-    line-height: 1;
-    color: #999;
     cursor: pointer;
-    padding: 0;
-    width: 32px;
-    height: 32px;
+    color: #6b7280;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    transition: background 0.2s;
   }
 
   .close-btn:hover {
-    color: #333;
+    background: #f3f4f6;
   }
 
   .modal-body {
-    padding: 0;
-  }
-  .pagination {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 16px 20px;
-    background: white;
-    border-top: 1px solid #e9ecef;
-    border-radius: 0 0 8px 8px;
+    padding: 24px;
   }
 
-  .pagination-info {
-    font-size: 14px;
-    color: #6b7280;
-  }
+  @media (max-width: 768px) {
+    .hr-dashboard {
+      padding: 16px;
+    }
 
-  .pagination-controls {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-  }
+    .dashboard-header h1 {
+      font-size: 24px;
+    }
 
-  .page-numbers {
-    display: flex;
-    gap: 4px;
-  }
+    .stats-grid {
+      grid-template-columns: 1fr;
+    }
 
-  .btn-page {
-    padding: 8px 16px;
-    border: 1px solid #d1d5db;
-    background: white;
-    color: #374151;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 14px;
-    font-weight: 500;
-    transition: all 0.2s;
-  }
+    .quick-actions-grid {
+      grid-template-columns: 1fr;
+    }
 
-  .btn-page:hover:not(:disabled) {
-    background: #f3f4f6;
-    border-color: #9ca3af;
+    .modal.full-screen {
+      max-width: 100vw;
+      max-height: 100vh;
+      width: 100vw;
+      height: 100vh;
+      border-radius: 0;
+    }
   }
-
-  .btn-page:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .btn-page-num {
-    padding: 8px 12px;
-    border: 1px solid #d1d5db;
-    background: white;
-    color: #374151;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 14px;
-    min-width: 40px;
-    transition: all 0.2s;
-  }
-
-  .btn-page-num:hover {
-    background: #f3f4f6;
-    border-color: #9ca3af;
-  }
-
-  .btn-page-num.active {
-    background: #3b82f6;
-    color: white;
-    border-color: #3b82f6;
-  }
-
 </style>

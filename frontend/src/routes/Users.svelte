@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { authStore } from '../stores/auth';
+  //import { authStore } from '../stores/auth';
 
   interface User {
     id: string;
@@ -827,6 +827,7 @@
   }
 
   .users-table td {
+    color: #212529;            /* Very dark text, was #495057 */
     padding: 1rem;
     border-bottom: 1px solid #f3f4f6;
   }
