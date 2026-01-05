@@ -27,11 +27,16 @@ type Project struct {
 
 // ProjectMember represents an employee assigned to a project
 type ProjectMember struct {
-	ID         uuid.UUID `json:"id"`
-	ProjectID  uuid.UUID `json:"project_id"`
-	EmployeeID uuid.UUID `json:"employee_id"`
-	Role       string    `json:"role"` // lead, developer, designer, etc.
-	CreatedAt  time.Time `json:"created_at"`
+	ID             uuid.UUID `json:"id" db:"id"`
+	ProjectID      uuid.UUID `json:"project_id" db:"project_id"`
+	EmployeeID     uuid.UUID `json:"employee_id" db:"employee_id"`
+	EmployeeName   string    `json:"employee_name,omitempty" db:"-"`
+	Email          string    `json:"email,omitempty" db:"-"`
+	EmploymentType string    `json:"employment_type,omitempty" db:"-"`
+	Role           string    `json:"role" db:"role"`
+	AssignedAt     time.Time `json:"assigned_at" db:"assigned_at"`
+	CreatedAt      time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // ProjectWithDetails includes project info plus manager and member details

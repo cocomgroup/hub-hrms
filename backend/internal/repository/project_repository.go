@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -22,6 +23,7 @@ type ProjectRepository interface {
 	AddMember(ctx context.Context, member *models.ProjectMember) error
 	RemoveMember(ctx context.Context, projectID, employeeID uuid.UUID) error
 	GetMembers(ctx context.Context, projectID uuid.UUID) ([]*models.ProjectMemberInfo, error)
+	GetProjectMembers(ctx context.Context, projectID uuid.UUID) ([]*models.ProjectMember, error)
 	GetEmployeeProjects(ctx context.Context, employeeID uuid.UUID) ([]*models.Project, error)
 }
 
@@ -251,15 +253,15 @@ func (r *projectRepository) GetMembers(ctx context.Context, projectID uuid.UUID)
 
 	members := []*models.ProjectMemberInfo{}
 	for rows.Next() {
-		member := &models.ProjectMemberInfo{}
+		info := &models.ProjectMemberInfo{}
 		err := rows.Scan(
-			&member.ID, &member.ProjectID, &member.EmployeeID, &member.Role, &member.CreatedAt,
-			&member.EmployeeName, &member.EmployeeEmail, &member.EmployeePosition,
+			&info.ID, &info.ProjectID, &info.EmployeeID, &info.Role, &info.CreatedAt,
+			&info.EmployeeName, &info.EmployeeEmail, &info.EmployeePosition,
 		)
 		if err != nil {
 			return nil, err
 		}
-		members = append(members, member)
+		members = append(members, info)
 	}
 
 	return members, rows.Err()
@@ -296,4 +298,100 @@ func (r *projectRepository) GetEmployeeProjects(ctx context.Context, employeeID 
 	}
 
 	return projects, rows.Err()
+}
+
+// GetProjectMembers returns all members of a project
+// Update GetProjectMembers to include employment_type:
+func (r *projectRepository) GetProjectMembers(ctx context.Context, projectID uuid.UUID) ([]*models.ProjectMember, error) {
+	query := `
+		SELECT pm.id, pm.project_id, pm.employee_id, pm.role, pm.assigned_at,
+		       e.first_name, e.last_name, e.email, e.employment_type
+		FROM project_members pm
+		JOIN employees e ON pm.employee_id = e.id
+		WHERE pm.project_id = $1
+		ORDER BY pm.assigned_at DESC
+	`
+	
+	rows, err := r.db.Query(ctx, query, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	
+	var members []*models.ProjectMember
+	for rows.Next() {
+		var m models.ProjectMember
+		var firstName, lastName, email, employmentType string
+		
+		err := rows.Scan(
+			&m.ID,
+			&m.ProjectID,
+			&m.EmployeeID,
+			&m.Role,
+			&m.AssignedAt,
+			&firstName,
+			&lastName,
+			&email,
+			&employmentType,
+		)
+		if err != nil {
+			return nil, err
+		}
+		
+		m.EmployeeName = fmt.Sprintf("%s %s", firstName, lastName)
+		m.Email = email
+		m.EmploymentType = employmentType
+		members = append(members, &m)
+	}
+	
+	return members, rows.Err()
+}
+
+// AddProjectMember adds an employee to a project
+func (r *projectRepository) AddProjectMember(ctx context.Context, member *models.ProjectMember) error {
+	query := `
+		INSERT INTO project_members (id, project_id, employee_id, role, assigned_at, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+	`
+	
+	member.ID = uuid.New()
+	now := time.Now()
+	
+	_, err := r.db.Exec(ctx, query,
+		ctx,
+		query,
+		member.ID,
+		member.ProjectID,
+		member.EmployeeID,
+		member.Role,
+		member.AssignedAt,
+		now,
+		now,
+	)
+	
+	return err
+}
+
+// RemoveProjectMember removes an employee from a project
+func (r *projectRepository) RemoveProjectMember(ctx context.Context, projectID uuid.UUID, employeeID uuid.UUID) error {
+	query := `
+		DELETE FROM project_members
+		WHERE project_id = $1 AND employee_id = $2
+	`
+	
+	result, err := r.db.Exec(ctx, query, projectID, employeeID)
+	if err != nil {
+		return err
+	}
+	
+	rowsAffected := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	
+	if rowsAffected == 0 {
+		return fmt.Errorf("project member not found")
+	}
+	
+	return nil
 }

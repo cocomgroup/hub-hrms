@@ -1,0 +1,1 @@
+[Environment]::SetEnvironmentVariable("BANK_INFO_ENCRYPTION_KEY", "mC2gf0dsly9P0NQPO/Ao6dGadtL+5TsYsS2jRnAUF60=", "User")

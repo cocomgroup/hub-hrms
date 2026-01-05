@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS compensation_plans (
     compensation_type VARCHAR(20) NOT NULL CHECK (compensation_type IN ('salary', 'hourly', 'contract')),
     base_amount DECIMAL(12,2) NOT NULL CHECK (base_amount >= 0),
     currency VARCHAR(3) NOT NULL DEFAULT 'USD',
-    pay_frequency VARCHAR(20) NOT NULL CHECK (pay_frequency IN ('hourly', 'weekly', 'biweekly', 'monthly', 'annually')),
+    pay_frequency VARCHAR(20) NOT NULL CHECK (pay_frequency IN ('hourly', 'weekly', 'biweekly', 'bimonthly', 'monthly', 'annually')),
     effective_date DATE NOT NULL,
     end_date DATE,
     status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'pending', 'expired')),
@@ -21,7 +21,7 @@ CREATE TABLE IF NOT EXISTS compensation_plans (
 CREATE TABLE IF NOT EXISTS bonuses (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     employee_id UUID NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
-    bonus_type VARCHAR(20) NOT NULL CHECK (bonus_type IN ('monthly', 'quarterly', 'annual', 'performance', 'signing', 'retention')),
+    bonus_type VARCHAR(20) NOT NULL CHECK (bonus_type IN ('monthly', 'quarterly', 'annual', 'performance', 'signing', 'retention', 'referral', 'spot', 'holiday')),
     amount DECIMAL(12,2) NOT NULL CHECK (amount >= 0),
     currency VARCHAR(3) NOT NULL DEFAULT 'USD',
     description TEXT NOT NULL,
@@ -31,7 +31,18 @@ CREATE TABLE IF NOT EXISTS bonuses (
     approved_at TIMESTAMP WITH TIME ZONE,
     paid_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+
+    CONSTRAINT chk_bonus_approval CHECK (
+        (status IN ('approved', 'paid') AND approved_by IS NOT NULL AND approved_at IS NOT NULL) 
+        OR status IN ('pending', 'cancelled')
+    ),
+    
+    -- Ensure payment date is set when paid
+    CONSTRAINT chk_bonus_payment CHECK (
+        (status = 'paid' AND paid_at IS NOT NULL) 
+        OR status IN ('pending', 'approved', 'cancelled')
+    )
 );
 
 -- Indexes for performance
@@ -75,6 +86,6 @@ COMMENT ON COLUMN compensation_plans.pay_frequency IS 'How often the employee is
 COMMENT ON COLUMN compensation_plans.status IS 'Current status of the plan: active, pending, or expired';
 
 COMMENT ON COLUMN bonuses.bonus_type IS 'Type of bonus: monthly, quarterly, annual, performance, signing, or retention';
-COMMENT ON COLUMN bonuses.status IS 'Current status: pending, approved, paid, or cancelled';
+COMMENT ON COLUMN bonuses.status IS 'Workflow status: pending (awaiting approval), approved (ready to pay), paid (completed), cancelled';
 COMMENT ON COLUMN bonuses.approved_by IS 'User who approved the bonus';
 COMMENT ON COLUMN bonuses.paid_at IS 'When the bonus was actually paid';

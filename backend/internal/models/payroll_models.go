@@ -1,6 +1,7 @@
 package models
 
 import (
+	"database/sql"
 	"time"
 
 	"github.com/google/uuid"
@@ -8,46 +9,50 @@ import (
 
 // PayrollPeriod represents a payroll period
 type PayrollPeriod struct {
-	ID          uuid.UUID  `json:"id"`
-	StartDate   time.Time  `json:"start_date"`
-	EndDate     time.Time  `json:"end_date"`
-	PayDate     time.Time  `json:"pay_date"`
-	Status      string     `json:"status"`
-	ProcessedBy *uuid.UUID `json:"processed_by,omitempty"`
-	ProcessedAt *time.Time `json:"processed_at,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
-	UpdatedAt   time.Time  `json:"updated_at"`
+	ID          uuid.UUID  `json:"id" db:"id"`
+	StartDate   time.Time  `json:"start_date" db:"start_date"`
+	EndDate     time.Time  `json:"end_date" db:"end_date"`
+	PayDate     time.Time  `json:"pay_date" db:"pay_date"`
+	PeriodType  string     `json:"period_type" db:"period_type"` // weekly, bi-weekly, semi-monthly, monthly
+	Status      string     `json:"status" db:"status"`           // pending, processing, processed, paid
+	ProcessedBy *uuid.UUID `json:"processed_by,omitempty" db:"processed_by"`
+	ProcessedAt *time.Time `json:"processed_at,omitempty" db:"processed_at"`
+	CreatedAt   time.Time  `json:"created_at" db:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at" db:"updated_at"`
 }
 
 // PayStub represents an employee's pay stub
 type PayStub struct {
-	ID                  uuid.UUID `json:"id"`
-	EmployeeID          uuid.UUID `json:"employee_id"`
-	PayrollPeriodID     uuid.UUID `json:"payroll_period_id"`
-	GrossPay            float64   `json:"gross_pay"`
-	FederalTax          float64   `json:"federal_tax"`
-	StateTax            float64   `json:"state_tax"`
-	SocialSecurity      float64   `json:"social_security"`
-	Medicare            float64   `json:"medicare"`
-	OtherDeductions     float64   `json:"other_deductions"`
-	NetPay              float64   `json:"net_pay"`
-	HoursWorked         *float64  `json:"hours_worked,omitempty"`
-	OvertimeHours       *float64  `json:"overtime_hours,omitempty"`
-	HourlyRate          *float64  `json:"hourly_rate,omitempty"`
-	BenefitsDeductions  float64   `json:"benefits_deductions"`
-	CreatedAt           time.Time `json:"created_at"`
-	UpdatedAt           time.Time `json:"updated_at"`
+	ID                 uuid.UUID `json:"id" db:"id"`
+	EmployeeID         uuid.UUID `json:"employee_id" db:"employee_id"`
+	PayrollPeriodID    uuid.UUID `json:"payroll_period_id" db:"payroll_period_id"`
+	GrossPay           float64   `json:"gross_pay" db:"gross_pay"`
+	FederalTax         *float64  `json:"federal_tax,omitempty" db:"federal_tax"`
+	StateTax           *float64  `json:"state_tax,omitempty" db:"state_tax"`
+	SocialSecurity     *float64  `json:"social_security,omitempty" db:"social_security"`
+	Medicare           *float64  `json:"medicare,omitempty" db:"medicare"`
+	OtherDeductions    float64   `json:"other_deductions" db:"other_deductions"`
+	NetPay             float64   `json:"net_pay" db:"net_pay"`
+	HoursWorked        *float64  `json:"hours_worked,omitempty" db:"hours_worked"`
+	RegularHours       *float64  `json:"regular_hours,omitempty" db:"regular_hours"`
+	OvertimeHours      *float64  `json:"overtime_hours,omitempty" db:"overtime_hours"`
+	HourlyRate         *float64  `json:"hourly_rate,omitempty" db:"hourly_rate"`
+	BenefitsDeductions float64   `json:"benefits_deductions" db:"benefits_deductions"`
+	CreatedAt          time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt          time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // EmployeeCompensation represents compensation details for an employee
 type EmployeeCompensation struct {
 	ID                   uuid.UUID  `json:"id" db:"id"`
 	EmployeeID           uuid.UUID  `json:"employee_id" db:"employee_id"`
-	EmploymentType       string     `json:"employment_type" db:"employment_type"` // W2 or 1099
+	EmploymentType       string     `json:"employment_type" db:"employment_type"` // W2, 1099, full-time, part-time, contractor
 	PayType              string     `json:"pay_type" db:"pay_type"`               // hourly, salary, commission
 	HourlyRate           *float64   `json:"hourly_rate,omitempty" db:"hourly_rate"`
-	AnnualSalary         *float64   `json:"annual_salary,omitempty" db:"annual_salary"`
-	PayFrequency         string     `json:"pay_frequency" db:"pay_frequency"` // weekly, biweekly, semimonthly, monthly
+	Salary               *float64   `json:"salary,omitempty" db:"salary"` // Annual salary (changed from AnnualSalary)
+	PayFrequency         string     `json:"pay_frequency" db:"pay_frequency"` // weekly, bi-weekly, semi-monthly, monthly
+	State                string     `json:"state" db:"state"` // State for tax calculation
+	FilingStatus         string     `json:"filing_status" db:"filing_status"` // single, married, head_of_household
 	EffectiveDate        time.Time  `json:"effective_date" db:"effective_date"`
 	EndDate              *time.Time `json:"end_date,omitempty" db:"end_date"`
 	OvertimeEligible     bool       `json:"overtime_eligible" db:"overtime_eligible"`
@@ -97,15 +102,19 @@ type PayStubDeduction struct {
 
 // PayStubTax represents individual tax withholdings on a pay stub
 type PayStubTax struct {
-	ID          uuid.UUID `json:"id" db:"id"`
-	PayStubID   uuid.UUID `json:"pay_stub_id" db:"pay_stub_id"`
-	TaxType     string    `json:"tax_type" db:"tax_type"` // federal, state, local, fica_ss, fica_medicare
-	Description string    `json:"description" db:"description"`
-	Amount      float64   `json:"amount" db:"amount"`
-	TaxableWage float64   `json:"taxable_wage" db:"taxable_wage"`
-	TaxRate     *float64  `json:"tax_rate,omitempty" db:"tax_rate"`
-	CreatedAt   time.Time `json:"created_at" db:"created_at"`
+	ID          uuid.UUID       `json:"id" db:"id"`
+	PayStubID   uuid.UUID       `json:"pay_stub_id" db:"pay_stub_id"`
+	TaxType     string          `json:"tax_type" db:"tax_type"` // federal, state, local, social_security, medicare
+	Description string          `json:"description" db:"description"`
+	Amount      float64         `json:"amount" db:"amount"`
+	TaxableWage float64         `json:"taxable_wage" db:"taxable_wage"`
+	TaxRate     *float64        `json:"tax_rate,omitempty" db:"tax_rate"`
+	Percentage  sql.NullFloat64 `json:"percentage,omitempty" db:"percentage"` // For service layer calculations
+	CreatedAt   time.Time       `json:"created_at" db:"created_at"`
 }
+
+// TaxEntry is an alias for PayStubTax for backward compatibility
+type TaxEntry = PayStubTax
 
 // Form1099 represents a 1099 form for contractors
 type Form1099 struct {
@@ -122,15 +131,26 @@ type Form1099 struct {
 	UpdatedAt          time.Time  `json:"updated_at" db:"updated_at"`
 }
 
+// ===============================
 // DTOs for API requests/responses
+// ===============================
+
+type PayrollPeriodRequest struct {
+	StartDate  time.Time `json:"start_date"`
+	EndDate    time.Time `json:"end_date"`
+	PayDate    time.Time `json:"pay_date"`
+	PeriodType string    `json:"period_type"` // weekly, bi-weekly, semi-monthly, monthly
+}
 
 type CreateCompensationRequest struct {
 	EmployeeID           uuid.UUID  `json:"employee_id"`
 	EmploymentType       string     `json:"employment_type"`
 	PayType              string     `json:"pay_type"`
 	HourlyRate           *float64   `json:"hourly_rate,omitempty"`
-	AnnualSalary         *float64   `json:"annual_salary,omitempty"`
+	Salary               *float64   `json:"salary,omitempty"`
 	PayFrequency         string     `json:"pay_frequency"`
+	State                string     `json:"state"`
+	FilingStatus         string     `json:"filing_status"`
 	EffectiveDate        time.Time  `json:"effective_date"`
 	OvertimeEligible     bool       `json:"overtime_eligible"`
 	StandardHoursPerWeek float64    `json:"standard_hours_per_week"`
@@ -146,27 +166,22 @@ type UpdateTaxWithholdingRequest struct {
 	ExemptFICA            bool    `json:"exempt_fica"`
 }
 
-type CreatePayrollPeriodRequest struct {
-	StartDate time.Time `json:"start_date"`
-	EndDate   time.Time `json:"end_date"`
-	PayDate   time.Time `json:"pay_date"`
-}
-
 type ProcessPayrollRequest struct {
 	PayrollPeriodID uuid.UUID `json:"payroll_period_id"`
 	DryRun          bool      `json:"dry_run"` // Preview without creating records
 }
 
 type PayrollSummary struct {
-	Period          *PayrollPeriod `json:"period"`
-	TotalEmployees  int            `json:"total_employees"`
-	W2Employees     int            `json:"w2_employees"`
-	Contractors1099 int            `json:"contractors_1099"`
-	TotalGrossPay   float64        `json:"total_gross_pay"`
-	TotalTaxes      float64        `json:"total_taxes"`
-	TotalDeductions float64        `json:"total_deductions"`
-	TotalNetPay     float64        `json:"total_net_pay"`
-	Status          string         `json:"status"`
+	PeriodID        uuid.UUID `json:"period_id"`
+	StartDate       time.Time `json:"start_date"`
+	EndDate         time.Time `json:"end_date"`
+	EmployeeCount   int       `json:"employee_count"`
+	ProcessedAt     time.Time `json:"processed_at"`
+	TotalGrossPay   float64   `json:"total_gross_pay"`
+	TotalNetPay     float64   `json:"total_net_pay"`
+	TotalTaxes      float64   `json:"total_taxes"`
+	TotalDeductions float64   `json:"total_deductions"`
+	Status          string    `json:"status"`
 }
 
 type EmployeePayrollInfo struct {

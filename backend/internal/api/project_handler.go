@@ -31,6 +31,16 @@ func RegisterProjectRoutes(r chi.Router, services *service.Services) {
 		
 		// Employee projects
 		r.Get("/employee/{employeeId}", getEmployeeProjectsHandler(services))
+		r.Get("/", listProjectsHandler(services))
+		r.Post("/", createProjectHandler(services))
+		r.Get("/{id}", getProjectHandler(services))
+		r.Put("/{id}", updateProjectHandler(services))
+		r.Delete("/{id}", deleteProjectHandler(services))
+		
+		// NEW: Project member management endpoints
+		r.Get("/employee/{employeeID}", getEmployeeProjectsHandler(services))
+		r.Post("/{projectID}/members", assignProjectMemberHandler(services))
+		r.Delete("/{projectID}/members/{employeeID}", revokeProjectMemberHandler(services))
 	})
 	
 	// Manager assignment endpoint
@@ -207,32 +217,56 @@ func deleteProjectHandler(services *service.Services) http.HandlerFunc {
 }
 
 // assignProjectMemberHandler assigns an employee to a project
+// assignProjectMemberHandler assigns an employee to a project
 func assignProjectMemberHandler(services *service.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		idStr := chi.URLParam(r, "id")
-		projectID, err := uuid.Parse(idStr)
+		projectID, err := uuid.Parse(chi.URLParam(r, "projectID"))
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid project ID")
 			return
 		}
-
-		var req models.AssignProjectMemberRequest
+		
+		var req struct {
+			EmployeeID string `json:"employee_id"`
+			Role       string `json:"role"`
+		}
+		
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			respondError(w, http.StatusBadRequest, "invalid request body")
 			return
 		}
-
-		if err := services.Project.AssignMember(r.Context(), projectID, &req); err != nil {
-			if err == service.ErrProjectNotFound {
-				respondError(w, http.StatusNotFound, "project not found")
-				return
-			}
-			respondError(w, http.StatusInternalServerError, "failed to assign member")
+		
+		employeeID, err := uuid.Parse(req.EmployeeID)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid employee ID")
 			return
 		}
-
+		
+		// Default role to 'member' if not specified
+		role := req.Role
+		if role == "" {
+			role = "member"
+		}
+		
+		// Validate role
+		validRoles := map[string]bool{
+			"member":  true,
+			"lead":    true,
+			"manager": true,
+		}
+		if !validRoles[role] {
+			respondError(w, http.StatusBadRequest, "invalid role: must be member, lead, or manager")
+			return
+		}
+		
+		// Assign the project member
+		if err := services.Project.AssignMember(r.Context(), projectID, employeeID, role); err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		
 		respondJSON(w, http.StatusOK, map[string]string{
-			"message": "Member assigned successfully",
+			"message": "project member assigned successfully",
 		})
 	}
 }
@@ -264,22 +298,52 @@ func removeProjectMemberHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-// getProjectMembersHandler gets all members of a project
-func getProjectMembersHandler(services *service.Services) http.HandlerFunc {
+func revokeProjectMemberHandler(services *service.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		idStr := chi.URLParam(r, "id")
-		id, err := uuid.Parse(idStr)
+		projectID, err := uuid.Parse(chi.URLParam(r, "projectID"))
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid project ID")
 			return
 		}
-
-		members, err := services.Project.GetProjectMembers(r.Context(), id)
+		
+		employeeID, err := uuid.Parse(chi.URLParam(r, "employeeID"))
 		if err != nil {
-			respondError(w, http.StatusInternalServerError, "failed to get members")
+			respondError(w, http.StatusBadRequest, "invalid employee ID")
 			return
 		}
+		
+		// Revoke the project member
+		if err := services.Project.RemoveMember(r.Context(), projectID, employeeID); err != nil {
+			respondError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		
+		respondJSON(w, http.StatusOK, map[string]string{
+			"message": "project member revoked successfully",
+		})
+	}
+}
 
+// getProjectMembersHandler gets all members of a project
+func getProjectMembersHandler(services *service.Services) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		projectID, err := uuid.Parse(chi.URLParam(r, "projectID"))
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid project ID")
+			return
+		}
+		
+		// Get project members
+		members, err := services.Project.GetProjectMembers(r.Context(), projectID)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "failed to get project members")
+			return
+		}
+		
+		if members == nil {
+			members = []*models.ProjectMember{}
+		}
+		
 		respondJSON(w, http.StatusOK, members)
 	}
 }
@@ -287,19 +351,23 @@ func getProjectMembersHandler(services *service.Services) http.HandlerFunc {
 // getEmployeeProjectsHandler gets all projects for an employee
 func getEmployeeProjectsHandler(services *service.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		idStr := chi.URLParam(r, "employeeId")
-		id, err := uuid.Parse(idStr)
+		employeeID, err := uuid.Parse(chi.URLParam(r, "employeeID"))
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid employee ID")
 			return
 		}
-
-		projects, err := services.Project.GetEmployeeProjects(r.Context(), id)
+		
+		// Get projects for this employee
+		projects, err := services.Project.GetEmployeeProjects(r.Context(), employeeID)
 		if err != nil {
-			respondError(w, http.StatusInternalServerError, "failed to get projects")
+			respondError(w, http.StatusInternalServerError, "failed to get employee projects")
 			return
 		}
-
+		
+		if projects == nil {
+			projects = []*models.Project{}
+		}
+		
 		respondJSON(w, http.StatusOK, projects)
 	}
 }

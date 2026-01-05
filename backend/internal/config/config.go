@@ -27,6 +27,9 @@ type Config struct {
 
 	// Application
 	Environment string
+
+	// BankInfo
+	BankInfoEncryptionKey string
 }
 
 func Load() *Config {
@@ -47,6 +50,7 @@ func Load() *Config {
 		S3Bucket:  getEnv("S3_BUCKET", "hr-app-documents"),
 
 		Environment: getEnv("ENVIRONMENT", "development"),
+		BankInfoEncryptionKey: getEnv("BANK_INFO_ENCRYPTION_KEY", "default-32-byte-long-encryption!"),
 	}
 }
 

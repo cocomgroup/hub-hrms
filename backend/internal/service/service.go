@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"log"
 	"hub-hrms/backend/internal/config"
 	"hub-hrms/backend/internal/models"
@@ -23,36 +24,43 @@ var (
 )
 
 type Services struct {
-	Auth       AuthService
-	User 	   UserService
-	Employee   EmployeeService
-	Onboarding OnboardingService
-	Workflow   WorkflowService
-	Timesheet  TimesheetService
-	PTO        PTOService
-	Benefits   BenefitsService
-	Payroll    PayrollService
-	Recruiting RecruitingService
+	Auth         AuthService
+	User 	     UserService
+	Employee     EmployeeService
+	Onboarding   OnboardingService
+	Workflow     WorkflowService
+	Timesheet    TimesheetService
+	PTO          PTOService
+	Benefits     BenefitsService
+	Payroll      PayrollService
+	Recruiting   RecruitingService
 	Organization OrganizationService
-	Project    ProjectService
+	Project      ProjectService
 	Compensation CompensationService
+	BankInfo     BankInfoService
 }
 
 func NewServices(repos *repository.Repositories, cfg *config.Config) *Services {
+		// Get encryption key from config/environment
+	encryptionKey := os.Getenv("BANK_INFO_ENCRYPTION_KEY")
+	if encryptionKey == "" {
+		log.Fatal("BANK_INFO_ENCRYPTION_KEY must be set in environment")
+	}
 	return &Services{
-		Auth:       NewAuthService(repos, cfg),
-		User:   	NewUserService(repos),
-		Employee:   NewEmployeeService(repos),
-		Onboarding: NewOnboardingService(repos),
-		Workflow:   NewWorkflowService(repos),
-		Timesheet:  NewTimesheetService(repos),
-		PTO:        NewPTOService(repos),
-		Benefits:   NewBenefitsService(repos),
-		Payroll:    NewPayrollService(repos),
-		Recruiting: NewRecruitingService(repos),
+		Auth:         NewAuthService(repos, cfg),
+		User:   	  NewUserService(repos),
+		Employee:     NewEmployeeService(repos),
+		Onboarding:   NewOnboardingService(repos),
+		Workflow:     NewWorkflowService(repos),
+		Timesheet:    NewTimesheetService(repos.Timesheet, repos.Project),
+		PTO:          NewPTOService(repos),
+		Benefits:     NewBenefitsService(repos),
+		Payroll:      NewPayrollService(repos),
+		Recruiting:   NewRecruitingService(repos),
 		Organization: NewOrganizationService(repos),
-		Project:	NewProjectService(repos),
+		Project:	  NewProjectService(repos),
 		Compensation: NewCompensationService(repos),
+		BankInfo:     NewBankInfoService(repos, encryptionKey),
 	}
 }
 

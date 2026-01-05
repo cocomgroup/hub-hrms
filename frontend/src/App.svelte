@@ -1,12 +1,13 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { authStore } from './stores/auth';
+  import { getApiBaseUrl } from './lib/api';
   import Login from './routes/Login.svelte';
   import Dashboard from './routes/Dashboard.svelte';
   import Employees from './routes/Employees.svelte';
-  import Onboarding from './routes/Onboarding.svelte';
-  import Workflows from './routes/Workflows.svelte';
-  import WorkflowDetail from './routes/WorkflowDetail.svelte';
+  import Onboarding from './routes/talent-center/workflows/Onboarding.svelte';
+  import Workflows from './routes/talent-center/workflows/Workflows.svelte';
+  import WorkflowDetail from './routes/talent-center/workflows/WorkflowDetail.svelte';
   import Timesheet from './routes/Timesheet.svelte';
   import PTO from './routes/PTO.svelte';
   import Benefits from './routes/Benefits.svelte';
@@ -15,8 +16,10 @@
   import ManagerDashboard from './routes/ManagerDashboard.svelte';
   import EmployeeDashboard from './routes/EmployeeDashboard.svelte'; 
   import Users from './routes/Users.svelte';  
-  import Recruiting from './routes/Recruiting.svelte';  
+  import Recruiting from './routes/talent-center/recruiting/Recruiting.svelte';  
   import ProjectManagement from './routes/ProjectManagement.svelte';  
+
+  const API_BASE_URL = getApiBaseUrl();
 
   let currentPage = $state('dashboard');
   let workflowId = $state('');
@@ -87,65 +90,14 @@
     return unsubscribe;
   });
 
-  async function handleLogin(credentials: LoginCredentials) {
-    try {
-      const response = await fetch(`${API_BASE_URL}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(credentials)
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        
-        // Store auth data in localStorage
-        localStorage.setItem('token', data.token);
-        localStorage.setItem('user', JSON.stringify(data.user));
-        if (data.employee) {
-          localStorage.setItem('employee', JSON.stringify(data.employee));
-        }
-        
-        // Update auth store
-        authStore.set({
-          token: data.token,
-          user: data.user,
-          employee: data.employee,
-          isAuthenticated: true
-        });
-
-        // ✅ ADD THIS: Check if employee needs onboarding
-        if (data.employee && data.employee.status === 'onboarding') {
-          currentPage = 'onboarding';
-          return; // Stop here, don't navigate to dashboard
-        }
-
-        // Navigate based on role
-        if (data.user.role === 'admin' || data.user.role === 'hr-manager') {
-          currentPage = 'hr-dashboard';
-        } else if (data.user.role === 'manager') {
-          currentPage = 'manager-dashboard';
-        } else {
-          currentPage = 'employee-dashboard';
-        }
-      } else {
-        const error = await response.json();
-        loginError = error.error || 'Login failed';
-      }
-    } catch (err) {
-      console.error('Login error:', err);
-      loginError = 'An error occurred during login';
-    }
-  }
-
   function navigate(page: string, id?: string) {
     const employee = $authStore.employee;
-      // ✅ ADD THIS: Block navigation if employee is onboarding
+    // ✅ ADD THIS: Block navigation if employee is onboarding
     if (employee?.status === 'onboarding' && page !== 'onboarding') {
       console.log('Cannot navigate: Employee must complete onboarding first');
       return;
     }
   
-  currentPage = page;
     currentPage = page;
     if (id) {
       workflowId = id;
@@ -260,7 +212,7 @@
         {:else if currentPage === 'employees'}
           <Employees />
         {:else if currentPage === 'onboarding'}
-          <Onboarding />
+          <Onboarding navigate={navigate} />
         {:else if currentPage === 'workflows'}
           <Workflows {navigate} />
         {:else if currentPage === 'hr-dashboard'}

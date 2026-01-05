@@ -146,6 +146,7 @@ func setupRouter(services *service.Services, cfg *config.Config) *chi.Mux {
         api.RegisterOrganizationRoutes(r, services)
         api.RegisterProjectRoutes(r, services)
 		api.RegisterCompensationRoutes(r, services)
+		api.RegisterBankInfoRoutes(r, services)
 	})
 
 	return r
@@ -161,11 +162,13 @@ func healthCheckHandler(w http.ResponseWriter, r *http.Request) {
         w.Write([]byte(`{"status":"healthy","timestamp":"` + time.Now().Format(time.RFC3339) + `"}`))
     }
 }
+
 type Config struct {
 	DatabaseURL    string
 	ServerAddr     string
     Port           string
     JWTSecret      string
+	BankInfoEncryptionKey string
     FrontendURL    string
     Environment    string
 	S3Bucket       string
@@ -223,11 +226,12 @@ func runMigrations(database *db.Postgres) error {
 		"010-create-organizations.sql",
         "011-create-project.sql",
         "012-create-compensation.sql",
-        "013-seed-employees.sql",
-        "014-seed-organizations.sql",
-        "015-seed-pto-benefits.sql",
-        "016-seed-recruiting.sql",
-        "017-seed-users.sql",
+		"013-create-bankinfo.sql",
+        "014-seed-employees.sql",
+        "015-seed-organizations.sql",
+        "016-seed-pto-benefits.sql",
+        "017-seed-recruiting.sql",
+        "018-seed-users.sql",
 	}
 
 	log.Printf("Running %d database migrations from %s/", len(migrationFiles), migrationsDir)

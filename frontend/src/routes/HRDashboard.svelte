@@ -3,9 +3,11 @@
   import { authStore } from '../stores/auth';
   import { getApiBaseUrl } from '../lib/api';
   import EmployeeDetail from '../components/EmployeeDetail.svelte';
-  import WorkflowManager from '../components/WorkflowManager.svelte';
+  //import WorkflowManager from '../components/WorkflowManager.svelte';
   import Compensation from '../components/Compensation.svelte';
   import EmployeeList from '../components/EmployeeList.svelte';
+  import TalentCenter from './talent-center/TalentCenter.svelte';
+  import PayExpenses from './pay-expenses/PayExpenses.svelte';
   
   const API_BASE_URL = getApiBaseUrl();
 
@@ -39,7 +41,9 @@
   let selectedEmployeeId: string | null = null;
   let showEmployeeDetail = false;
   let showCompensation = false;
-  let showWorkflowManager = false;
+  //let showWorkflowManager = false; 
+  let showTalentCenter = false;
+  let showPayExpenses = false;
   let showEmployeeList = false; // New: for Quick Actions employee list modal
 
   onMount(() => {
@@ -152,11 +156,19 @@
           </div>
         </button>
 
-        <button class="action-card" onclick={() => showWorkflowManager = true}>
-          <div class="action-icon">⚙️</div>
+      <button class="action-card" onclick={() => showTalentCenter = true}>
+        <div class="action-icon">🎯</div>
+        <div class="action-content">
+          <h3>Talent Center</h3>
+          <p>Recruiting, onboarding & workflows</p>
+        </div>
+      </button>
+
+        <button class="action-card" onclick={() => showPayExpenses = true}>
+          <div class="action-icon">💳</div>
           <div class="action-content">
-            <h3>Workflows</h3>
-            <p>Manage HR workflows</p>
+            <h3>Pay & Expenses</h3>
+            <p>Payroll & expense approvals</p>
           </div>
         </button>
 
@@ -215,7 +227,7 @@
   </div>
 {/if}
 
-<!-- Workflow Manager Modal -->
+<!-- Workflow Manager Modal 
 {#if showWorkflowManager}
   <div class="modal-overlay" onclick={() => showWorkflowManager = false} onkeydown={(e) => e.key === 'Escape' && (showWorkflowManager = false)} role="button" tabindex="0">
     <div class="modal full-screen" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Escape' && (showWorkflowManager = false)} role="dialog" aria-modal="true" tabindex="-1">
@@ -224,6 +236,34 @@
         <button class="close-btn" onclick={() => showWorkflowManager = false}>×</button>
       </div>
       <WorkflowManager />
+    </div>
+  </div>
+{/if}
+-->
+<!-- Workflow Manager Modal -->
+{#if showTalentCenter}
+  <div class="modal-overlay" onclick={() => showTalentCenter = false} onkeydown={(e) => e.key === 'Escape' && (showTalentCenter = false)} role="button" tabindex="0">
+    <div class="modal full-screen" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Escape' && (showTalentCenter = false)} role="dialog" aria-modal="true" tabindex="-1">
+      <div class="modal-header">
+        <h2>Workflow Management</h2>
+        <button class="close-btn" onclick={() => showTalentCenter = false}>×</button>
+      </div>
+      <TalentCenter />
+    </div>
+  </div>
+{/if}
+
+<!-- Pay & Expenses Modal -->
+{#if showPayExpenses}
+  <div class="modal-overlay" onclick={() => showPayExpenses = false} onkeydown={(e) => e.key === 'Escape' && (showPayExpenses = false)} role="button" tabindex="0">
+    <div class="modal full-screen" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Escape' && (showPayExpenses = false)} role="dialog" aria-modal="true" tabindex="-1">
+      <div class="modal-header">
+        <h2>Pay & Expenses</h2>
+        <button class="close-btn" onclick={() => showPayExpenses = false}>×</button>
+      </div>
+      <div class="modal-body">
+        <PayExpenses />
+      </div>
     </div>
   </div>
 {/if}

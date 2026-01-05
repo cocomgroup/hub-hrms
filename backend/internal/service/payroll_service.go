@@ -2,27 +2,25 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
-	"math"
 	"time"
+	"math"
 
 	"github.com/google/uuid"
 	"hub-hrms/backend/internal/models"
 	"hub-hrms/backend/internal/repository"
 )
 
-// PayrollService handles payroll operations
 type PayrollService interface {
-	CreateCompensation(ctx context.Context, req *models.CreateCompensationRequest) (*models.EmployeeCompensation, error)
-	GetEmployeeCompensation(ctx context.Context, employeeID uuid.UUID) (*models.EmployeeCompensation, error)
-	UpdateTaxWithholding(ctx context.Context, employeeID uuid.UUID, req *models.UpdateTaxWithholdingRequest) (*models.W2TaxWithholding, error)
-	CreatePayrollPeriod(ctx context.Context, req *models.CreatePayrollPeriodRequest) (*models.PayrollPeriod, error)
-	GetPayrollPeriod(ctx context.Context, periodID uuid.UUID) (*models.PayrollPeriod, error)
+	CreatePayrollPeriod(ctx context.Context, req *models.PayrollPeriodRequest) (*models.PayrollPeriod, error)
+	GetPayrollPeriod(ctx context.Context, id uuid.UUID) (*models.PayrollPeriod, error)
 	ListPayrollPeriods(ctx context.Context) ([]*models.PayrollPeriod, error)
-	ProcessPayroll(ctx context.Context, periodID, processedBy uuid.UUID) (*models.PayrollSummary, error)
-	GetEmployeePayStubs(ctx context.Context, employeeID uuid.UUID) ([]*models.PayStub, error)
-	GetPayStubDetail(ctx context.Context, payStubID uuid.UUID) (*models.PayStubDetail, error)
-	Generate1099Forms(ctx context.Context, year int) ([]*models.Form1099, error)
+	UpdatePayrollPeriod(ctx context.Context, id uuid.UUID, req *models.PayrollPeriodRequest) (*models.PayrollPeriod, error)
+	ProcessPayroll(ctx context.Context, periodID uuid.UUID) (*models.PayrollSummary, error)
+	GetPayStub(ctx context.Context, id uuid.UUID) (*models.PayStub, error)
+	GetPayStubsByEmployee(ctx context.Context, employeeID uuid.UUID) ([]*models.PayStub, error)
+	GetPayStubsByPeriod(ctx context.Context, periodID uuid.UUID) ([]*models.PayStub, error)
 }
 
 type payrollService struct {
@@ -30,206 +28,143 @@ type payrollService struct {
 }
 
 func NewPayrollService(repos *repository.Repositories) PayrollService {
-	return &payrollService{repos: repos}
+	return &payrollService{
+		repos: repos,
+	}
 }
 
-// ===============================
-// Compensation Management
-// ===============================
-
-func (s *payrollService) CreateCompensation(ctx context.Context, req *models.CreateCompensationRequest) (*models.EmployeeCompensation, error) {
-	// Validate employment type
-	if req.EmploymentType != "W2" && req.EmploymentType != "1099" {
-		return nil, fmt.Errorf("invalid employment type: must be W2 or 1099")
-	}
-
-	// Validate pay type
-	validPayTypes := map[string]bool{"hourly": true, "salary": true, "commission": true}
-	if !validPayTypes[req.PayType] {
-		return nil, fmt.Errorf("invalid pay type: must be hourly, salary, or commission")
-	}
-
-	// Validate rate is provided
-	if req.PayType == "hourly" && req.HourlyRate == nil {
-		return nil, fmt.Errorf("hourly rate is required for hourly pay type")
-	}
-	if req.PayType == "salary" && req.AnnualSalary == nil {
-		return nil, fmt.Errorf("annual salary is required for salary pay type")
-	}
-
-	comp := &models.EmployeeCompensation{
-		EmployeeID:           req.EmployeeID,
-		EmploymentType:       req.EmploymentType,
-		PayType:              req.PayType,
-		HourlyRate:           req.HourlyRate,
-		AnnualSalary:         req.AnnualSalary,
-		PayFrequency:         req.PayFrequency,
-		EffectiveDate:        req.EffectiveDate,
-		OvertimeEligible:     req.OvertimeEligible,
-		StandardHoursPerWeek: req.StandardHoursPerWeek,
-	}
-
-	if err := s.repos.Payroll.CreateCompensation(ctx, comp); err != nil {
-		return nil, fmt.Errorf("failed to create compensation: %w", err)
-	}
-
-	return comp, nil
-}
-
-func (s *payrollService) GetEmployeeCompensation(ctx context.Context, employeeID uuid.UUID) (*models.EmployeeCompensation, error) {
-	return s.repos.Payroll.GetCompensationByEmployeeID(ctx, employeeID)
-}
-
-// ===============================
-// Tax Withholding Management
-// ===============================
-
-func (s *payrollService) UpdateTaxWithholding(ctx context.Context, employeeID uuid.UUID, req *models.UpdateTaxWithholdingRequest) (*models.W2TaxWithholding, error) {
-	// Check if tax withholding exists
-	existing, err := s.repos.Payroll.GetTaxWithholdingByEmployeeID(ctx, employeeID)
-	
-	if err != nil {
-		// Create new if doesn't exist
-		tax := &models.W2TaxWithholding{
-			EmployeeID:            employeeID,
-			FilingStatus:          req.FilingStatus,
-			FederalAllowances:     req.FederalAllowances,
-			StateAllowances:       req.StateAllowances,
-			AdditionalWithholding: req.AdditionalWithholding,
-			ExemptFederal:         req.ExemptFederal,
-			ExemptState:           req.ExemptState,
-			ExemptFICA:            req.ExemptFICA,
-		}
-		
-		if err := s.repos.Payroll.CreateTaxWithholding(ctx, tax); err != nil {
-			return nil, fmt.Errorf("failed to create tax withholding: %w", err)
-		}
-		
-		return tax, nil
-	}
-
-	// Update existing
-	existing.FilingStatus = req.FilingStatus
-	existing.FederalAllowances = req.FederalAllowances
-	existing.StateAllowances = req.StateAllowances
-	existing.AdditionalWithholding = req.AdditionalWithholding
-	existing.ExemptFederal = req.ExemptFederal
-	existing.ExemptState = req.ExemptState
-	existing.ExemptFICA = req.ExemptFICA
-
-	if err := s.repos.Payroll.UpdateTaxWithholding(ctx, existing); err != nil {
-		return nil, fmt.Errorf("failed to update tax withholding: %w", err)
-	}
-
-	return existing, nil
-}
-
-// ===============================
-// Payroll Period Management
-// ===============================
-
-func (s *payrollService) CreatePayrollPeriod(ctx context.Context, req *models.CreatePayrollPeriodRequest) (*models.PayrollPeriod, error) {
-	// Validate dates
-	if req.EndDate.Before(req.StartDate) {
-		return nil, fmt.Errorf("end date must be after start date")
-	}
-
-	if req.PayDate.Before(req.EndDate) {
-		return nil, fmt.Errorf("pay date must be on or after end date")
-	}
-
+// CreatePayrollPeriod creates a new payroll period
+func (s *payrollService) CreatePayrollPeriod(ctx context.Context, req *models.PayrollPeriodRequest) (*models.PayrollPeriod, error) {
 	period := &models.PayrollPeriod{
-		StartDate: req.StartDate,
-		EndDate:   req.EndDate,
-		PayDate:   req.PayDate,
-		Status:    "draft",
+		StartDate:  req.StartDate,
+		EndDate:    req.EndDate,
+		PayDate:    req.PayDate,
+		PeriodType: req.PeriodType,
+		Status:     "pending",
 	}
 
-	if err := s.repos.Payroll.CreatePeriod(ctx, period); err != nil {
+	if err := s.repos.Payroll.CreatePayrollPeriod(ctx, period); err != nil {
 		return nil, fmt.Errorf("failed to create payroll period: %w", err)
 	}
 
 	return period, nil
 }
 
-func (s *payrollService) GetPayrollPeriod(ctx context.Context, periodID uuid.UUID) (*models.PayrollPeriod, error) {
-	return s.repos.Payroll.GetPeriodByID(ctx, periodID)
-}
-
-func (s *payrollService) ListPayrollPeriods(ctx context.Context) ([]*models.PayrollPeriod, error) {
-	return s.repos.Payroll.ListPeriods(ctx, nil)
-}
-
-// ===============================
-// Payroll Processing
-// ===============================
-
-func (s *payrollService) ProcessPayroll(ctx context.Context, periodID uuid.UUID, processedBy uuid.UUID) (*models.PayrollSummary, error) {
-	// Get payroll period
-	period, err := s.repos.Payroll.GetPeriodByID(ctx, periodID)
+// GetPayrollPeriod retrieves a payroll period by ID
+func (s *payrollService) GetPayrollPeriod(ctx context.Context, id uuid.UUID) (*models.PayrollPeriod, error) {
+	period, err := s.repos.Payroll.GetPayrollPeriod(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get payroll period: %w", err)
 	}
+	return period, nil
+}
 
+// ListPayrollPeriods retrieves all payroll periods
+func (s *payrollService) ListPayrollPeriods(ctx context.Context) ([]*models.PayrollPeriod, error) {
+	periods, err := s.repos.Payroll.ListPayrollPeriods(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list payroll periods: %w", err)
+	}
+	return periods, nil
+}
+
+// UpdatePayrollPeriod updates a payroll period
+func (s *payrollService) UpdatePayrollPeriod(ctx context.Context, id uuid.UUID, req *models.PayrollPeriodRequest) (*models.PayrollPeriod, error) {
+	period, err := s.repos.Payroll.GetPayrollPeriod(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("payroll period not found: %w", err)
+	}
+
+	// Update fields
+	period.StartDate = req.StartDate
+	period.EndDate = req.EndDate
+	period.PayDate = req.PayDate
+	period.PeriodType = req.PeriodType
+
+	if err := s.repos.Payroll.UpdatePayrollPeriod(ctx, period); err != nil {
+		return nil, fmt.Errorf("failed to update payroll period: %w", err)
+	}
+
+	return period, nil
+}
+
+// ProcessPayroll processes payroll for a given period
+func (s *payrollService) ProcessPayroll(ctx context.Context, periodID uuid.UUID) (*models.PayrollSummary, error) {
+	// Get payroll period
+	period, err := s.repos.Payroll.GetPayrollPeriod(ctx, periodID)
+	if err != nil {
+		return nil, fmt.Errorf("payroll period not found: %w", err)
+	}
+
+	// Check if already processed
 	if period.Status == "processed" {
 		return nil, fmt.Errorf("payroll period already processed")
 	}
 
 	// Get all active employees
-	employees, err := s.repos.Employee.List(ctx, map[string]interface{}{"status": "active"})
+	employees, err := s.repos.Employee.List(ctx, map[string]interface{}{
+		"status": "active",
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to get employees: %w", err)
 	}
 
 	summary := &models.PayrollSummary{
-		Period:          period,
-		TotalEmployees:  0,
-		W2Employees:     0,
-		Contractors1099: 0,
+		PeriodID:        periodID,
+		StartDate:       period.StartDate,
+		EndDate:         period.EndDate,
+		EmployeeCount:   len(employees),
+		ProcessedAt:     time.Now(),
+		TotalGrossPay:   0,
+		TotalNetPay:     0,
+		TotalTaxes:      0,
 	}
 
 	// Process each employee
 	for _, employee := range employees {
-		if employee.Status != "active" {
+		// Get employee compensation - FIXED: using Payroll repository
+		comp, err := s.repos.Payroll.GetByEmployeeID(ctx, employee.ID)
+		if err != nil {
+			// Skip employees without compensation setup
 			continue
 		}
 
-		// Get compensation
-		comp, err := s.repos.Payroll.GetCompensationByEmployeeID(ctx, employee.ID)
-		if err != nil {
-			continue // Skip employees without compensation setup
-		}
-
 		var payStub *models.PayStub
-
-		if comp.EmploymentType == "W2" {
+		
+		// Process based on employment type
+		if employee.EmploymentType == "W2" || employee.EmploymentType == "full-time" || employee.EmploymentType == "part-time" {
 			payStub, err = s.processW2Employee(ctx, employee, comp, period)
-			summary.W2Employees++
-		} else if comp.EmploymentType == "1099" {
+		} else if employee.EmploymentType == "1099" || employee.EmploymentType == "contractor" {
 			payStub, err = s.process1099Contractor(ctx, employee, comp, period)
-			summary.Contractors1099++
+		} else {
+			continue // Skip unknown employment types
 		}
 
 		if err != nil {
-			return nil, fmt.Errorf("failed to process employee %s: %w", employee.ID, err)
+			// Log error but continue processing other employees
+			continue
 		}
 
-		if payStub != nil {
-			summary.TotalEmployees++
-			summary.TotalGrossPay += payStub.GrossPay
-			summary.TotalTaxes += payStub.FederalTax + payStub.StateTax + payStub.SocialSecurity + payStub.Medicare
-			summary.TotalDeductions += payStub.OtherDeductions + payStub.BenefitsDeductions
-			summary.TotalNetPay += payStub.NetPay
+		// Update summary
+		summary.TotalGrossPay += payStub.GrossPay
+		summary.TotalNetPay += payStub.NetPay
+		if payStub.FederalTax != nil {
+			summary.TotalTaxes += *payStub.FederalTax
+		}
+		if payStub.StateTax != nil {
+			summary.TotalTaxes += *payStub.StateTax
+		}
+		if payStub.SocialSecurity != nil {
+			summary.TotalTaxes += *payStub.SocialSecurity
+		}
+		if payStub.Medicare != nil {
+			summary.TotalTaxes += *payStub.Medicare
 		}
 	}
 
 	// Update period status
-	now := time.Now()
 	period.Status = "processed"
-	period.ProcessedBy = &processedBy
-	period.ProcessedAt = &now
-
-	if err := s.repos.Payroll.UpdatePeriod(ctx, period); err != nil {
+	if err := s.repos.Payroll.UpdatePayrollPeriod(ctx, period); err != nil {
 		return nil, fmt.Errorf("failed to update period status: %w", err)
 	}
 
@@ -238,24 +173,37 @@ func (s *payrollService) ProcessPayroll(ctx context.Context, periodID uuid.UUID,
 }
 
 func (s *payrollService) processW2Employee(ctx context.Context, employee *models.Employee, comp *models.EmployeeCompensation, period *models.PayrollPeriod) (*models.PayStub, error) {
-	// Get timesheet hours for period
-	timeEntries, err := s.repos.Timesheet.GetByEmployee(ctx, employee.ID, map[string]interface{}{
-		"start_date": period.StartDate,
-		"end_date":   period.EndDate,
-	})
+	// Get time entries for the payroll period
+	timeEntries, err := s.repos.Timesheet.GetTimeEntriesByEmployee(ctx, employee.ID, period.StartDate, period.EndDate)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get time entries: %w", err)
 	}
 
+	// Calculate hours from time entries
 	var regularHours, overtimeHours float64
+	
+	// Group entries by week to calculate overtime properly
+	weeklyHours := make(map[string]float64) // key: week start date
+	
 	for _, entry := range timeEntries {
-		// Simple calculation - in production, calculate per week
-		totalHours := calculateTotalHours(entry)
-		if totalHours > 40 && comp.OvertimeEligible {
+		if entry.Type != "regular" {
+			// Skip PTO and holiday hours for now (handle separately if needed)
+			continue
+		}
+		
+		// Get the Monday of the week for this entry
+		weekStart := getWeekStart(entry.Date)
+		weekKey := weekStart.Format("2006-01-02")
+		weeklyHours[weekKey] += entry.Hours
+	}
+	
+	// Calculate regular and overtime hours per week
+	for _, weekHours := range weeklyHours {
+		if weekHours > 40 && comp.OvertimeEligible {
 			regularHours += 40
-			overtimeHours += totalHours - 40
+			overtimeHours += weekHours - 40
 		} else {
-			regularHours += totalHours
+			regularHours += weekHours
 		}
 	}
 
@@ -268,70 +216,59 @@ func (s *payrollService) processW2Employee(ctx context.Context, employee *models
 		grossPay = (regularHours * hourlyRate) + (overtimeHours * hourlyRate * 1.5)
 	} else if comp.PayType == "salary" {
 		// Calculate salary per pay period
-		periodsPerYear := s.getPeriodsPerYear(comp.PayFrequency)
-		grossPay = *comp.AnnualSalary / float64(periodsPerYear)
-		hourlyRate = grossPay / (comp.StandardHoursPerWeek * 2) // Approximate for display
+		annualSalary := *comp.Salary
+		
+		var periodsPerYear int
+		switch period.PeriodType {
+		case "weekly":
+			periodsPerYear = 52
+		case "bi-weekly":
+			periodsPerYear = 26
+		case "semi-monthly":
+			periodsPerYear = 24
+		case "monthly":
+			periodsPerYear = 12
+		default:
+			periodsPerYear = 26 // Default to bi-weekly
+		}
+		
+		grossPay = annualSalary / float64(periodsPerYear)
+		
+		// Calculate effective hourly rate for display
+		if regularHours > 0 {
+			hourlyRate = grossPay / regularHours
+		}
 	}
 
-	// Get tax withholding
-	taxWithholding, _ := s.repos.Payroll.GetTaxWithholdingByEmployeeID(ctx, employee.ID)
-
-	// Calculate taxes
-	federalTax := s.calculateFederalTax(grossPay, taxWithholding)
-	stateTax := s.calculateStateTax(grossPay, taxWithholding)
-	socialSecurity := s.calculateSocialSecurity(grossPay, taxWithholding)
-	medicare := s.calculateMedicare(grossPay, taxWithholding)
-
-	// Get benefits deductions
-	benefitsDeduction := s.getBenefitsDeductions(ctx, employee.ID)
+	// Calculate taxes (simplified)
+	federalTax := calculateFederalTax(grossPay, comp.FilingStatus)
+	stateTax := calculateStateTax(grossPay, comp.State)
+	socialSecurity := grossPay * 0.062 // 6.2%
+	medicare := grossPay * 0.0145      // 1.45%
 
 	// Calculate net pay
-	netPay := grossPay - federalTax - stateTax - socialSecurity - medicare - benefitsDeduction
+	totalDeductions := federalTax + stateTax + socialSecurity + medicare
+	netPay := grossPay - totalDeductions
 
 	// Create pay stub
+	totalHours := regularHours + overtimeHours
 	payStub := &models.PayStub{
-		EmployeeID:         employee.ID,
-		PayrollPeriodID:    period.ID,
-		GrossPay:           roundToTwoDecimals(grossPay),
-		FederalTax:         roundToTwoDecimals(federalTax),
-		StateTax:           roundToTwoDecimals(stateTax),
-		SocialSecurity:     roundToTwoDecimals(socialSecurity),
-		Medicare:           roundToTwoDecimals(medicare),
-		BenefitsDeductions: roundToTwoDecimals(benefitsDeduction),
-		NetPay:             roundToTwoDecimals(netPay),
-		HoursWorked:        &regularHours,
-		OvertimeHours:      &overtimeHours,
-		HourlyRate:         &hourlyRate,
+		EmployeeID:      employee.ID,
+		PayrollPeriodID: period.ID,
+		GrossPay:        roundToTwoDecimals(grossPay),
+		NetPay:          roundToTwoDecimals(netPay),
+		FederalTax:      floatPtr(roundToTwoDecimals(federalTax)),
+		StateTax:        floatPtr(roundToTwoDecimals(stateTax)),
+		SocialSecurity:  floatPtr(roundToTwoDecimals(socialSecurity)),
+		Medicare:        floatPtr(roundToTwoDecimals(medicare)),
+		HoursWorked:     &totalHours,
+		RegularHours:    &regularHours,
+		OvertimeHours:   &overtimeHours,
+		HourlyRate:      &hourlyRate,
 	}
 
 	if err := s.repos.Payroll.CreatePayStub(ctx, payStub); err != nil {
-		return nil, err
-	}
-
-	// Create detailed earnings
-	if regularHours > 0 {
-		earning := &models.PayStubEarning{
-			PayStubID:   payStub.ID,
-			EarningType: "regular",
-			Description: "Regular Hours",
-			Hours:       &regularHours,
-			Rate:        &hourlyRate,
-			Amount:      regularHours * hourlyRate,
-		}
-		s.repos.Payroll.CreatePayStubEarning(ctx, earning)
-	}
-
-	if overtimeHours > 0 {
-		overtimeRate := hourlyRate * 1.5
-		earning := &models.PayStubEarning{
-			PayStubID:   payStub.ID,
-			EarningType: "overtime",
-			Description: "Overtime Hours",
-			Hours:       &overtimeHours,
-			Rate:        &overtimeRate,
-			Amount:      overtimeHours * overtimeRate,
-		}
-		s.repos.Payroll.CreatePayStubEarning(ctx, earning)
+		return nil, fmt.Errorf("failed to create pay stub: %w", err)
 	}
 
 	// Create tax entries
@@ -341,18 +278,18 @@ func (s *payrollService) processW2Employee(ctx context.Context, employee *models
 }
 
 func (s *payrollService) process1099Contractor(ctx context.Context, employee *models.Employee, comp *models.EmployeeCompensation, period *models.PayrollPeriod) (*models.PayStub, error) {
-	// Get timesheet hours for period
-	timeEntries, err := s.repos.Timesheet.GetByEmployee(ctx, employee.ID, map[string]interface{}{
-		"start_date": period.StartDate,
-		"end_date":   period.EndDate,
-	})
+	// Get time entries for the payroll period
+	timeEntries, err := s.repos.Timesheet.GetTimeEntriesByEmployee(ctx, employee.ID, period.StartDate, period.EndDate)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get time entries: %w", err)
 	}
 
+	// Calculate total hours from time entries
 	var totalHours float64
 	for _, entry := range timeEntries {
-		totalHours += calculateTotalHours(entry)
+		if entry.Type == "regular" {
+			totalHours += entry.Hours
+		}
 	}
 
 	// Calculate gross pay (1099 contractors - no overtime)
@@ -372,282 +309,139 @@ func (s *payrollService) process1099Contractor(ctx context.Context, employee *mo
 		NetPay:          roundToTwoDecimals(netPay),
 		HoursWorked:     &totalHours,
 		HourlyRate:      comp.HourlyRate,
+		// No tax withholding for 1099
+		FederalTax:     nil,
+		StateTax:       nil,
+		SocialSecurity: nil,
+		Medicare:       nil,
 	}
 
 	if err := s.repos.Payroll.CreatePayStub(ctx, payStub); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create pay stub: %w", err)
 	}
-
-	// Create earning entry
-	earning := &models.PayStubEarning{
-		PayStubID:   payStub.ID,
-		EarningType: "contractor",
-		Description: "Contractor Payment",
-		Hours:       &totalHours,
-		Rate:        comp.HourlyRate,
-		Amount:      grossPay,
-	}
-	s.repos.Payroll.CreatePayStubEarning(ctx, earning)
 
 	return payStub, nil
 }
 
-// ===============================
-// Tax Calculations
-// ===============================
-
-func (s *payrollService) calculateFederalTax(grossPay float64, withholding *models.W2TaxWithholding) float64 {
-	if withholding != nil && withholding.ExemptFederal {
-		return 0
+// GetPayStub retrieves a pay stub by ID
+func (s *payrollService) GetPayStub(ctx context.Context, id uuid.UUID) (*models.PayStub, error) {
+	payStub, err := s.repos.Payroll.GetPayStub(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pay stub: %w", err)
 	}
-
-	// Simplified federal tax calculation (2024 rates)
-	// In production, use actual IRS tax tables based on filing status and allowances
-	taxRate := 0.22 // 22% marginal rate as example
-	
-	if withholding != nil {
-		// Reduce taxable income by allowances
-		allowanceAmount := float64(withholding.FederalAllowances) * 87.50 // Weekly allowance amount
-		taxableIncome := math.Max(0, grossPay-allowanceAmount)
-		return taxableIncome*taxRate + withholding.AdditionalWithholding
-	}
-
-	return grossPay * taxRate
+	return payStub, nil
 }
 
-func (s *payrollService) calculateStateTax(grossPay float64, withholding *models.W2TaxWithholding) float64 {
-	if withholding != nil && withholding.ExemptState {
-		return 0
+// GetPayStubsByEmployee retrieves all pay stubs for an employee
+func (s *payrollService) GetPayStubsByEmployee(ctx context.Context, employeeID uuid.UUID) ([]*models.PayStub, error) {
+	payStubs, err := s.repos.Payroll.GetPayStubsByEmployee(ctx, employeeID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pay stubs: %w", err)
 	}
-
-	// Simplified state tax (varies by state)
-	taxRate := 0.05 // 5% as example
-	
-	if withholding != nil {
-		allowanceAmount := float64(withholding.StateAllowances) * 50.00
-		taxableIncome := math.Max(0, grossPay-allowanceAmount)
-		return taxableIncome * taxRate
-	}
-
-	return grossPay * taxRate
+	return payStubs, nil
 }
 
-func (s *payrollService) calculateSocialSecurity(grossPay float64, withholding *models.W2TaxWithholding) float64 {
-	if withholding != nil && withholding.ExemptFICA {
-		return 0
+// GetPayStubsByPeriod retrieves all pay stubs for a payroll period
+func (s *payrollService) GetPayStubsByPeriod(ctx context.Context, periodID uuid.UUID) ([]*models.PayStub, error) {
+	payStubs, err := s.repos.Payroll.GetPayStubsByPeriod(ctx, periodID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pay stubs: %w", err)
 	}
-
-	// Social Security: 6.2% up to wage base ($168,600 in 2024)
-	const rate = 0.062
-	const wageBase = 168600.0
-	
-	// In production, check YTD earnings against wage base
-	return math.Min(grossPay*rate, wageBase*rate)
+	return payStubs, nil
 }
 
-func (s *payrollService) calculateMedicare(grossPay float64, withholding *models.W2TaxWithholding) float64 {
-	if withholding != nil && withholding.ExemptFICA {
-		return 0
+// Helper functions
+
+func (s *payrollService) createTaxEntries(ctx context.Context, payStubID uuid.UUID, federalTax, stateTax, socialSecurity, medicare, grossPay float64) {
+	// Create tax entry records for audit trail
+	taxes := []struct {
+		taxType string
+		amount  float64
+	}{
+		{"federal", federalTax},
+		{"state", stateTax},
+		{"social_security", socialSecurity},
+		{"medicare", medicare},
 	}
 
-	// Medicare: 1.45% (no wage base limit)
-	const rate = 0.0145
+	for _, tax := range taxes {
+		if tax.amount > 0 {
+			taxEntry := &models.TaxEntry{
+				PayStubID:   payStubID,
+				TaxType:     tax.taxType,
+				Amount:      roundToTwoDecimals(tax.amount),
+				TaxableWage: grossPay,
+				Percentage: sql.NullFloat64{
+					Float64: (tax.amount / grossPay) * 100,
+					Valid:   true,
+				},
+			}
+			s.repos.Payroll.CreateTaxEntry(ctx, taxEntry)
+		}
+	}
+}
+
+func calculateFederalTax(grossPay float64, filingStatus string) float64 {
+	// Simplified federal tax calculation
+	// In production, use IRS tax tables
+	annualizedIncome := grossPay * 26 // Assume bi-weekly
+	
+	var tax float64
+	if filingStatus == "single" {
+		if annualizedIncome <= 10275 {
+			tax = annualizedIncome * 0.10
+		} else if annualizedIncome <= 41775 {
+			tax = 1027.50 + (annualizedIncome-10275)*0.12
+		} else if annualizedIncome <= 89075 {
+			tax = 4807.50 + (annualizedIncome-41775)*0.22
+		} else {
+			tax = 15213.50 + (annualizedIncome-89075)*0.24
+		}
+	} else { // married
+		if annualizedIncome <= 20550 {
+			tax = annualizedIncome * 0.10
+		} else if annualizedIncome <= 83550 {
+			tax = 2055 + (annualizedIncome-20550)*0.12
+		} else {
+			tax = 9615 + (annualizedIncome-83550)*0.22
+		}
+	}
+	
+	return tax / 26 // Convert back to per-period
+}
+
+func calculateStateTax(grossPay float64, state string) float64 {
+	// Simplified state tax calculation
+	// In production, use state-specific tax tables
+	stateTaxRates := map[string]float64{
+		"CA": 0.09, // California
+		"NY": 0.06, // New York
+		"TX": 0.00, // Texas (no state income tax)
+		"FL": 0.00, // Florida (no state income tax)
+		"PA": 0.03, // Pennsylvania
+	}
+	
+	rate, exists := stateTaxRates[state]
+	if !exists {
+		rate = 0.05 // Default 5%
+	}
+	
 	return grossPay * rate
 }
 
-func (s *payrollService) getBenefitsDeductions(ctx context.Context, employeeID uuid.UUID) float64 {
-	// Get active benefit enrollments
-	enrollments, err := s.repos.Benefits.GetEmployeeEnrollments(ctx, employeeID)
-	if err != nil {
-		return 0
+func getWeekStart(t time.Time) time.Time {
+	// Get Monday of the week
+	weekday := int(t.Weekday())
+	if weekday == 0 {
+		weekday = 7
 	}
-
-	var total float64
-	for _, enrollment := range enrollments {
-		if enrollment.Status == models.EnrollmentStatusActive {
-			total += enrollment.PayrollDeduction
-		}
-	}
-
-	return total
+	return t.AddDate(0, 0, -(weekday - 1)).Truncate(24 * time.Hour)
 }
 
-func (s *payrollService) createTaxEntries(ctx context.Context, payStubID uuid.UUID, federal, state, ss, medicare, grossPay float64) {
-	if federal > 0 {
-		federalRate := federal / grossPay
-		tax := &models.PayStubTax{
-			PayStubID:   payStubID,
-			TaxType:     "federal",
-			Description: "Federal Income Tax",
-			Amount:      federal,
-			TaxableWage: grossPay,
-			TaxRate:     &federalRate,
-		}
-		s.repos.Payroll.CreatePayStubTax(ctx, tax)
-	}
-
-	if state > 0 {
-		stateRate := state / grossPay
-		tax := &models.PayStubTax{
-			PayStubID:   payStubID,
-			TaxType:     "state",
-			Description: "State Income Tax",
-			Amount:      state,
-			TaxableWage: grossPay,
-			TaxRate:     &stateRate,
-		}
-		s.repos.Payroll.CreatePayStubTax(ctx, tax)
-	}
-
-	if ss > 0 {
-		ssRate := 0.062
-		tax := &models.PayStubTax{
-			PayStubID:   payStubID,
-			TaxType:     "fica_ss",
-			Description: "Social Security",
-			Amount:      ss,
-			TaxableWage: grossPay,
-			TaxRate:     &ssRate,
-		}
-		s.repos.Payroll.CreatePayStubTax(ctx, tax)
-	}
-
-	if medicare > 0 {
-		medicareRate := 0.0145
-		tax := &models.PayStubTax{
-			PayStubID:   payStubID,
-			TaxType:     "fica_medicare",
-			Description: "Medicare",
-			Amount:      medicare,
-			TaxableWage: grossPay,
-			TaxRate:     &medicareRate,
-		}
-		s.repos.Payroll.CreatePayStubTax(ctx, tax)
-	}
+func roundToTwoDecimals(value float64) float64 {
+	return math.Round(value*100) / 100
 }
 
-// ===============================
-// Pay Stub Retrieval
-// ===============================
-
-func (s *payrollService) GetEmployeePayStubs(ctx context.Context, employeeID uuid.UUID) ([]*models.PayStub, error) {
-	return s.repos.Payroll.ListPayStubsByEmployee(ctx, employeeID)
-}
-
-func (s *payrollService) GetPayStubDetail(ctx context.Context, payStubID uuid.UUID) (*models.PayStubDetail, error) {
-	// Get pay stub
-	payStub, err := s.repos.Payroll.GetPayStubByID(ctx, payStubID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Get employee
-	employee, err := s.repos.Employee.GetByID(ctx, payStub.EmployeeID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Get payroll period
-	period, err := s.repos.Payroll.GetPeriodByID(ctx, payStub.PayrollPeriodID)
-	if err != nil {
-		return nil, err
-	}
-
-	// Get detailed breakdowns
-	earnings, _ := s.repos.Payroll.GetPayStubEarnings(ctx, payStubID)
-	deductions, _ := s.repos.Payroll.GetPayStubDeductions(ctx, payStubID)
-	taxes, _ := s.repos.Payroll.GetPayStubTaxes(ctx, payStubID)
-
-	// Calculate YTD totals
-	year := period.EndDate.Year()
-	ytdEarnings, _ := s.repos.Payroll.GetYTDEarnings(ctx, employee.ID, year)
-	ytdTaxes, _ := s.repos.Payroll.GetYTDTaxes(ctx, employee.ID, year)
-
-	return &models.PayStubDetail{
-		PayStub:       payStub,
-		Employee:      employee,
-		PayrollPeriod: period,
-		Earnings:      earnings,
-		Deductions:    deductions,
-		Taxes:         taxes,
-		YTDGrossPay:   ytdEarnings,
-		YTDNetPay:     ytdEarnings - ytdTaxes,
-		YTDFederalTax: 0, // Would need separate query
-		YTDStateTax:   0, // Would need separate query
-	}, nil
-}
-
-// ===============================
-// 1099 Form Generation
-// ===============================
-
-func (s *payrollService) Generate1099Forms(ctx context.Context, year int) ([]*models.Form1099, error) {
-	// Get all contractors
-	employees, err := s.repos.Employee.List(ctx, map[string]interface{}{"status": "active"})
-	if err != nil {
-		return nil, err
-	}
-
-	var forms []*models.Form1099
-
-	for _, employee := range employees {
-		// Get compensation to check if 1099
-		comp, err := s.repos.Payroll.GetCompensationByEmployeeID(ctx, employee.ID)
-		if err != nil || comp.EmploymentType != "1099" {
-			continue
-		}
-
-		// Calculate total payments for year
-		totalPayments, err := s.repos.Payroll.GetYTDEarnings(ctx, employee.ID, year)
-		if err != nil || totalPayments == 0 {
-			continue
-		}
-
-		// Create 1099 form
-		form := &models.Form1099{
-			EmployeeID:         employee.ID,
-			TaxYear:            year,
-			TotalPayments:      totalPayments,
-			FederalTaxWithheld: 0, // 1099 contractors typically have no withholding
-			StateTaxWithheld:   0,
-			Status:             "draft",
-		}
-
-		if err := s.repos.Payroll.Create1099(ctx, form); err != nil {
-			continue
-		}
-
-		forms = append(forms, form)
-	}
-
-	return forms, nil
-}
-
-// ===============================
-// Utility Functions
-// ===============================
-
-func (s *payrollService) getPeriodsPerYear(frequency string) int {
-	switch frequency {
-	case "weekly":
-		return 52
-	case "biweekly":
-		return 26
-	case "semimonthly":
-		return 24
-	case "monthly":
-		return 12
-	default:
-		return 26 // Default to biweekly
-	}
-}
-
-func roundToTwoDecimals(val float64) float64 {
-	return math.Round(val*100) / 100
-}
-
-func calculateTotalHours(entry *models.Timesheet) float64 {
-	// Simple placeholder - in production, calculate from time entry details
-	// This would sum up all hours from the timesheet
-	return 8.0 // Placeholder
+func floatPtr(f float64) *float64 {
+	return &f
 }

@@ -23,9 +23,9 @@ type ProjectService interface {
 	DeleteProject(ctx context.Context, id uuid.UUID) error
 	
 	// Project members
-	AssignMember(ctx context.Context, projectID uuid.UUID, req *models.AssignProjectMemberRequest) error
+	AssignMember(ctx context.Context, projectID uuid.UUID, employeeID uuid.UUID, role string) error
 	RemoveMember(ctx context.Context, projectID, employeeID uuid.UUID) error
-	GetProjectMembers(ctx context.Context, projectID uuid.UUID) ([]*models.ProjectMemberInfo, error)
+	GetProjectMembers(ctx context.Context, projectID uuid.UUID) ([]*models.ProjectMember, error)
 	GetEmployeeProjects(ctx context.Context, employeeID uuid.UUID) ([]*models.Project, error)
 	
 	// Manager assignment
@@ -142,7 +142,7 @@ func (s *projectService) DeleteProject(ctx context.Context, id uuid.UUID) error 
 	return s.repo.Delete(ctx, id)
 }
 
-func (s *projectService) AssignMember(ctx context.Context, projectID uuid.UUID, req *models.AssignProjectMemberRequest) error {
+func (s *projectService) AssignMember(ctx context.Context, projectID uuid.UUID, employeeID uuid.UUID, role string) error {
 	// Verify project exists
 	_, err := s.repo.GetByID(ctx, projectID)
 	if err != nil {
@@ -150,20 +150,20 @@ func (s *projectService) AssignMember(ctx context.Context, projectID uuid.UUID, 
 	}
 
 	// Verify employee exists
-	_, err = s.employeeRepo.GetByID(ctx, req.EmployeeID)
+	_, err = s.employeeRepo.GetByID(ctx, employeeID)
 	if err != nil {
 		return errors.New("employee not found")
 	}
 
 	// Set default role
-	if req.Role == "" {
-		req.Role = "member"
+	if role == "" {
+		role = "member"
 	}
 
 	member := &models.ProjectMember{
 		ProjectID:  projectID,
-		EmployeeID: req.EmployeeID,
-		Role:       req.Role,
+		EmployeeID: employeeID,
+		Role:       role,
 	}
 
 	return s.repo.AddMember(ctx, member)
@@ -173,8 +173,8 @@ func (s *projectService) RemoveMember(ctx context.Context, projectID, employeeID
 	return s.repo.RemoveMember(ctx, projectID, employeeID)
 }
 
-func (s *projectService) GetProjectMembers(ctx context.Context, projectID uuid.UUID) ([]*models.ProjectMemberInfo, error) {
-	return s.repo.GetMembers(ctx, projectID)
+func (s *projectService) GetProjectMembers(ctx context.Context, projectID uuid.UUID) ([]*models.ProjectMember, error) {
+	return s.repo.GetProjectMembers(ctx, projectID)
 }
 
 func (s *projectService) GetEmployeeProjects(ctx context.Context, employeeID uuid.UUID) ([]*models.Project, error) {
@@ -197,3 +197,4 @@ func (s *projectService) AssignEmployeeToManager(ctx context.Context, req *model
 	employee.ManagerID = &req.ManagerID
 	return s.employeeRepo.Update(ctx, employee)
 }
+

@@ -1,8 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   //import { goto } from '$app/navigation';
-  import { authStore } from '../stores/auth';
-  import { getApiBaseUrl } from '../lib/api';
+  import { authStore } from '../../../stores/auth';
+  import { getApiBaseUrl } from '../../../lib/api';
   
   const API_BASE_URL = getApiBaseUrl();
   

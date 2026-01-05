@@ -26,9 +26,21 @@ CREATE TABLE IF NOT EXISTS employees (
 ALTER TABLE employees 
 ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id);
 
+ALTER TABLE employees 
+ADD COLUMN IF NOT EXISTS employment_type VARCHAR(50) DEFAULT 'employee';
+
+
+-- Set default for existing records
+UPDATE employees 
+SET employment_type = 'employee' 
+WHERE employment_type IS NULL;
+
 CREATE INDEX IF NOT EXISTS idx_employees_user_id ON employees(user_id);
 CREATE INDEX IF NOT EXISTS idx_employees_email ON employees(email);
 CREATE INDEX IF NOT EXISTS idx_employees_department ON employees(department);
 CREATE INDEX IF NOT EXISTS idx_employees_manager_id ON employees(manager_id);
+CREATE INDEX IF NOT EXISTS idx_employees_employment_type ON employees(employment_type);
 
 COMMENT ON COLUMN employees.user_id IS 'Links employee to their user account (nullable if employee has no login)';
+COMMENT ON COLUMN employees.employment_type IS 
+'Employment classification: employee, contractor, independent contractor, 1099, etc.';

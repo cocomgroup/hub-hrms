@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"fmt"
 
 	"hub-hrms/backend/internal/models"
 
@@ -165,63 +166,84 @@ func (r *employeeRepository) GetByEmail(ctx context.Context, email string) (*mod
 	return employee, nil
 }
 
+// List returns employees filtered by the provided criteria
 func (r *employeeRepository) List(ctx context.Context, filters map[string]interface{}) ([]*models.Employee, error) {
 	query := `
-		SELECT id, first_name, last_name, email, phone, date_of_birth, hire_date,
-			department, position, manager_id, employment_type, status,
-			street_address, city, state, zip_code, country,
-			emergency_contact_name, emergency_contact_phone, created_at, updated_at
+		SELECT 
+			id, first_name, last_name, email, phone, hire_date, 
+			employment_type, position, department, status, manager_id,
+			created_at, updated_at
 		FROM employees
-		WHERE status = COALESCE($1, status)
-		ORDER BY last_name, first_name
+		WHERE 1=1
 	`
 	
-	status, _ := filters["status"].(string)
-	if status == "" {
-		status = "active"
+	args := []interface{}{}
+	argCount := 1
+	
+	// Apply filters
+	if managerID, ok := filters["manager_id"].(uuid.UUID); ok {
+		query += fmt.Sprintf(" AND manager_id = $%d", argCount)
+		args = append(args, managerID)
+		argCount++
 	}
-
-	rows, err := r.db.Query(ctx, query, status)
+	
+	if status, ok := filters["status"].(string); ok {
+		query += fmt.Sprintf(" AND status = $%d", argCount)
+		args = append(args, status)
+		argCount++
+	}
+	
+	if employmentType, ok := filters["employment_type"].(string); ok {
+		query += fmt.Sprintf(" AND employment_type = $%d", argCount)
+		args = append(args, employmentType)
+		argCount++
+	}
+	
+	if department, ok := filters["department"].(string); ok {
+		query += fmt.Sprintf(" AND department = $%d", argCount)
+		args = append(args, department)
+		argCount++
+	}
+	
+	query += " ORDER BY first_name, last_name"
+	
+	rows, err := r.db.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-
+	
 	var employees []*models.Employee
 	for rows.Next() {
-		employee := &models.Employee{}
-		var phone, dept, pos, empType, addr, city, state, zip, country, ecName, ecPhone sql.NullString
-		
+		emp := &models.Employee{}
 		err := rows.Scan(
-			&employee.ID, &employee.FirstName, &employee.LastName, &employee.Email,
-			&phone, &employee.DateOfBirth, &employee.HireDate, &dept,
-			&pos, &employee.ManagerID, &empType, &employee.Status,
-			&addr, &city, &state, &zip,
-			&country, &ecName, &ecPhone,
-			&employee.CreatedAt, &employee.UpdatedAt,
+			&emp.ID,
+			&emp.FirstName,
+			&emp.LastName,
+			&emp.Email,
+			&emp.Phone,
+			&emp.HireDate,
+			&emp.EmploymentType,
+			&emp.Position,
+			&emp.Department,
+			&emp.Status,
+			&emp.ManagerID,
+			&emp.CreatedAt,
+			&emp.UpdatedAt,
 		)
 		if err != nil {
 			return nil, err
 		}
-		
-		// Convert NullString to string
-		employee.Phone = phone.String
-		employee.Department = dept.String
-		employee.Position = pos.String
-		employee.EmploymentType = empType.String
-		employee.StreetAddress = addr.String
-		employee.City = city.String
-		employee.State = state.String
-		employee.ZipCode = zip.String
-		employee.Country = country.String
-		employee.EmergencyContactName = ecName.String
-		employee.EmergencyContactPhone = ecPhone.String
-		
-		employees = append(employees, employee)
+		employees = append(employees, emp)
 	}
-
-	return employees, rows.Err()
+	
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+	
+	return employees, nil
 }
+
 
 func (r *employeeRepository) Update(ctx context.Context, employee *models.Employee) error {
 	query := `
@@ -284,11 +306,4 @@ func (r *employeeRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	query := `UPDATE employees SET status = 'terminated', updated_at = NOW() WHERE id = $1`
 	_, err := r.db.Exec(ctx, query, id)
 	return err
-}
-
-// Additional repository implementations would follow similar patterns
-// For brevity, showing structure for remaining repositories
-
-type onboardingRepository struct {
-	db *pgxpool.Pool
 }

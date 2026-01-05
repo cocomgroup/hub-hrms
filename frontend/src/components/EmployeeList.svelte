@@ -3,7 +3,7 @@
   import { authStore } from '../stores/auth';
   import { getApiBaseUrl } from '../lib/api';
   import EmployeeDetail from '../components/EmployeeDetail.svelte';
-  import WorkflowManager from '../components/WorkflowManager.svelte';
+  import WorkflowManager from '../routes/talent-center/workflows/WorkflowManager.svelte';
   import Compensation from '../components/Compensation.svelte';
   
   const API_BASE_URL = getApiBaseUrl();

@@ -15,7 +15,7 @@ import (
 type PayrollRepository interface {
 	// Compensation
 	CreateCompensation(ctx context.Context, comp *models.EmployeeCompensation) error
-	GetCompensationByEmployeeID(ctx context.Context, employeeID uuid.UUID) (*models.EmployeeCompensation, error)
+	GetByEmployeeID(ctx context.Context, employeeID uuid.UUID) (*models.EmployeeCompensation, error)
 	UpdateCompensation(ctx context.Context, comp *models.EmployeeCompensation) error
 
 	// Tax Withholding
@@ -24,21 +24,21 @@ type PayrollRepository interface {
 	UpdateTaxWithholding(ctx context.Context, tax *models.W2TaxWithholding) error
 
 	// Payroll Periods
-	CreatePeriod(ctx context.Context, period *models.PayrollPeriod) error
-	GetPeriodByID(ctx context.Context, id uuid.UUID) (*models.PayrollPeriod, error)
-	ListPeriods(ctx context.Context, filters map[string]interface{}) ([]*models.PayrollPeriod, error)
-	UpdatePeriod(ctx context.Context, period *models.PayrollPeriod) error
+	CreatePayrollPeriod(ctx context.Context, period *models.PayrollPeriod) error
+	GetPayrollPeriod(ctx context.Context, id uuid.UUID) (*models.PayrollPeriod, error)
+	ListPayrollPeriods(ctx context.Context) ([]*models.PayrollPeriod, error)
+	UpdatePayrollPeriod(ctx context.Context, period *models.PayrollPeriod) error
 
 	// Pay Stubs
 	CreatePayStub(ctx context.Context, stub *models.PayStub) error
-	GetPayStubByID(ctx context.Context, id uuid.UUID) (*models.PayStub, error)
-	ListPayStubsByEmployee(ctx context.Context, employeeID uuid.UUID) ([]*models.PayStub, error)
-	ListPayStubsByPeriod(ctx context.Context, periodID uuid.UUID) ([]*models.PayStub, error)
+	GetPayStub(ctx context.Context, id uuid.UUID) (*models.PayStub, error)
+	GetPayStubsByEmployee(ctx context.Context, employeeID uuid.UUID) ([]*models.PayStub, error)
+	GetPayStubsByPeriod(ctx context.Context, periodID uuid.UUID) ([]*models.PayStub, error)
 
 	// Pay Stub Details
 	CreatePayStubEarning(ctx context.Context, earning *models.PayStubEarning) error
 	CreatePayStubDeduction(ctx context.Context, deduction *models.PayStubDeduction) error
-	CreatePayStubTax(ctx context.Context, tax *models.PayStubTax) error
+	CreateTaxEntry(ctx context.Context, tax *models.TaxEntry) error
 	GetPayStubEarnings(ctx context.Context, payStubID uuid.UUID) ([]models.PayStubEarning, error)
 	GetPayStubDeductions(ctx context.Context, payStubID uuid.UUID) ([]models.PayStubDeduction, error)
 	GetPayStubTaxes(ctx context.Context, payStubID uuid.UUID) ([]models.PayStubTax, error)
@@ -69,10 +69,10 @@ func NewPayrollRepository(db *pgxpool.Pool) PayrollRepository {
 func (r *payrollRepository) CreateCompensation(ctx context.Context, comp *models.EmployeeCompensation) error {
 	query := `
 		INSERT INTO employee_compensation (
-			id, employee_id, employment_type, pay_type, hourly_rate, annual_salary,
-			pay_frequency, effective_date, end_date, overtime_eligible, 
+			id, employee_id, employment_type, pay_type, hourly_rate, salary,
+			pay_frequency, state, filing_status, effective_date, end_date, overtime_eligible, 
 			standard_hours_per_week, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 	`
 
 	comp.ID = uuid.New()
@@ -82,17 +82,17 @@ func (r *payrollRepository) CreateCompensation(ctx context.Context, comp *models
 
 	_, err := r.db.Exec(ctx, query,
 		comp.ID, comp.EmployeeID, comp.EmploymentType, comp.PayType, comp.HourlyRate,
-		comp.AnnualSalary, comp.PayFrequency, comp.EffectiveDate, comp.EndDate,
+		comp.Salary, comp.PayFrequency, comp.State, comp.FilingStatus, comp.EffectiveDate, comp.EndDate,
 		comp.OvertimeEligible, comp.StandardHoursPerWeek, comp.CreatedAt, comp.UpdatedAt,
 	)
 
 	return err
 }
 
-func (r *payrollRepository) GetCompensationByEmployeeID(ctx context.Context, employeeID uuid.UUID) (*models.EmployeeCompensation, error) {
+func (r *payrollRepository) GetByEmployeeID(ctx context.Context, employeeID uuid.UUID) (*models.EmployeeCompensation, error) {
 	query := `
-		SELECT id, employee_id, employment_type, pay_type, hourly_rate, annual_salary,
-		       pay_frequency, effective_date, end_date, overtime_eligible,
+		SELECT id, employee_id, employment_type, pay_type, hourly_rate, salary,
+		       pay_frequency, state, filing_status, effective_date, end_date, overtime_eligible,
 		       standard_hours_per_week, created_at, updated_at
 		FROM employee_compensation
 		WHERE employee_id = $1 AND (end_date IS NULL OR end_date > NOW())
@@ -103,7 +103,7 @@ func (r *payrollRepository) GetCompensationByEmployeeID(ctx context.Context, emp
 	var comp models.EmployeeCompensation
 	err := r.db.QueryRow(ctx, query, employeeID).Scan(
 		&comp.ID, &comp.EmployeeID, &comp.EmploymentType, &comp.PayType,
-		&comp.HourlyRate, &comp.AnnualSalary, &comp.PayFrequency, &comp.EffectiveDate,
+		&comp.HourlyRate, &comp.Salary, &comp.PayFrequency, &comp.State, &comp.FilingStatus, &comp.EffectiveDate,
 		&comp.EndDate, &comp.OvertimeEligible, &comp.StandardHoursPerWeek,
 		&comp.CreatedAt, &comp.UpdatedAt,
 	)
@@ -118,17 +118,17 @@ func (r *payrollRepository) GetCompensationByEmployeeID(ctx context.Context, emp
 func (r *payrollRepository) UpdateCompensation(ctx context.Context, comp *models.EmployeeCompensation) error {
 	query := `
 		UPDATE employee_compensation
-		SET employment_type = $1, pay_type = $2, hourly_rate = $3, annual_salary = $4,
-		    pay_frequency = $5, overtime_eligible = $6, standard_hours_per_week = $7,
-		    updated_at = $8
-		WHERE id = $9
+		SET employment_type = $1, pay_type = $2, hourly_rate = $3, salary = $4,
+		    pay_frequency = $5, state = $6, filing_status = $7, overtime_eligible = $8, 
+			standard_hours_per_week = $9, updated_at = $10
+		WHERE id = $11
 	`
 
 	comp.UpdatedAt = time.Now()
 
 	result, err := r.db.Exec(ctx, query,
-		comp.EmploymentType, comp.PayType, comp.HourlyRate, comp.AnnualSalary,
-		comp.PayFrequency, comp.OvertimeEligible, comp.StandardHoursPerWeek,
+		comp.EmploymentType, comp.PayType, comp.HourlyRate, comp.Salary,
+		comp.PayFrequency, comp.State, comp.FilingStatus, comp.OvertimeEligible, comp.StandardHoursPerWeek,
 		comp.UpdatedAt, comp.ID,
 	)
 
@@ -227,30 +227,32 @@ func (r *payrollRepository) UpdateTaxWithholding(ctx context.Context, tax *model
 // Payroll Period Methods
 // ===============================
 
-func (r *payrollRepository) CreatePeriod(ctx context.Context, period *models.PayrollPeriod) error {
+func (r *payrollRepository) CreatePayrollPeriod(ctx context.Context, period *models.PayrollPeriod) error {
 	query := `
 		INSERT INTO payroll_periods (
-			id, start_date, end_date, pay_date, status, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7)
+			id, start_date, end_date, pay_date, period_type, status, created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 	`
 
 	period.ID = uuid.New()
 	now := time.Now()
 	period.CreatedAt = now
 	period.UpdatedAt = now
-	period.Status = "draft"
+	if period.Status == "" {
+		period.Status = "pending"
+	}
 
 	_, err := r.db.Exec(ctx, query,
 		period.ID, period.StartDate, period.EndDate, period.PayDate,
-		period.Status, period.CreatedAt, period.UpdatedAt,
+		period.PeriodType, period.Status, period.CreatedAt, period.UpdatedAt,
 	)
 
 	return err
 }
 
-func (r *payrollRepository) GetPeriodByID(ctx context.Context, id uuid.UUID) (*models.PayrollPeriod, error) {
+func (r *payrollRepository) GetPayrollPeriod(ctx context.Context, id uuid.UUID) (*models.PayrollPeriod, error) {
 	query := `
-		SELECT id, start_date, end_date, pay_date, status, processed_by,
+		SELECT id, start_date, end_date, pay_date, period_type, status, processed_by,
 		       processed_at, created_at, updated_at
 		FROM payroll_periods
 		WHERE id = $1
@@ -259,8 +261,8 @@ func (r *payrollRepository) GetPeriodByID(ctx context.Context, id uuid.UUID) (*m
 	var period models.PayrollPeriod
 	err := r.db.QueryRow(ctx, query, id).Scan(
 		&period.ID, &period.StartDate, &period.EndDate, &period.PayDate,
-		&period.Status, &period.ProcessedBy, &period.ProcessedAt,
-		&period.CreatedAt, &period.UpdatedAt,
+		&period.PeriodType, &period.Status, &period.ProcessedBy,
+		&period.ProcessedAt, &period.CreatedAt, &period.UpdatedAt,
 	)
 
 	if err == sql.ErrNoRows {
@@ -270,13 +272,13 @@ func (r *payrollRepository) GetPeriodByID(ctx context.Context, id uuid.UUID) (*m
 	return &period, err
 }
 
-func (r *payrollRepository) ListPeriods(ctx context.Context, filters map[string]interface{}) ([]*models.PayrollPeriod, error) {
+func (r *payrollRepository) ListPayrollPeriods(ctx context.Context) ([]*models.PayrollPeriod, error) {
 	query := `
-		SELECT id, start_date, end_date, pay_date, status, processed_by,
+		SELECT id, start_date, end_date, pay_date, period_type, status, processed_by,
 		       processed_at, created_at, updated_at
 		FROM payroll_periods
 		ORDER BY start_date DESC
-		LIMIT 50
+		LIMIT 100
 	`
 
 	rows, err := r.db.Query(ctx, query)
@@ -290,8 +292,8 @@ func (r *payrollRepository) ListPeriods(ctx context.Context, filters map[string]
 		var period models.PayrollPeriod
 		err := rows.Scan(
 			&period.ID, &period.StartDate, &period.EndDate, &period.PayDate,
-			&period.Status, &period.ProcessedBy, &period.ProcessedAt,
-			&period.CreatedAt, &period.UpdatedAt,
+			&period.PeriodType, &period.Status, &period.ProcessedBy,
+			&period.ProcessedAt, &period.CreatedAt, &period.UpdatedAt,
 		)
 		if err != nil {
 			return nil, err
@@ -302,16 +304,18 @@ func (r *payrollRepository) ListPeriods(ctx context.Context, filters map[string]
 	return periods, rows.Err()
 }
 
-func (r *payrollRepository) UpdatePeriod(ctx context.Context, period *models.PayrollPeriod) error {
+func (r *payrollRepository) UpdatePayrollPeriod(ctx context.Context, period *models.PayrollPeriod) error {
 	query := `
 		UPDATE payroll_periods
-		SET status = $1, processed_by = $2, processed_at = $3, updated_at = $4
-		WHERE id = $5
+		SET start_date = $1, end_date = $2, pay_date = $3, period_type = $4,
+		    status = $5, processed_by = $6, processed_at = $7, updated_at = $8
+		WHERE id = $9
 	`
 
 	period.UpdatedAt = time.Now()
 
 	result, err := r.db.Exec(ctx, query,
+		period.StartDate, period.EndDate, period.PayDate, period.PeriodType,
 		period.Status, period.ProcessedBy, period.ProcessedAt,
 		period.UpdatedAt, period.ID,
 	)
@@ -337,8 +341,9 @@ func (r *payrollRepository) CreatePayStub(ctx context.Context, stub *models.PayS
 		INSERT INTO pay_stubs (
 			id, employee_id, payroll_period_id, gross_pay, federal_tax, state_tax,
 			social_security, medicare, other_deductions, net_pay, hours_worked,
-			overtime_hours, hourly_rate, benefits_deductions, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+			regular_hours, overtime_hours, hourly_rate, benefits_deductions,
+			created_at, updated_at
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 	`
 
 	stub.ID = uuid.New()
@@ -349,18 +354,20 @@ func (r *payrollRepository) CreatePayStub(ctx context.Context, stub *models.PayS
 	_, err := r.db.Exec(ctx, query,
 		stub.ID, stub.EmployeeID, stub.PayrollPeriodID, stub.GrossPay,
 		stub.FederalTax, stub.StateTax, stub.SocialSecurity, stub.Medicare,
-		stub.OtherDeductions, stub.NetPay, stub.HoursWorked, stub.OvertimeHours,
-		stub.HourlyRate, stub.BenefitsDeductions, stub.CreatedAt, stub.UpdatedAt,
+		stub.OtherDeductions, stub.NetPay, stub.HoursWorked, stub.RegularHours,
+		stub.OvertimeHours, stub.HourlyRate, stub.BenefitsDeductions,
+		stub.CreatedAt, stub.UpdatedAt,
 	)
 
 	return err
 }
 
-func (r *payrollRepository) GetPayStubByID(ctx context.Context, id uuid.UUID) (*models.PayStub, error) {
+func (r *payrollRepository) GetPayStub(ctx context.Context, id uuid.UUID) (*models.PayStub, error) {
 	query := `
 		SELECT id, employee_id, payroll_period_id, gross_pay, federal_tax, state_tax,
 		       social_security, medicare, other_deductions, net_pay, hours_worked,
-		       overtime_hours, hourly_rate, benefits_deductions, created_at, updated_at
+		       regular_hours, overtime_hours, hourly_rate, benefits_deductions,
+		       created_at, updated_at
 		FROM pay_stubs
 		WHERE id = $1
 	`
@@ -369,8 +376,9 @@ func (r *payrollRepository) GetPayStubByID(ctx context.Context, id uuid.UUID) (*
 	err := r.db.QueryRow(ctx, query, id).Scan(
 		&stub.ID, &stub.EmployeeID, &stub.PayrollPeriodID, &stub.GrossPay,
 		&stub.FederalTax, &stub.StateTax, &stub.SocialSecurity, &stub.Medicare,
-		&stub.OtherDeductions, &stub.NetPay, &stub.HoursWorked, &stub.OvertimeHours,
-		&stub.HourlyRate, &stub.BenefitsDeductions, &stub.CreatedAt, &stub.UpdatedAt,
+		&stub.OtherDeductions, &stub.NetPay, &stub.HoursWorked, &stub.RegularHours,
+		&stub.OvertimeHours, &stub.HourlyRate, &stub.BenefitsDeductions,
+		&stub.CreatedAt, &stub.UpdatedAt,
 	)
 
 	if err == sql.ErrNoRows {
@@ -380,17 +388,16 @@ func (r *payrollRepository) GetPayStubByID(ctx context.Context, id uuid.UUID) (*
 	return &stub, err
 }
 
-func (r *payrollRepository) ListPayStubsByEmployee(ctx context.Context, employeeID uuid.UUID) ([]*models.PayStub, error) {
+func (r *payrollRepository) GetPayStubsByEmployee(ctx context.Context, employeeID uuid.UUID) ([]*models.PayStub, error) {
 	query := `
-		SELECT ps.id, ps.employee_id, ps.payroll_period_id, ps.gross_pay, ps.federal_tax,
-		       ps.state_tax, ps.social_security, ps.medicare, ps.other_deductions,
-		       ps.net_pay, ps.hours_worked, ps.overtime_hours, ps.hourly_rate,
-		       ps.benefits_deductions, ps.created_at, ps.updated_at
-		FROM pay_stubs ps
-		JOIN payroll_periods pp ON ps.payroll_period_id = pp.id
-		WHERE ps.employee_id = $1
-		ORDER BY pp.start_date DESC
-		LIMIT 12
+		SELECT id, employee_id, payroll_period_id, gross_pay, federal_tax, state_tax,
+		       social_security, medicare, other_deductions, net_pay, hours_worked,
+		       regular_hours, overtime_hours, hourly_rate, benefits_deductions,
+		       created_at, updated_at
+		FROM pay_stubs
+		WHERE employee_id = $1
+		ORDER BY created_at DESC
+		LIMIT 100
 	`
 
 	rows, err := r.db.Query(ctx, query, employeeID)
@@ -405,8 +412,9 @@ func (r *payrollRepository) ListPayStubsByEmployee(ctx context.Context, employee
 		err := rows.Scan(
 			&stub.ID, &stub.EmployeeID, &stub.PayrollPeriodID, &stub.GrossPay,
 			&stub.FederalTax, &stub.StateTax, &stub.SocialSecurity, &stub.Medicare,
-			&stub.OtherDeductions, &stub.NetPay, &stub.HoursWorked, &stub.OvertimeHours,
-			&stub.HourlyRate, &stub.BenefitsDeductions, &stub.CreatedAt, &stub.UpdatedAt,
+			&stub.OtherDeductions, &stub.NetPay, &stub.HoursWorked, &stub.RegularHours,
+			&stub.OvertimeHours, &stub.HourlyRate, &stub.BenefitsDeductions,
+			&stub.CreatedAt, &stub.UpdatedAt,
 		)
 		if err != nil {
 			return nil, err
@@ -417,14 +425,15 @@ func (r *payrollRepository) ListPayStubsByEmployee(ctx context.Context, employee
 	return stubs, rows.Err()
 }
 
-func (r *payrollRepository) ListPayStubsByPeriod(ctx context.Context, periodID uuid.UUID) ([]*models.PayStub, error) {
+func (r *payrollRepository) GetPayStubsByPeriod(ctx context.Context, periodID uuid.UUID) ([]*models.PayStub, error) {
 	query := `
 		SELECT id, employee_id, payroll_period_id, gross_pay, federal_tax, state_tax,
 		       social_security, medicare, other_deductions, net_pay, hours_worked,
-		       overtime_hours, hourly_rate, benefits_deductions, created_at, updated_at
+		       regular_hours, overtime_hours, hourly_rate, benefits_deductions,
+		       created_at, updated_at
 		FROM pay_stubs
 		WHERE payroll_period_id = $1
-		ORDER BY created_at DESC
+		ORDER BY created_at ASC
 	`
 
 	rows, err := r.db.Query(ctx, query, periodID)
@@ -439,8 +448,9 @@ func (r *payrollRepository) ListPayStubsByPeriod(ctx context.Context, periodID u
 		err := rows.Scan(
 			&stub.ID, &stub.EmployeeID, &stub.PayrollPeriodID, &stub.GrossPay,
 			&stub.FederalTax, &stub.StateTax, &stub.SocialSecurity, &stub.Medicare,
-			&stub.OtherDeductions, &stub.NetPay, &stub.HoursWorked, &stub.OvertimeHours,
-			&stub.HourlyRate, &stub.BenefitsDeductions, &stub.CreatedAt, &stub.UpdatedAt,
+			&stub.OtherDeductions, &stub.NetPay, &stub.HoursWorked, &stub.RegularHours,
+			&stub.OvertimeHours, &stub.HourlyRate, &stub.BenefitsDeductions,
+			&stub.CreatedAt, &stub.UpdatedAt,
 		)
 		if err != nil {
 			return nil, err
@@ -452,7 +462,7 @@ func (r *payrollRepository) ListPayStubsByPeriod(ctx context.Context, periodID u
 }
 
 // ===============================
-// Pay Stub Details Methods
+// Pay Stub Detail Methods
 // ===============================
 
 func (r *payrollRepository) CreatePayStubEarning(ctx context.Context, earning *models.PayStubEarning) error {
@@ -491,7 +501,7 @@ func (r *payrollRepository) CreatePayStubDeduction(ctx context.Context, deductio
 	return err
 }
 
-func (r *payrollRepository) CreatePayStubTax(ctx context.Context, tax *models.PayStubTax) error {
+func (r *payrollRepository) CreateTaxEntry(ctx context.Context, tax *models.TaxEntry) error {
 	query := `
 		INSERT INTO pay_stub_taxes (
 			id, pay_stub_id, tax_type, description, amount, taxable_wage, tax_rate, created_at
@@ -500,10 +510,31 @@ func (r *payrollRepository) CreatePayStubTax(ctx context.Context, tax *models.Pa
 
 	tax.ID = uuid.New()
 	tax.CreatedAt = time.Now()
+	
+	// Set description based on tax type if not provided
+	if tax.Description == "" {
+		switch tax.TaxType {
+		case "federal":
+			tax.Description = "Federal Income Tax"
+		case "state":
+			tax.Description = "State Income Tax"
+		case "social_security":
+			tax.Description = "Social Security Tax"
+		case "medicare":
+			tax.Description = "Medicare Tax"
+		}
+	}
+	
+	// Calculate tax rate if not provided
+	var taxRate *float64
+	if tax.TaxableWage > 0 {
+		rate := (tax.Amount / tax.TaxableWage) * 100
+		taxRate = &rate
+	}
 
 	_, err := r.db.Exec(ctx, query,
 		tax.ID, tax.PayStubID, tax.TaxType, tax.Description,
-		tax.Amount, tax.TaxableWage, tax.TaxRate, tax.CreatedAt,
+		tax.Amount, tax.TaxableWage, taxRate, tax.CreatedAt,
 	)
 
 	return err
@@ -615,7 +646,9 @@ func (r *payrollRepository) Create1099(ctx context.Context, form *models.Form109
 	now := time.Now()
 	form.CreatedAt = now
 	form.UpdatedAt = now
-	form.Status = "draft"
+	if form.Status == "" {
+		form.Status = "draft"
+	}
 
 	_, err := r.db.Exec(ctx, query,
 		form.ID, form.EmployeeID, form.TaxYear, form.TotalPayments,
@@ -727,7 +760,15 @@ func (r *payrollRepository) GetYTDEarnings(ctx context.Context, employeeID uuid.
 
 func (r *payrollRepository) GetYTDTaxes(ctx context.Context, employeeID uuid.UUID, year int) (float64, error) {
 	query := `
-		SELECT COALESCE(SUM(federal_tax + state_tax + social_security + medicare), 0)
+		SELECT COALESCE(
+			SUM(
+				COALESCE(federal_tax, 0) + 
+				COALESCE(state_tax, 0) + 
+				COALESCE(social_security, 0) + 
+				COALESCE(medicare, 0)
+			), 
+			0
+		)
 		FROM pay_stubs ps
 		JOIN payroll_periods pp ON ps.payroll_period_id = pp.id
 		WHERE ps.employee_id = $1

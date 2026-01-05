@@ -18,10 +18,19 @@ import (
 func RegisterEmployeeRoutes(r chi.Router, services *service.Services) {
 	r.Route("/employees", func(r chi.Router) {
 		r.Use(authMiddleware(services))
+
 		r.Get("/", listEmployeesHandler(services))
 		r.Post("/", createEmployeeHandler(services))
 		r.Get("/{id}", getEmployeeHandler(services))
 		r.Put("/{id}", updateEmployeeHandler(services))
+
+		// NEW: Manager's team endpoint
+		r.Get("/team", getManagerTeamHandler(services))	
+
+		r.Get("/", listEmployeesHandler(services))
+		r.Post("/", createEmployeeHandler(services))
+		r.Get("/{id}", getEmployeeHandler(services))
+		r.Put("/{id}", updateEmployeeHandler(services))	
 	})
 }
 
@@ -284,6 +293,53 @@ func updateEmployeeHandler(services *service.Services) http.HandlerFunc {
 		respondJSON(w, http.StatusOK, existingEmployee)
 	}
 }
+
+// The handler remains the same, but add logging for debugging:
+func getManagerTeamHandler(services *service.Services) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("=== getManagerTeamHandler START ===")
+		
+		// Get manager ID from context
+		managerID, err := getEmployeeIDFromContext(r.Context())
+		if err != nil {
+			log.Printf("ERROR: Failed to get employee ID from context: %v", err)
+			respondError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		
+		log.Printf("Manager employee_id: %s", managerID)
+		
+		// Get team members - employees where manager_id = managerID
+		filters := map[string]interface{}{
+			"manager_id": managerID,
+			"status":     "active",
+		}
+		
+		log.Printf("Filters: %+v", filters)
+		
+		// Allow filtering by status query param
+		if status := r.URL.Query().Get("status"); status != "" {
+			filters["status"] = status
+		}
+		
+		employees, err := services.Employee.List(r.Context(), filters)
+		if err != nil {
+			log.Printf("ERROR: Failed to list employees: %v", err)
+			respondError(w, http.StatusInternalServerError, "failed to get team members")
+			return
+		}
+		
+		if employees == nil {
+			employees = []*models.Employee{}
+		}
+		
+		log.Printf("SUCCESS: Returning %d team members", len(employees))
+		log.Printf("=== getManagerTeamHandler END ===")
+		
+		respondJSON(w, http.StatusOK, employees)
+	}
+}
+
 
 // Helper function to parse dates in multiple formats
 func parseFlexibleDate(dateStr string) (time.Time, error) {
