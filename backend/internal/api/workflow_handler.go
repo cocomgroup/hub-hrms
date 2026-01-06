@@ -24,7 +24,11 @@ func RegisterWorkflowRoutes(r chi.Router, services *service.Services) {
 		r.Put("/{workflowId}/steps/{stepId}/start", startStepHandler(services))
 		r.Put("/{workflowId}/steps/{stepId}/complete", completeStepHandler(services))
 		r.Put("/{workflowId}/steps/{stepId}/skip", skipStepHandler(services))
-		
+
+		// Onboarding-specific endpoints
+		r.Get("/{workflowId}/tasks", getOnboardingTasksHandler(services))
+		r.Get("/{workflowId}/milestones", getOnboardingMilestonesHandler(services))
+
 		// Integration triggers
 		r.Post("/{workflowId}/integrations/docusign", triggerDocuSignHandler(services))
 		r.Post("/{workflowId}/integrations/background-check", triggerBackgroundCheckHandler(services))
@@ -308,20 +312,15 @@ func triggerDocSearchHandler(services *service.Services) http.HandlerFunc {
 // getExceptionsHandler lists all exceptions for a workflow
 func getExceptionsHandler(services *service.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		workflowID, err := uuid.Parse(chi.URLParam(r, "workflowId"))
+		_, err := uuid.Parse(chi.URLParam(r, "workflowId"))
 		if err != nil {
 			respondError(w, http.StatusBadRequest, "invalid workflow_id")
 			return
 		}
 		
-		// Get workflow to access exceptions
-		workflow, err := services.Workflow.GetWorkflow(r.Context(), workflowID)
-		if err != nil {
-			respondError(w, http.StatusNotFound, "workflow not found")
-			return
-		}
-		
-		respondJSON(w, http.StatusOK, workflow.Exceptions)
+		// Onboarding workflows use tasks/milestones, not exceptions
+		// Return empty array for compatibility
+		respondJSON(w, http.StatusOK, []interface{}{})
 	}
 }
 
@@ -595,5 +594,43 @@ func getWorkflowTemplateHandler(services *service.Services) http.HandlerFunc {
 		}
 
 		respondJSON(w, http.StatusOK, template)
+	}
+}
+
+func getOnboardingTasksHandler(services *service.Services) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		workflowID, err := uuid.Parse(chi.URLParam(r, "workflowId"))
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid workflow_id")
+			return
+		}
+		
+		// Get workflow with details including tasks
+		workflow, err := services.Workflow.GetWorkflow(r.Context(), workflowID)
+		if err != nil {
+			respondError(w, http.StatusNotFound, "workflow not found")
+			return
+		}
+		
+		respondJSON(w, http.StatusOK, workflow.Tasks)
+	}
+}
+
+func getOnboardingMilestonesHandler(services *service.Services) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		workflowID, err := uuid.Parse(chi.URLParam(r, "workflowId"))
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "invalid workflow_id")
+			return
+		}
+		
+		// Get workflow with details including milestones
+		workflow, err := services.Workflow.GetWorkflow(r.Context(), workflowID)
+		if err != nil {
+			respondError(w, http.StatusNotFound, "workflow not found")
+			return
+		}
+		
+		respondJSON(w, http.StatusOK, workflow.Milestones)
 	}
 }

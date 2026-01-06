@@ -298,7 +298,7 @@ func (s *timesheetService ) BulkCreateTimeEntries(ctx context.Context, employeeI
 		if len(errors) > 0 {
 			errorMsg = fmt.Sprintf("%s. Errors: %v", errorMsg, errors)
 		}
-		return nil, fmt.Errorf(errorMsg)
+		return nil, fmt.Errorf("description: %s",errorMsg)
 	}
 	
 	// Return success even if some entries failed

@@ -8,6 +8,8 @@
   import EmployeeList from '../components/EmployeeList.svelte';
   import TalentCenter from './talent-center/TalentCenter.svelte';
   import PayExpenses from './pay-expenses/PayExpenses.svelte';
+  import ComplianceDashboard from './compliance/ComplianceDashboard.svelte';
+  import BenefitsDashboard from './benefits/BenefitsDashboard.svelte';
   
   const API_BASE_URL = getApiBaseUrl();
 
@@ -44,6 +46,8 @@
   //let showWorkflowManager = false; 
   let showTalentCenter = false;
   let showPayExpenses = false;
+  let showCompliance = false;
+  let showBenefits = false;
   let showEmployeeList = false; // New: for Quick Actions employee list modal
 
   onMount(() => {
@@ -172,6 +176,22 @@
           </div>
         </button>
 
+        <button class="action-card" onclick={() => showCompliance = true}>
+          <div class="action-icon">⚖️</div>
+          <div class="action-content">
+            <h3>Compliance</h3>
+            <p>Documents, training & audits</p>
+          </div>
+        </button>
+
+        <button class="action-card" onclick={() => showBenefits = true}>
+          <div class="action-icon">🏥</div>
+          <div class="action-content">
+            <h3>Benefits</h3>
+            <p>Healthcare, retirement & enrollment</p>
+          </div>
+        </button>
+
         <button class="action-card" onclick={() => showCompensation = true}>
           <div class="action-icon">💰</div>
           <div class="action-content">
@@ -263,6 +283,36 @@
       </div>
       <div class="modal-body">
         <PayExpenses />
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Compliance Modal -->
+{#if showCompliance}
+  <div class="modal-overlay" onclick={() => showCompliance = false} onkeydown={(e) => e.key === 'Escape' && (showCompliance = false)} role="button" tabindex="0">
+    <div class="modal full-screen" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Escape' && (showCompliance = false)} role="dialog" aria-modal="true" tabindex="-1">
+      <div class="modal-header">
+        <h2>Compliance Dashboard</h2>
+        <button class="close-btn" onclick={() => showCompliance = false}>×</button>
+      </div>
+      <div class="modal-body">
+        <ComplianceDashboard />
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Benefits Modal -->
+{#if showBenefits}
+  <div class="modal-overlay" onclick={() => showBenefits = false} onkeydown={(e) => e.key === 'Escape' && (showBenefits = false)} role="button" tabindex="0">
+    <div class="modal full-screen" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Escape' && (showBenefits = false)} role="dialog" aria-modal="true" tabindex="-1">
+      <div class="modal-header">
+        <h2>Benefits Dashboard</h2>
+        <button class="close-btn" onclick={() => showBenefits = false}>×</button>
+      </div>
+      <div class="modal-body">
+        <BenefitsDashboard />
       </div>
     </div>
   </div>

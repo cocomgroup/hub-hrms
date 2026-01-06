@@ -27,6 +27,34 @@ CREATE INDEX IF NOT EXISTS idx_job_postings_status ON job_postings(status);
 CREATE INDEX IF NOT EXISTS idx_job_postings_department ON job_postings(department);
 CREATE INDEX IF NOT EXISTS idx_job_postings_created_at ON job_postings(created_at DESC);
 
+-- Description: Stores recruiting platform integrations (LinkedIn, Indeed, etc.)
+
+CREATE TABLE IF NOT EXISTS recruiting_providers (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    type VARCHAR(50) NOT NULL, -- linkedin, indeed, ziprecruiter, glassdoor, monster, custom
+    name VARCHAR(255) NOT NULL,
+    icon VARCHAR(50) NOT NULL DEFAULT '🔧',
+    color VARCHAR(7) NOT NULL DEFAULT '#6b7280',
+    is_connected BOOLEAN NOT NULL DEFAULT FALSE,
+    config JSONB NOT NULL DEFAULT '{}', -- Stores API keys, credentials, etc.
+    jobs_posted INTEGER NOT NULL DEFAULT 0,
+    applicants_total INTEGER NOT NULL DEFAULT 0,
+    last_synced_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+-- Create indexes
+CREATE INDEX idx_recruiting_providers_type ON recruiting_providers(type);
+CREATE INDEX idx_recruiting_providers_is_connected ON recruiting_providers(is_connected);
+CREATE INDEX idx_recruiting_providers_created_at ON recruiting_providers(created_at);
+
+-- Add comments
+COMMENT ON TABLE recruiting_providers IS 'Recruiting platform integrations and their configurations';
+COMMENT ON COLUMN recruiting_providers.config IS 'JSONB field storing provider-specific credentials and settings';
+COMMENT ON COLUMN recruiting_providers.jobs_posted IS 'Total number of jobs posted to this provider';
+COMMENT ON COLUMN recruiting_providers.applicants_total IS 'Total number of applicants received from this provider';
+
 -- Candidates Table
 CREATE TABLE IF NOT EXISTS candidates (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

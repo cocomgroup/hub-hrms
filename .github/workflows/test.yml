@@ -1,0 +1,273 @@
+name: Test Suite
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  # Backend unit and integration tests
+  backend-tests:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: hrms_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Install dependencies
+        run: |
+          go mod download
+          go install github.com/stretchr/testify@latest
+          go install github.com/DATA-DOG/go-sqlmock@latest
+
+      - name: Run unit tests
+        run: |
+          go test -v -race -coverprofile=coverage-unit.out -covermode=atomic ./... -short
+
+      - name: Run integration tests
+        env:
+          DATABASE_URL: postgres://testuser:testpass@localhost:5432/hrms_test?sslmode=disable
+        run: |
+          go test -v -race -coverprofile=coverage-integration.out -covermode=atomic ./tests/integration/...
+
+      - name: Generate coverage report
+        run: |
+          go tool cover -func=coverage-unit.out -o coverage-unit.txt
+          go tool cover -func=coverage-integration.out -o coverage-integration.txt
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage-unit.out,./coverage-integration.out
+          flags: backend
+          name: backend-coverage
+
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: |
+            coverage-unit.out
+            coverage-unit.txt
+            coverage-integration.out
+            coverage-integration.txt
+
+  # Frontend tests
+  frontend-tests:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./frontend
+        run: npm ci
+
+      - name: Run linter
+        working-directory: ./frontend
+        run: npm run lint
+
+      - name: Run type check
+        working-directory: ./frontend
+        run: npm run check
+
+      - name: Run tests with coverage
+        working-directory: ./frontend
+        run: npm run test:coverage
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./frontend/coverage/lcov.info
+          flags: frontend
+          name: frontend-coverage
+
+      - name: Upload coverage artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: |
+            frontend/coverage/
+
+  # E2E tests
+  e2e-tests:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    needs: [backend-tests, frontend-tests]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Install Playwright
+        run: |
+          go install github.com/playwright-community/playwright-go/cmd/playwright@latest
+          playwright install --with-deps chromium
+
+      - name: Start test environment
+        run: |
+          docker-compose -f docker-compose.test.yml up -d
+          sleep 15
+
+      - name: Wait for application
+        run: |
+          timeout 60 bash -c 'until curl -f http://localhost:5173 > /dev/null 2>&1; do sleep 2; done'
+
+      - name: Run E2E tests
+        env:
+          E2E_BASE_URL: http://localhost:5173
+        run: |
+          go test -v ./tests/e2e/...
+
+      - name: Upload E2E screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots
+          path: tests/e2e/screenshots/
+
+      - name: Stop test environment
+        if: always()
+        run: |
+          docker-compose -f docker-compose.test.yml logs
+          docker-compose -f docker-compose.test.yml down -v
+
+  # Combine coverage and check thresholds
+  coverage-check:
+    name: Coverage Check
+    runs-on: ubuntu-latest
+    needs: [backend-tests, frontend-tests]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download backend coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-coverage
+          path: ./coverage-backend
+
+      - name: Download frontend coverage
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-coverage
+          path: ./coverage-frontend
+
+      - name: Check coverage thresholds
+        run: |
+          echo "Backend Unit Coverage:"
+          cat coverage-backend/coverage-unit.txt | tail -1
+          
+          echo "Backend Integration Coverage:"
+          cat coverage-backend/coverage-integration.txt | tail -1
+          
+          echo "Frontend Coverage:"
+          cat coverage-frontend/coverage-summary.json
+
+      - name: Comment PR with coverage
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            
+            const backendUnit = fs.readFileSync('coverage-backend/coverage-unit.txt', 'utf8');
+            const backendIntegration = fs.readFileSync('coverage-backend/coverage-integration.txt', 'utf8');
+            
+            const comment = `## Test Coverage Report
+            
+            ### Backend Coverage
+            **Unit Tests:**
+            \`\`\`
+            ${backendUnit.split('\n').slice(-2).join('\n')}
+            \`\`\`
+            
+            **Integration Tests:**
+            \`\`\`
+            ${backendIntegration.split('\n').slice(-2).join('\n')}
+            \`\`\`
+            
+            ### Frontend Coverage
+            See detailed report in artifacts.
+            
+            [View full coverage report](https://codecov.io/gh/${{ github.repository }})
+            `;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+  # Build check
+  build-check:
+    name: Build Check
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Build backend
+        run: |
+          go build -v ./...
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Build frontend
+        working-directory: ./frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Check build artifacts
+        run: |
+          ls -lah
+          ls -lah frontend/dist/

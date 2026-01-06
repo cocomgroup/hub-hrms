@@ -339,7 +339,7 @@ CREATE TRIGGER trigger_update_employee_workflow_progress
 AFTER INSERT OR UPDATE OF status ON workflow_steps
 FOR EACH ROW
 WHEN (NEW.stage IS NOT NULL)
-EXECUTE FUNCTION update_employee_workflow_progress();
+EXECUTE PROCEDURE update_employee_workflow_progress();
 
 -- Update onboarding progress
 CREATE OR REPLACE FUNCTION update_onboarding_progress()
@@ -379,7 +379,7 @@ DROP TRIGGER IF EXISTS trigger_update_onboarding_progress ON onboarding_tasks;
 CREATE TRIGGER trigger_update_onboarding_progress
 AFTER INSERT OR UPDATE OF status ON onboarding_tasks
 FOR EACH ROW
-EXECUTE FUNCTION update_onboarding_progress();
+EXECUTE PROCEDURE update_onboarding_progress();
 
 -- ============================================================================
 -- PART 5: DEFAULT DATA

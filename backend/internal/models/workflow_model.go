@@ -188,3 +188,12 @@ type WorkflowTemplateWithSteps struct {
 	Template WorkflowTemplate  `json:"template"`
 	Steps    []WorkflowStepDef `json:"steps"`
 }
+
+// OnboardingWithDetails includes onboarding workflow and related data
+// This is separate from WorkflowWithDetails which uses EmployeeWorkflow
+type OnboardingWithDetails struct {
+	Workflow   OnboardingWorkflow    `json:"workflow"`
+	Tasks      []OnboardingTask      `json:"tasks"`
+	Milestones []OnboardingMilestone `json:"milestones"`
+	Employee   Employee              `json:"employee"`
+}

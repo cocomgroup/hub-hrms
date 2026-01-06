@@ -10,7 +10,7 @@
   import WorkflowDetail from './routes/talent-center/workflows/WorkflowDetail.svelte';
   import Timesheet from './routes/Timesheet.svelte';
   import PTO from './routes/PTO.svelte';
-  import Benefits from './routes/Benefits.svelte';
+  import Benefits from './routes/benefits/Benefits.svelte';
   import Payroll from './routes/Payroll.svelte';
   import HRDashboard from './routes/HRDashboard.svelte';
   import ManagerDashboard from './routes/ManagerDashboard.svelte';

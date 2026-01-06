@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  # Test database
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: testuser
+      POSTGRES_PASSWORD: testpass
+      POSTGRES_DB: hrms_test
+    ports:
+      - "5433:5432"
+    volumes:
+      - test-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U testuser"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Backend API for E2E tests
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      ENV: test
+      DATABASE_URL: postgres://testuser:testpass@db:5432/hrms_test?sslmode=disable
+      JWT_SECRET: test-secret-key-for-testing-only
+      PORT: 8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["./wait-for-it.sh", "db:5432", "--", "./hub-hrms"]
+
+  # Frontend for E2E tests
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    environment:
+      VITE_API_URL: http://backend:8080
+      NODE_ENV: test
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+
+  # Test runner (optional - for running tests in Docker)
+  test-runner:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    environment:
+      DATABASE_URL: postgres://testuser:testpass@db:5432/hrms_test?sslmode=disable
+      E2E_BASE_URL: http://frontend:5173
+    depends_on:
+      db:
+        condition: service_healthy
+      backend:
+        condition: service_started
+      frontend:
+        condition: service_started
+    volumes:
+      - ./coverage:/app/coverage
+      - ./tests:/app/tests
+    command: ["./scripts/test-all.sh", "--all", "--coverage"]
+
+volumes:
+  test-db-data:

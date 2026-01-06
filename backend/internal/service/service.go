@@ -181,3 +181,7 @@ func strPtr(s string) *string {
 func timePtr(t time.Time) *time.Time {
 	return &t
 }
+
+func float64Ptr(f float64) *float64 {
+	return &f
+}

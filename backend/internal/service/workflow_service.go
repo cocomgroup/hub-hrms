@@ -16,7 +16,7 @@ import (
 type WorkflowService interface {
 	// Workflow management
 	InitiateWorkflow(ctx context.Context, employeeID uuid.UUID, templateName string, createdBy uuid.UUID) (*models.OnboardingWorkflow, error)
-	GetWorkflow(ctx context.Context, workflowID uuid.UUID) (*models.WorkflowWithDetails, error)
+	GetWorkflow(ctx context.Context, workflowID uuid.UUID) (*models.OnboardingWithDetails, error)
 	ListWorkflows(ctx context.Context, filters map[string]interface{}) ([]*models.OnboardingWorkflow, error)
 	CancelWorkflow(ctx context.Context, workflowID uuid.UUID) error
 	
@@ -80,6 +80,31 @@ func NewWorkflowService(repos *repository.Repositories) WorkflowService {
 	}
 }
 
+// getCurrentStage calculates the current onboarding stage based on progress
+func getCurrentStage(workflow *models.OnboardingWorkflow) string {
+	if workflow.Status == "not_started" {
+		return "pre-boarding"
+	}
+	if workflow.Status == "completed" {
+		return "completed"
+	}
+	
+	// Calculate stage based on progress percentage
+	progress := workflow.OverallProgress
+	
+	if progress < 25 {
+		return "pre-boarding"
+	} else if progress < 50 {
+		return "day-1"
+	} else if progress < 75 {
+		return "week-1"
+	} else if progress < 100 {
+		return "month-1"
+	}
+	
+	return "completed"
+}
+
 // InitiateWorkflow creates a new workflow from a template
 func (s *workflowService) InitiateWorkflow(ctx context.Context, employeeID uuid.UUID, templateName string, createdBy uuid.UUID) (*models.OnboardingWorkflow, error) {
 	log.Printf("DEBUG InitiateWorkflow: employeeID=%s, templateName=%s, createdBy=%s", employeeID, templateName, createdBy)
@@ -91,277 +116,150 @@ func (s *workflowService) InitiateWorkflow(ctx context.Context, employeeID uuid.
 		return nil, fmt.Errorf("failed to get employee: %w", err)
 	}
 	
-	// Create workflow
+	now := time.Now()
+	
+	// Create workflow using NewHireOnboarding (OnboardingWorkflow) structure
 	workflow := &models.OnboardingWorkflow{
-		EmployeeID:   employeeID,
-		TemplateName: templateName,
-		Status:       "active",
-		CurrentStage: "pre-boarding",
-		CreatedBy:    &createdBy,
+		ID:                     uuid.New(),
+		EmployeeID:             employeeID,
+		EmployeeName:           employee.FirstName + " " + employee.LastName,
+		EmployeeEmail:          employee.Email,
+		Status:                 "in_progress",  // not_started, in_progress, completed, overdue
+		StartDate:              now,
+		OverallProgress:        0,
+		CreatedBy:              &createdBy,
+		CreatedAt:              now,
+		UpdatedAt:              now,
 	}
+	
+	// Calculate expected completion (30 days from now)
+	expectedCompletion := now.Add(30 * 24 * time.Hour)
+	workflow.ExpectedCompletionDate = &expectedCompletion
 	
 	log.Printf("DEBUG InitiateWorkflow: workflow.CreatedBy = %v", workflow.CreatedBy)
 	if workflow.CreatedBy != nil {
 		log.Printf("DEBUG InitiateWorkflow: *workflow.CreatedBy = %s", *workflow.CreatedBy)
 	}
 	
-	// Calculate expected completion (30 days from now)
-	expectedCompletion := time.Now().Add(30 * 24 * time.Hour)
-	workflow.ExpectedCompletion = &expectedCompletion
-	
-	log.Printf("DEBUG InitiateWorkflow: About to call CreateWorkflow")
-	err = s.repos.Workflow.CreateWorkflow(ctx, workflow)
+	log.Printf("DEBUG InitiateWorkflow: About to call CreateOnboarding")
+	err = s.repos.Onboarding.CreateOnboarding(ctx, workflow)
 	if err != nil {
-		log.Printf("ERROR InitiateWorkflow: CreateWorkflow failed: %v", err)
+		log.Printf("ERROR InitiateWorkflow: CreateOnboarding failed: %v", err)
 		return nil, fmt.Errorf("failed to create workflow: %w", err)
 	}
 	
-	// Generate steps from template
-	steps, err := s.generateStepsFromTemplate(templateName, workflow.ID, employee)
+	// Generate tasks from template
+	tasks, err := s.generateTasksFromTemplate(templateName, workflow.ID, employee)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate steps: %w", err)
-	}
-	
-	// Create all steps
-	for _, step := range steps {
-		if err := s.repos.Workflow.CreateStep(ctx, step); err != nil {
-			return nil, fmt.Errorf("failed to create step: %w", err)
+		log.Printf("WARN InitiateWorkflow: Failed to generate tasks: %v", err)
+		// Don't fail the entire workflow creation if task generation fails
+	} else {
+		// Create the generated tasks
+		for _, task := range tasks {
+			if err := s.repos.Onboarding.CreateTask(ctx, task); err != nil {
+				log.Printf("WARN InitiateWorkflow: Failed to create task %s: %v", task.Title, err)
+			}
 		}
 	}
 	
+	log.Printf("DEBUG InitiateWorkflow: Workflow created successfully with ID %s", workflow.ID)
 	return workflow, nil
 }
 
 // generateStepsFromTemplate creates steps based on template
-func (s *workflowService) generateStepsFromTemplate(templateName string, workflowID uuid.UUID, employee *models.Employee) ([]*models.WorkflowStep, error) {
-	var steps []*models.WorkflowStep
+func (s *workflowService) generateTasksFromTemplate(templateName string, workflowID uuid.UUID, employee *models.Employee) ([]*models.OnboardingTask, error) {
+	// This is a simplified version - in production you'd look up the template
+	// and generate tasks based on the template definition
 	
+	now := time.Now()
+	tasks := []*models.OnboardingTask{}
+	
+	// Default tasks based on template name
 	switch templateName {
-	case "software-engineer":
-		steps = s.createSoftwareEngineerTemplate(workflowID, employee)
-	case "sales-representative":
-		steps = s.createSalesRepTemplate(workflowID, employee)
-	case "manager":
-		steps = s.createManagerTemplate(workflowID, employee)
-	case "generic":
-		steps = s.createGenericTemplate(workflowID, employee)
-	default:
-		steps = s.createGenericTemplate(workflowID, employee)
+	case "standard-onboarding":
+		tasks = append(tasks,
+			&models.OnboardingTask{
+				ID:             uuid.New(),
+				WorkflowID:     workflowID,
+				Title:          "Complete I-9 Form",
+				Description:    "Complete employment eligibility verification",
+				Category:       "documentation",
+				Priority:       "high",
+				Status:         "pending",
+				IsMandatory:    true,
+				OrderIndex:     1,
+				DueDate:        timePtr(now.AddDate(0, 0, 3)),
+				EstimatedHours: float64Ptr(0.5),
+				CreatedAt:      now,
+				UpdatedAt:      now,
+			},
+			&models.OnboardingTask{
+				ID:             uuid.New(),
+				WorkflowID:     workflowID,
+				Title:          "Setup Direct Deposit",
+				Description:    "Provide bank account information",
+				Category:       "administrative",
+				Priority:       "high",
+				Status:         "pending",
+				IsMandatory:    true,
+				OrderIndex:     2,
+				DueDate:        timePtr(now.AddDate(0, 0, 7)),
+				EstimatedHours: float64Ptr(0.25),
+				CreatedAt:      now,
+				UpdatedAt:      now,
+			},
+			&models.OnboardingTask{
+				ID:             uuid.New(),
+				WorkflowID:     workflowID,
+				Title:          "IT Account Setup",
+				Description:    "Receive email and system access",
+				Category:       "access",
+				Priority:       "high",
+				Status:         "pending",
+				IsMandatory:    true,
+				OrderIndex:     3,
+				DueDate:        timePtr(now.AddDate(0, 0, 1)),
+				EstimatedHours: float64Ptr(0.5),
+				CreatedAt:      now,
+				UpdatedAt:      now,
+			},
+		)
+	case "engineering-onboarding":
+		tasks = append(tasks,
+			&models.OnboardingTask{
+				ID:             uuid.New(),
+				WorkflowID:     workflowID,
+				Title:          "Development Environment Setup",
+				Description:    "Install required development tools and access",
+				Category:       "access",
+				Priority:       "high",
+				Status:         "pending",
+				IsMandatory:    true,
+				OrderIndex:     1,
+				DueDate:        timePtr(now.AddDate(0, 0, 2)),
+				EstimatedHours: float64Ptr(2.0),
+				CreatedAt:      now,
+				UpdatedAt:      now,
+			},
+			&models.OnboardingTask{
+				ID:             uuid.New(),
+				WorkflowID:     workflowID,
+				Title:          "Code Repository Access",
+				Description:    "Get access to GitHub/GitLab repositories",
+				Category:       "access",
+				Priority:       "high",
+				Status:         "pending",
+				IsMandatory:    true,
+				OrderIndex:     2,
+				DueDate:        timePtr(now.AddDate(0, 0, 1)),
+				EstimatedHours: float64Ptr(0.5),
+				CreatedAt:      now,
+				UpdatedAt:      now,
+			},
+		)
 	}
 	
-	return steps, nil
-}
-
-// createSoftwareEngineerTemplate generates steps for software engineer onboarding
-func (s *workflowService) createSoftwareEngineerTemplate(workflowID uuid.UUID, employee *models.Employee) []*models.WorkflowStep {
-	steps := []*models.WorkflowStep{
-		// Pre-boarding stage
-		{
-			WorkflowID:      workflowID,
-			StepOrder:       1,
-			StepName:        "Send Offer Letter",
-			StepType:        "integration",
-			Stage:           "pre-boarding",
-			Status:          "pending",
-			Description:     "Send offer letter via DocuSign for signature",
-			IntegrationType: "docusign",
-			IntegrationConfig: map[string]interface{}{
-				"document_type": "offer-letter",
-				"template_id":   "offer-letter-tech",
-			},
-			DueDate: timePtr(time.Now().Add(-7 * 24 * time.Hour)), // 7 days before start
-		},
-		{
-			WorkflowID:      workflowID,
-			StepOrder:       2,
-			StepName:        "Send I-9 Form",
-			StepType:        "integration",
-			Stage:           "pre-boarding",
-			Status:          "pending",
-			Description:     "Send I-9 Employment Eligibility form via DocuSign",
-			IntegrationType: "docusign",
-			IntegrationConfig: map[string]interface{}{
-				"document_type": "i9",
-			},
-			DueDate: timePtr(time.Now().Add(-5 * 24 * time.Hour)),
-		},
-		{
-			WorkflowID:      workflowID,
-			StepOrder:       3,
-			StepName:        "Send W-4 Form",
-			StepType:        "integration",
-			Stage:           "pre-boarding",
-			Status:          "pending",
-			Description:     "Send W-4 tax withholding form via DocuSign",
-			IntegrationType: "docusign",
-			IntegrationConfig: map[string]interface{}{
-				"document_type": "w4",
-			},
-			DueDate: timePtr(time.Now().Add(-5 * 24 * time.Hour)),
-		},
-		{
-			WorkflowID:      workflowID,
-			StepOrder:       4,
-			StepName:        "Initiate Background Check",
-			StepType:        "integration",
-			Stage:           "pre-boarding",
-			Status:          "pending",
-			Description:     "Start criminal and employment background check",
-			IntegrationType: "background-check",
-			IntegrationConfig: map[string]interface{}{
-				"check_types": []string{"criminal", "employment"},
-			},
-			DueDate: timePtr(time.Now().Add(-7 * 24 * time.Hour)),
-		},
-		{
-			WorkflowID:  workflowID,
-			StepOrder:   5,
-			StepName:    "Order Equipment",
-			StepType:    "manual",
-			Stage:       "pre-boarding",
-			Status:      "pending",
-			Description: "Order laptop, monitor, keyboard, mouse",
-			DueDate:     timePtr(time.Now().Add(-5 * 24 * time.Hour)),
-		},
-		{
-			WorkflowID:      workflowID,
-			StepOrder:       6,
-			StepName:        "Fetch Onboarding Documents",
-			StepType:        "integration",
-			Stage:           "pre-boarding",
-			Status:          "pending",
-			Description:     "Retrieve employee handbook and policies",
-			IntegrationType: "doc-search",
-			IntegrationConfig: map[string]interface{}{
-				"query":         "handbook",
-				"document_type": "handbook",
-			},
-			DueDate: timePtr(time.Now().Add(-3 * 24 * time.Hour)),
-		},
-		{
-			WorkflowID:  workflowID,
-			StepOrder:   7,
-			StepName:    "Create Email Account",
-			StepType:    "manual",
-			Stage:       "pre-boarding",
-			Status:      "pending",
-			Description: "Setup company email and calendar access",
-			DueDate:     timePtr(time.Now().Add(-2 * 24 * time.Hour)),
-		},
-		{
-			WorkflowID:  workflowID,
-			StepOrder:   8,
-			StepName:    "Setup Development Environment Access",
-			StepType:    "manual",
-			Stage:       "pre-boarding",
-			Status:      "pending",
-			Description: "Create GitHub, Jira, and Confluence accounts",
-			Dependencies: []uuid.UUID{}, // Will be set after steps are created
-			DueDate:     timePtr(time.Now().Add(-1 * 24 * time.Hour)),
-		},
-		
-		// Day 1 stage
-		{
-			WorkflowID:  workflowID,
-			StepOrder:   9,
-			StepName:    "Send Welcome Email",
-			StepType:    "integration",
-			Stage:       "day-1",
-			Status:      "blocked",
-			Description: "Send welcome email with first day instructions",
-			DueDate:     timePtr(time.Now()),
-		},
-		{
-			WorkflowID:  workflowID,
-			StepOrder:   10,
-			StepName:    "Office Tour",
-			StepType:    "manual",
-			Stage:       "day-1",
-			Status:      "blocked",
-			Description: "Conduct office tour and introductions",
-			DueDate:     timePtr(time.Now()),
-		},
-		{
-			WorkflowID:  workflowID,
-			StepOrder:   11,
-			StepName:    "IT Setup - Laptop Configuration",
-			StepType:    "manual",
-			Stage:       "day-1",
-			Status:      "blocked",
-			Description: "Setup laptop with required software and tools",
-			DueDate:     timePtr(time.Now()),
-		},
-		{
-			WorkflowID:  workflowID,
-			StepOrder:   12,
-			StepName:    "Building Access Card",
-			StepType:    "manual",
-			Stage:       "day-1",
-			Status:      "blocked",
-			Description: "Issue building access card and parking pass",
-			DueDate:     timePtr(time.Now()),
-		},
-		
-		// Week 1 stage
-		{
-			WorkflowID:      workflowID,
-			StepOrder:       13,
-			StepName:        "Benefits Enrollment",
-			StepType:        "integration",
-			Stage:           "week-1",
-			Status:          "blocked",
-			Description:     "Complete benefits enrollment forms",
-			IntegrationType: "docusign",
-			IntegrationConfig: map[string]interface{}{
-				"document_type": "benefits",
-			},
-			DueDate: timePtr(time.Now().Add(3 * 24 * time.Hour)),
-		},
-		{
-			WorkflowID:  workflowID,
-			StepOrder:   14,
-			StepName:    "Codebase Onboarding",
-			StepType:    "manual",
-			Stage:       "week-1",
-			Status:      "blocked",
-			Description: "Review codebase architecture and setup local environment",
-			DueDate:     timePtr(time.Now().Add(4 * 24 * time.Hour)),
-		},
-		{
-			WorkflowID:  workflowID,
-			StepOrder:   15,
-			StepName:    "First Code Review",
-			StepType:    "manual",
-			Stage:       "week-1",
-			Status:      "blocked",
-			Description: "Submit first pull request and participate in code review",
-			DueDate:     timePtr(time.Now().Add(5 * 24 * time.Hour)),
-		},
-		
-		// Month 1 stage
-		{
-			WorkflowID:  workflowID,
-			StepOrder:   16,
-			StepName:    "30-Day Check-in",
-			StepType:    "manual",
-			Stage:       "month-1",
-			Status:      "blocked",
-			Description: "Conduct 30-day check-in meeting with manager",
-			DueDate:     timePtr(time.Now().Add(30 * 24 * time.Hour)),
-		},
-		{
-			WorkflowID:  workflowID,
-			StepOrder:   17,
-			StepName:    "Goal Setting Session",
-			StepType:    "manual",
-			Stage:       "month-1",
-			Status:      "blocked",
-			Description: "Set quarterly goals and expectations",
-			DueDate:     timePtr(time.Now().Add(30 * 24 * time.Hour)),
-		},
-	}
-	
-	return steps
+	return tasks, nil
 }
 
 // createGenericTemplate generates steps for generic employee onboarding
@@ -431,7 +329,7 @@ func (s *workflowService) createManagerTemplate(workflowID uuid.UUID, employee *
 }
 
 // GetWorkflow retrieves workflow with all details
-func (s *workflowService) GetWorkflow(ctx context.Context, workflowID uuid.UUID) (*models.WorkflowWithDetails, error) {
+func (s *workflowService) GetWorkflow(ctx context.Context, workflowID uuid.UUID) (*models.OnboardingWithDetails, error) {
 	return s.repos.Workflow.GetWorkflowWithDetails(ctx, workflowID)
 }
 
@@ -748,10 +646,13 @@ func (s *workflowService) CheckWorkflowProgress(ctx context.Context, workflowID 
 		return nil, err
 	}
 	
+	// ✓ FIXED: Calculate current stage from progress
+	currentStage := getCurrentStage(workflow)
+	
 	progress := &WorkflowProgress{
 		WorkflowID:   workflowID,
 		TotalSteps:   len(steps),
-		CurrentStage: workflow.CurrentStage,
+		CurrentStage: currentStage,
 	}
 	
 	// Count step statuses
@@ -776,25 +677,14 @@ func (s *workflowService) CheckWorkflowProgress(ctx context.Context, workflowID 
 	}
 	
 	// Calculate days elapsed
-	progress.DaysElapsed = int(time.Since(workflow.StartedAt).Hours() / 24)
-	
-	// Calculate expected days
-	if workflow.ExpectedCompletion != nil {
-		progress.ExpectedDays = int(workflow.ExpectedCompletion.Sub(workflow.StartedAt).Hours() / 24)
-		
-		// Check if on track
-		if progress.ExpectedDays > 0 {
-			expectedProgress := (progress.DaysElapsed * 100) / progress.ExpectedDays
-			progress.IsOnTrack = progress.ProgressPercentage >= expectedProgress
-		}
+	progress.DaysElapsed = int(time.Since(workflow.StartDate).Hours() / 24)
+	if workflow.ExpectedCompletionDate != nil {
+		progress.ExpectedDays = int(workflow.ExpectedCompletionDate.Sub(workflow.StartDate).Hours() / 24)
+		progress.IsOnTrack = progress.DaysElapsed <= progress.ExpectedDays
 	}
 	
 	// Count open exceptions
-	for _, ex := range exceptions {
-		if ex.ResolutionStatus == "open" || ex.ResolutionStatus == "in-progress" {
-			progress.OpenExceptions++
-		}
-	}
+	progress.OpenExceptions = len(exceptions)
 	
 	return progress, nil
 }
@@ -806,24 +696,37 @@ func (s *workflowService) AdvanceStage(ctx context.Context, workflowID uuid.UUID
 		return err
 	}
 	
-	// Determine next stage
+	// ✓ FIXED: Calculate current stage from progress
+	currentStage := getCurrentStage(workflow)
+	
+	// Determine next stage and progress
 	var nextStage string
-	switch workflow.CurrentStage {
+	var newProgress int
+	
+	switch currentStage {
 	case "pre-boarding":
 		nextStage = "day-1"
+		newProgress = 25
 	case "day-1":
 		nextStage = "week-1"
+		newProgress = 50
 	case "week-1":
 		nextStage = "month-1"
+		newProgress = 75
 	case "month-1":
 		nextStage = "completed"
-		// Mark workflow as completed
-		s.repos.Workflow.UpdateWorkflowStatus(ctx, workflowID, "completed")
+		newProgress = 100
+		workflow.Status = "completed"
+		now := time.Now()
+		workflow.ActualCompletionDate = &now
 	default:
-		return fmt.Errorf("unknown stage: %s", workflow.CurrentStage)
+		return fmt.Errorf("unknown stage: %s nextStage %s", currentStage, nextStage)
 	}
 	
-	return s.repos.Workflow.UpdateWorkflowStage(ctx, workflowID, nextStage)
+	// Update progress
+	workflow.OverallProgress = newProgress
+	
+	return s.repos.Onboarding.UpdateOnboarding(ctx, workflow)
 }
 
 // checkAndAdvanceStage checks if all steps in current stage are done
@@ -838,10 +741,13 @@ func (s *workflowService) checkAndAdvanceStage(ctx context.Context, workflowID u
 		return err
 	}
 	
+	// ✓ FIXED: Calculate current stage from progress
+	currentStage := getCurrentStage(workflow)
+	
 	// Check if all steps in current stage are completed or skipped
 	allDone := true
 	for _, step := range steps {
-		if step.Stage == workflow.CurrentStage {
+		if step.Stage == currentStage {
 			if step.Status != "completed" && step.Status != "skipped" {
 				allDone = false
 				break

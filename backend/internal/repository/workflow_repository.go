@@ -17,10 +17,11 @@ type WorkflowRepository interface {
 	// Workflow operations
 	CreateWorkflow(ctx context.Context, workflow *models.OnboardingWorkflow) error
 	GetWorkflow(ctx context.Context, id uuid.UUID) (*models.OnboardingWorkflow, error)
-	GetWorkflowWithDetails(ctx context.Context, id uuid.UUID) (*models.WorkflowWithDetails, error)
+	GetWorkflowWithDetails(ctx context.Context, id uuid.UUID) (*models.OnboardingWithDetails, error)
 	ListWorkflows(ctx context.Context, filters map[string]interface{}) ([]*models.OnboardingWorkflow, error)
 	UpdateWorkflowStatus(ctx context.Context, id uuid.UUID, status string) error
 	UpdateWorkflowStage(ctx context.Context, id uuid.UUID, stage string) error
+	UpdateWorkflowProgress(ctx context.Context, workflowID uuid.UUID, progress int) error
 	
 	// Step operations
 	CreateStep(ctx context.Context, step *models.WorkflowStep) error
@@ -71,23 +72,25 @@ func NewWorkflowRepository(db *pgxpool.Pool) WorkflowRepository {
 func (r *workflowRepository) CreateWorkflow(ctx context.Context, workflow *models.OnboardingWorkflow) error {
 	query := `
 		INSERT INTO onboarding_workflows (
-			employee_id, template_name, status, current_stage, 
-			expected_completion, created_by
-		) VALUES ($1, $2, $3, $4, $5, $6)
-		RETURNING id, progress_percentage, started_at, created_at, updated_at
+			id, employee_id, start_date, expected_completion_date,
+			status, overall_progress, assigned_buddy_id, assigned_manager_id,
+			notes, created_by
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		RETURNING created_at, updated_at
 	`
 	
 	return r.db.QueryRow(ctx, query,
+		workflow.ID,
 		workflow.EmployeeID,
-		workflow.TemplateName,
+		workflow.StartDate,
+		workflow.ExpectedCompletionDate,
 		workflow.Status,
-		workflow.CurrentStage,
-		workflow.ExpectedCompletion,
+		workflow.OverallProgress,
+		workflow.AssignedBuddyID,
+		workflow.AssignedManagerID,
+		workflow.Notes,
 		workflow.CreatedBy,
 	).Scan(
-		&workflow.ID,
-		&workflow.ProgressPercentage,
-		&workflow.StartedAt,
 		&workflow.CreatedAt,
 		&workflow.UpdatedAt,
 	)
@@ -95,27 +98,29 @@ func (r *workflowRepository) CreateWorkflow(ctx context.Context, workflow *model
 
 func (r *workflowRepository) GetWorkflow(ctx context.Context, id uuid.UUID) (*models.OnboardingWorkflow, error) {
 	query := `
-		SELECT id, employee_id, template_name, status, current_stage,
-			progress_percentage, started_at, expected_completion,
-			actual_completion, created_by, created_at, updated_at
+		SELECT 
+			id, employee_id, start_date, expected_completion_date,
+			actual_completion_date, status, overall_progress,
+			assigned_buddy_id, assigned_manager_id, notes,
+			created_by, created_at, updated_at
 		FROM onboarding_workflows
 		WHERE id = $1
 	`
 	
 	workflow := &models.OnboardingWorkflow{}
-	var createdBy sql.NullString
 	
 	err := r.db.QueryRow(ctx, query, id).Scan(
 		&workflow.ID,
 		&workflow.EmployeeID,
-		&workflow.TemplateName,
+		&workflow.StartDate,
+		&workflow.ExpectedCompletionDate,
+		&workflow.ActualCompletionDate,
 		&workflow.Status,
-		&workflow.CurrentStage,
-		&workflow.ProgressPercentage,
-		&workflow.StartedAt,
-		&workflow.ExpectedCompletion,
-		&workflow.ActualCompletion,
-		&createdBy,
+		&workflow.OverallProgress,
+		&workflow.AssignedBuddyID,
+		&workflow.AssignedManagerID,
+		&workflow.Notes,
+		&workflow.CreatedBy,
 		&workflow.CreatedAt,
 		&workflow.UpdatedAt,
 	)
@@ -124,15 +129,10 @@ func (r *workflowRepository) GetWorkflow(ctx context.Context, id uuid.UUID) (*mo
 		return nil, err
 	}
 	
-	if createdBy.Valid {
-		id, _ := uuid.Parse(createdBy.String)
-		workflow.CreatedBy = &id
-	}
-	
 	return workflow, nil
 }
 
-func (r *workflowRepository) GetWorkflowWithDetails(ctx context.Context, id uuid.UUID) (*models.WorkflowWithDetails, error) {
+func (r *workflowRepository) GetWorkflowWithDetails(ctx context.Context, id uuid.UUID) (*models.OnboardingWithDetails, error) {
 	// Get workflow
 	workflow, err := r.GetWorkflow(ctx, id)
 	if err != nil {
@@ -155,56 +155,103 @@ func (r *workflowRepository) GetWorkflowWithDetails(ctx context.Context, id uuid
 		return nil, err
 	}
 	
-	// Get steps
-	stepsPtr, err := r.GetSteps(ctx, id)
+	// Get tasks from onboarding_tasks table
+	tasksQuery := `
+		SELECT id, workflow_id, title, description, category, priority, status,
+		       assigned_to, due_date, completed_at, completed_by, order_index,
+		       is_mandatory, estimated_hours, actual_hours, ai_generated,
+		       ai_suggestions, created_at, updated_at
+		FROM onboarding_tasks
+		WHERE workflow_id = $1
+		ORDER BY order_index
+	`
+	
+	rows, err := r.db.Query(ctx, tasksQuery, id)
 	if err != nil {
 		return nil, err
 	}
+	defer rows.Close()
 	
-	// Convert []*WorkflowStep to []WorkflowStep
-	steps := make([]models.WorkflowStep, len(stepsPtr))
-	for i, s := range stepsPtr {
-		steps[i] = *s
+	tasks := []models.OnboardingTask{}
+	for rows.Next() {
+		task := models.OnboardingTask{}
+		err := rows.Scan(
+			&task.ID,
+			&task.WorkflowID,
+			&task.Title,
+			&task.Description,
+			&task.Category,
+			&task.Priority,
+			&task.Status,
+			&task.AssignedTo,
+			&task.DueDate,
+			&task.CompletedAt,
+			&task.CompletedBy,
+			&task.OrderIndex,
+			&task.IsMandatory,
+			&task.EstimatedHours,
+			&task.ActualHours,
+			&task.AIGenerated,
+			&task.AISuggestions,
+			&task.CreatedAt,
+			&task.UpdatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, task)
 	}
 	
-	// Get exceptions
-	exceptionsPtr, err := r.GetExceptions(ctx, id)
+	// Get milestones from onboarding_milestones table
+	milestonesQuery := `
+		SELECT id, workflow_id, name, description, target_date,
+		       completed_date, status, celebration_sent, created_at
+		FROM onboarding_milestones
+		WHERE workflow_id = $1
+		ORDER BY target_date
+	`
+	
+	milestonesRows, err := r.db.Query(ctx, milestonesQuery, id)
 	if err != nil {
 		return nil, err
 	}
+	defer milestonesRows.Close()
 	
-	// Convert []*WorkflowException to []WorkflowException
-	exceptions := make([]models.WorkflowException, len(exceptionsPtr))
-	for i, e := range exceptionsPtr {
-		exceptions[i] = *e
+	milestones := []models.OnboardingMilestone{}
+	for milestonesRows.Next() {
+		milestone := models.OnboardingMilestone{}
+		err := milestonesRows.Scan(
+			&milestone.ID,
+			&milestone.WorkflowID,
+			&milestone.Name,
+			&milestone.Description,
+			&milestone.TargetDate,
+			&milestone.CompletedDate,
+			&milestone.Status,
+			&milestone.CelebrationSent,
+			&milestone.CreatedAt,
+		)
+		if err != nil {
+			return nil, err
+		}
+		milestones = append(milestones, milestone)
 	}
 	
-	// Get documents
-	documentsPtr, err := r.GetDocuments(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	
-	// Convert []*WorkflowDocument to []WorkflowDocument
-	documents := make([]models.WorkflowDocument, len(documentsPtr))
-	for i, d := range documentsPtr {
-		documents[i] = *d
-	}
-	
-	return &models.WorkflowWithDetails{
+	return &models.OnboardingWithDetails{
 		Workflow:   *workflow,
-		Steps:      steps,
-		Exceptions: exceptions,
-		Documents:  documents,
+		Tasks:      tasks,
+		Milestones: milestones,
 		Employee:   employee,
 	}, nil
 }
 
 func (r *workflowRepository) ListWorkflows(ctx context.Context, filters map[string]interface{}) ([]*models.OnboardingWorkflow, error) {
 	query := `
-		SELECT id, employee_id, template_name, status, current_stage,
-			progress_percentage, started_at, expected_completion,
-			actual_completion, created_by, created_at, updated_at
+		SELECT 
+			id, employee_id, start_date, expected_completion_date,
+			actual_completion_date, status, overall_progress,
+			assigned_buddy_id, assigned_manager_id, notes,
+			created_by, created_at, updated_at
 		FROM onboarding_workflows
 		WHERE 1=1
 	`
@@ -212,13 +259,14 @@ func (r *workflowRepository) ListWorkflows(ctx context.Context, filters map[stri
 	args := []interface{}{}
 	argPos := 1
 	
+	// Add filters if provided
 	if status, ok := filters["status"].(string); ok && status != "" {
 		query += fmt.Sprintf(" AND status = $%d", argPos)
 		args = append(args, status)
 		argPos++
 	}
 	
-	if employeeID, ok := filters["employee_id"].(uuid.UUID); ok {
+	if employeeID, ok := filters["employee_id"].(uuid.UUID); ok && employeeID != uuid.Nil {
 		query += fmt.Sprintf(" AND employee_id = $%d", argPos)
 		args = append(args, employeeID)
 		argPos++
@@ -235,46 +283,58 @@ func (r *workflowRepository) ListWorkflows(ctx context.Context, filters map[stri
 	workflows := []*models.OnboardingWorkflow{}
 	for rows.Next() {
 		workflow := &models.OnboardingWorkflow{}
-		var createdBy sql.NullString
-		
 		err := rows.Scan(
 			&workflow.ID,
 			&workflow.EmployeeID,
-			&workflow.TemplateName,
+			&workflow.StartDate,
+			&workflow.ExpectedCompletionDate,
+			&workflow.ActualCompletionDate,
 			&workflow.Status,
-			&workflow.CurrentStage,
-			&workflow.ProgressPercentage,
-			&workflow.StartedAt,
-			&workflow.ExpectedCompletion,
-			&workflow.ActualCompletion,
-			&createdBy,
+			&workflow.OverallProgress,
+			&workflow.AssignedBuddyID,
+			&workflow.AssignedManagerID,
+			&workflow.Notes,
+			&workflow.CreatedBy,
 			&workflow.CreatedAt,
 			&workflow.UpdatedAt,
 		)
 		if err != nil {
 			return nil, err
 		}
-		
-		if createdBy.Valid {
-			id, _ := uuid.Parse(createdBy.String)
-			workflow.CreatedBy = &id
-		}
-		
 		workflows = append(workflows, workflow)
 	}
 	
 	return workflows, nil
 }
 
-func (r *workflowRepository) UpdateWorkflowStatus(ctx context.Context, id uuid.UUID, status string) error {
-	query := `UPDATE onboarding_workflows SET status = $1, updated_at = NOW() WHERE id = $2`
-	_, err := r.db.Exec(ctx, query, status, id)
+func (r *workflowRepository) UpdateWorkflowStatus(ctx context.Context, workflowID uuid.UUID, status string) error {
+	query := `
+		UPDATE onboarding_workflows
+		SET status = $1,
+		    updated_at = NOW()
+		WHERE id = $2
+	`
+	
+	_, err := r.db.Exec(ctx, query, status, workflowID)
 	return err
 }
 
 func (r *workflowRepository) UpdateWorkflowStage(ctx context.Context, id uuid.UUID, stage string) error {
 	query := `UPDATE onboarding_workflows SET current_stage = $1, updated_at = NOW() WHERE id = $2`
 	_, err := r.db.Exec(ctx, query, stage, id)
+	return err
+}
+
+// UpdateWorkflowProgress updates the overall progress percentage
+func (r *workflowRepository) UpdateWorkflowProgress(ctx context.Context, workflowID uuid.UUID, progress int) error {
+	query := `
+		UPDATE onboarding_workflows
+		SET overall_progress = $1,
+		    updated_at = NOW()
+		WHERE id = $2
+	`
+	
+	_, err := r.db.Exec(ctx, query, progress, workflowID)
 	return err
 }
 

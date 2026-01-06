@@ -204,3 +204,136 @@ type PostToJobBoardsRequest struct {
 	JobPostingID uuid.UUID `json:"job_posting_id" validate:"required"`
 	Boards       []string  `json:"boards" validate:"required"` // linkedin, indeed, glassdoor, etc.
 }
+
+// RecruitingProvider represents a recruiting platform integration
+type RecruitingProvider struct {
+	ID              uuid.UUID              `json:"id" db:"id"`
+	Type            string                 `json:"type" db:"type"` // linkedin, indeed, ziprecruiter, glassdoor, monster, custom
+	Name            string                 `json:"name" db:"name"`
+	Icon            string                 `json:"icon" db:"icon"`
+	Color           string                 `json:"color" db:"color"`
+	IsConnected     bool                   `json:"is_connected" db:"is_connected"`
+	Config          map[string]interface{} `json:"config" db:"config"` // Stores credentials, API keys, etc.
+	JobsPosted      int                    `json:"jobs_posted" db:"jobs_posted"`
+	ApplicantsTotal int                    `json:"applicants_total" db:"applicants_total"`
+	LastSyncedAt    *time.Time             `json:"last_synced_at,omitempty" db:"last_synced_at"`
+	CreatedAt       time.Time              `json:"created_at" db:"created_at"`
+	UpdatedAt       time.Time              `json:"updated_at" db:"updated_at"`
+}
+
+// RecruitingDashboardStats provides overview statistics
+type RecruitingDashboardStats struct {
+	ActiveJobs         int     `json:"active_jobs"`
+	TotalApplications  int     `json:"total_applications"`
+	InterviewsScheduled int    `json:"interviews_scheduled"`
+	OffersExtended     int     `json:"offers_extended"`
+	AverageTimeToHire  float64 `json:"average_time_to_hire"` // days
+	ApplicationsByMonth map[string]int `json:"applications_by_month"`
+}
+
+// RecruitingDashboard provides comprehensive dashboard data
+type RecruitingDashboard struct {
+	Stats              RecruitingDashboardStats `json:"stats"`
+	RecentApplications []*CandidateWithJob      `json:"recent_applications"`
+	TopPerformingJobs  []*JobPosting            `json:"top_performing_jobs"`
+	UpcomingInterviews []*InterviewWithDetails  `json:"upcoming_interviews"`
+}
+
+// InterviewWithDetails includes candidate and job information
+type InterviewWithDetails struct {
+	Interview
+	CandidateName string `json:"candidate_name" db:"candidate_name"`
+	JobTitle      string `json:"job_title" db:"job_title"`
+	InterviewerName string `json:"interviewer_name" db:"interviewer_name"`
+}
+
+// ApplicantLeaderboard represents ranked applicants
+type ApplicantLeaderboard struct {
+	Rank              int       `json:"rank"`
+	CandidateID       uuid.UUID `json:"candidate_id"`
+	CandidateName     string    `json:"candidate_name"`
+	JobTitle          string    `json:"job_title"`
+	Score             int       `json:"score"`
+	SkillsMatch       int       `json:"skills_match"`
+	ExperienceMatch   int       `json:"experience_match"`
+	CultureFit        int       `json:"culture_fit"`
+	Status            string    `json:"status"`
+	AppliedDate       time.Time `json:"applied_date"`
+	Source            string    `json:"source"`
+}
+
+// Provider Request/Response Models
+
+// CreateProviderRequest for adding a new recruiting provider
+type CreateProviderRequest struct {
+	Type   string                 `json:"type" validate:"required"`
+	Name   string                 `json:"name" validate:"required"`
+	Config map[string]interface{} `json:"config" validate:"required"`
+}
+
+// UpdateProviderRequest for updating provider configuration
+type UpdateProviderRequest struct {
+	Name   *string                 `json:"name,omitempty"`
+	Config *map[string]interface{} `json:"config,omitempty"`
+}
+
+// TestProviderConnectionRequest for testing provider connectivity
+type TestProviderConnectionRequest struct {
+	Type   string                 `json:"type" validate:"required"`
+	Config map[string]interface{} `json:"config" validate:"required"`
+}
+
+// TestProviderConnectionResponse returns connection test result
+type TestProviderConnectionResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
+// AnalyzeCandidateRequest for AI candidate analysis
+type AnalyzeCandidateRequest struct {
+	CandidateID uuid.UUID `json:"candidate_id" validate:"required"`
+	Reanalyze   bool      `json:"reanalyze"` // Force reanalysis even if already analyzed
+}
+
+// UpdateCandidateStatusRequest for updating candidate status
+type UpdateCandidateStatusRequest struct {
+	Status string  `json:"status" validate:"required"`
+	Notes  *string `json:"notes,omitempty"`
+}
+
+// Schedule Interview Request
+type ScheduleInterviewRequest struct {
+	CandidateID   uuid.UUID `json:"candidate_id" validate:"required"`
+	InterviewerID uuid.UUID `json:"interviewer_id" validate:"required"`
+	ScheduledAt   time.Time `json:"scheduled_at" validate:"required"`
+	Duration      int       `json:"duration" validate:"required"` // minutes
+	InterviewType string    `json:"interview_type" validate:"required"` // phone, video, onsite
+	Location      *string   `json:"location,omitempty"`
+	MeetingURL    *string   `json:"meeting_url,omitempty"`
+}
+
+// Update Interview Request
+type UpdateInterviewRequest struct {
+	ScheduledAt   *time.Time `json:"scheduled_at,omitempty"`
+	Duration      *int       `json:"duration,omitempty"`
+	InterviewType *string    `json:"interview_type,omitempty"`
+	Location      *string    `json:"location,omitempty"`
+	MeetingURL    *string    `json:"meeting_url,omitempty"`
+	Status        *string    `json:"status,omitempty"`
+	Feedback      *string    `json:"feedback,omitempty"`
+	Rating        *int       `json:"rating,omitempty"`
+}
+
+// Workflow Stats
+type WorkflowStats struct {
+	TotalTemplates      int `json:"total_templates"`
+	ActiveOnboardings   int `json:"active_onboardings"`
+	CompletedThisMonth  int `json:"completed_this_month"`
+	AvgCompletionTime   int `json:"avg_completion_time"` // days
+}
+
+// PostToProvidersRequest for posting to multiple provider IDs
+type PostToProvidersRequest struct {
+	JobPostingID uuid.UUID   `json:"job_posting_id" validate:"required"`
+	ProviderIDs  []uuid.UUID `json:"provider_ids" validate:"required"` // Provider UUIDs
+}
