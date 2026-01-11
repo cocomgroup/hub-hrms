@@ -5,11 +5,11 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
+	"log"
 	"encoding/json"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/lib/pq"
 	"hub-hrms/backend/internal/models"
 )
 
@@ -24,7 +24,7 @@ type RecruitingRepository interface {
 
 	// Candidates
 	CreateCandidate(ctx context.Context, candidate *models.Candidate) error
-	GetCandidate(ctx context.Context, id uuid.UUID) (*models.Candidate, error)
+	GetCandidateByID(ctx context.Context, id uuid.UUID) (*models.Candidate, error)
 	GetCandidatesByJob(ctx context.Context, jobID uuid.UUID, status string) ([]*models.Candidate, error)
 	UpdateCandidate(ctx context.Context, id uuid.UUID, updates map[string]interface{}) error
 	DeleteCandidate(ctx context.Context, id uuid.UUID) error
@@ -73,10 +73,10 @@ func (r *recruitingRepository) CreateJobPosting(ctx context.Context, job *models
 	query := `
 		INSERT INTO job_postings (
 			id, title, department, location, employment_type,
-			salary_min, salary_max, description, requirements,
-			responsibilities, benefits, status, posted_date,
+			salary_min, salary_max, salary_currency, description, requirements,
+			responsibilities, benefits, status, providers, posted_date,
 			created_by, created_at, updated_at
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 	`
 
 	_, err := r.db.Exec(ctx, query,
@@ -87,11 +87,13 @@ func (r *recruitingRepository) CreateJobPosting(ctx context.Context, job *models
 		job.EmploymentType,
 		job.SalaryMin,
 		job.SalaryMax,
+		job.SalaryCurrency,
 		job.Description,
-		pq.Array(job.Requirements),
-		pq.Array(job.Responsibilities),
-		pq.Array(job.Benefits),
+		job.Requirements,
+		job.Responsibilities,
+		job.Benefits,
 		job.Status,
+		job.Providers,
 		job.PostedDate,
 		job.CreatedBy,
 		job.CreatedAt,
@@ -105,8 +107,8 @@ func (r *recruitingRepository) GetJobPosting(ctx context.Context, id uuid.UUID) 
 	query := `
 		SELECT 
 			id, title, department, location, employment_type,
-			salary_min, salary_max, description, requirements,
-			responsibilities, benefits, status, posted_date,
+			salary_min, salary_max, salary_currency, description, requirements,
+			responsibilities, benefits, status, providers, posted_date,
 			closed_date, applications_count, created_by,
 			created_at, updated_at
 		FROM job_postings
@@ -122,11 +124,13 @@ func (r *recruitingRepository) GetJobPosting(ctx context.Context, id uuid.UUID) 
 		&job.EmploymentType,
 		&job.SalaryMin,
 		&job.SalaryMax,
+		&job.SalaryCurrency,
 		&job.Description,
-		pq.Array(&job.Requirements),
-		pq.Array(&job.Responsibilities),
-		pq.Array(&job.Benefits),
+		&job.Requirements,
+		&job.Responsibilities,
+		&job.Benefits,
 		&job.Status,
+		&job.Providers,
 		&job.PostedDate,
 		&job.ClosedDate,
 		&job.ApplicationsCount,
@@ -149,8 +153,8 @@ func (r *recruitingRepository) ListJobPostings(ctx context.Context, status strin
 	query := `
 		SELECT 
 			id, title, department, location, employment_type,
-			salary_min, salary_max, description, requirements,
-			responsibilities, benefits, status, posted_date,
+			salary_min, salary_max, salary_currency, description, requirements,
+			responsibilities, benefits, status, providers, posted_date,
 			closed_date, applications_count, created_by,
 			created_at, updated_at
 		FROM job_postings
@@ -175,11 +179,13 @@ func (r *recruitingRepository) ListJobPostings(ctx context.Context, status strin
 			&job.EmploymentType,
 			&job.SalaryMin,
 			&job.SalaryMax,
+			&job.SalaryCurrency,
 			&job.Description,
-			pq.Array(&job.Requirements),
-			pq.Array(&job.Responsibilities),
-			pq.Array(&job.Benefits),
+			&job.Requirements,
+			&job.Responsibilities,
+			&job.Benefits,
 			&job.Status,
+			&job.Providers,
 			&job.PostedDate,
 			&job.ClosedDate,
 			&job.ApplicationsCount,
@@ -276,10 +282,10 @@ func (r *recruitingRepository) CreateCandidate(ctx context.Context, candidate *m
 		candidate.Status,
 		candidate.Score,
 		candidate.AISummary,
-		pq.Array(candidate.Strengths),
-		pq.Array(candidate.Weaknesses),
+		candidate.Strengths,
+		candidate.Weaknesses,
 		candidate.ExperienceYears,
-		pq.Array(candidate.Skills),
+		candidate.Skills,
 		candidate.AppliedDate,
 		candidate.Notes,
 		candidate.CreatedAt,
@@ -289,13 +295,17 @@ func (r *recruitingRepository) CreateCandidate(ctx context.Context, candidate *m
 	return err
 }
 
-func (r *recruitingRepository) GetCandidate(ctx context.Context, id uuid.UUID) (*models.Candidate, error) {
+func (r *recruitingRepository) GetCandidateByID(ctx context.Context, id uuid.UUID) (*models.Candidate, error) {
 	query := `
 		SELECT 
 			id, job_posting_id, first_name, last_name, email, phone,
 			resume_url, cover_letter, linkedin_url, portfolio_url,
-			status, score, ai_summary, strengths, weaknesses,
-			experience_years, skills, applied_date, notes,
+			status, score, ai_summary, 
+			COALESCE(strengths, '{}'::text[]) as strengths,
+			COALESCE(weaknesses, '{}'::text[]) as weaknesses,
+			experience_years, 
+			COALESCE(skills, '{}'::text[]) as skills,
+			applied_date, notes,
 			created_at, updated_at
 		FROM candidates
 		WHERE id = $1
@@ -316,10 +326,10 @@ func (r *recruitingRepository) GetCandidate(ctx context.Context, id uuid.UUID) (
 		&candidate.Status,
 		&candidate.Score,
 		&candidate.AISummary,
-		pq.Array(&candidate.Strengths),
-		pq.Array(&candidate.Weaknesses),
+		&candidate.Strengths,
+		&candidate.Weaknesses,
 		&candidate.ExperienceYears,
-		pq.Array(&candidate.Skills),
+		&candidate.Skills,
 		&candidate.AppliedDate,
 		&candidate.Notes,
 		&candidate.CreatedAt,
@@ -341,8 +351,12 @@ func (r *recruitingRepository) GetCandidatesByJob(ctx context.Context, jobID uui
 		SELECT 
 			id, job_posting_id, first_name, last_name, email, phone,
 			resume_url, cover_letter, linkedin_url, portfolio_url,
-			status, score, ai_summary, strengths, weaknesses,
-			experience_years, skills, applied_date, notes,
+			status, score, ai_summary, 
+			COALESCE(strengths, ARRAY[]::text[]) as strengths,
+			COALESCE(weaknesses, ARRAY[]::text[]) as weaknesses,
+			experience_years, 
+			COALESCE(skills, ARRAY[]::text[]) as skills,
+			applied_date, notes,
 			created_at, updated_at
 		FROM candidates
 		WHERE job_posting_id = $1
@@ -373,10 +387,10 @@ func (r *recruitingRepository) GetCandidatesByJob(ctx context.Context, jobID uui
 			&candidate.Status,
 			&candidate.Score,
 			&candidate.AISummary,
-			pq.Array(&candidate.Strengths),
-			pq.Array(&candidate.Weaknesses),
+			&candidate.Strengths,
+			&candidate.Weaknesses,
 			&candidate.ExperienceYears,
-			pq.Array(&candidate.Skills),
+			&candidate.Skills,
 			&candidate.AppliedDate,
 			&candidate.Notes,
 			&candidate.CreatedAt,
@@ -390,6 +404,7 @@ func (r *recruitingRepository) GetCandidatesByJob(ctx context.Context, jobID uui
 
 	return candidates, nil
 }
+
 
 func (r *recruitingRepository) UpdateCandidate(ctx context.Context, id uuid.UUID, updates map[string]interface{}) error {
 	query := `
@@ -933,6 +948,7 @@ func (r *recruitingRepository) GetDashboardStats(ctx context.Context) (*models.R
 func (r *recruitingRepository) GetDashboard(ctx context.Context) (*models.RecruitingDashboard, error) {
 	dashboard := &models.RecruitingDashboard{}
 
+	log.Printf("GetDashboardStats")
 	// Get stats
 	stats, err := r.GetDashboardStats(ctx)
 	if err != nil {
@@ -941,6 +957,7 @@ func (r *recruitingRepository) GetDashboard(ctx context.Context) (*models.Recrui
 	dashboard.Stats = *stats
 
 	// Get recent applications
+	log.Printf("GetRecentApplications")
 	recentApps, err := r.GetRecentApplications(ctx, 10)
 	if err != nil {
 		return nil, err
@@ -948,6 +965,7 @@ func (r *recruitingRepository) GetDashboard(ctx context.Context) (*models.Recrui
 	dashboard.RecentApplications = recentApps
 
 	// Get top performing jobs
+	log.Printf("GetTopPerformingJobs")
 	topJobs, err := r.GetTopPerformingJobs(ctx, 5)
 	if err != nil {
 		return nil, err
@@ -955,11 +973,13 @@ func (r *recruitingRepository) GetDashboard(ctx context.Context) (*models.Recrui
 	dashboard.TopPerformingJobs = topJobs
 
 	// Get upcoming interviews
+	log.Printf("GetUpcomingInterviews")
 	interviews, err := r.GetUpcomingInterviews(ctx, 10)
 	if err != nil {
 		return nil, err
 	}
 	dashboard.UpcomingInterviews = interviews
+	log.Printf("Returning dashboard %s", dashboard)
 
 	return dashboard, nil
 }
@@ -969,8 +989,12 @@ func (r *recruitingRepository) GetRecentApplications(ctx context.Context, limit 
 		SELECT 
 			c.id, c.job_posting_id, c.first_name, c.last_name, c.email, c.phone,
 			c.resume_url, c.cover_letter, c.linkedin_url, c.portfolio_url,
-			c.status, c.score, c.ai_summary, c.strengths, c.weaknesses,
-			c.experience_years, c.skills, c.applied_date, c.notes,
+			c.status, c.score, c.ai_summary, 
+			COALESCE(c.strengths, ARRAY[]::text[]) as strengths,
+			COALESCE(c.weaknesses, ARRAY[]::text[]) as weaknesses,
+			c.experience_years, 
+			COALESCE(c.skills, ARRAY[]::text[]) as skills,
+			c.applied_date, c.notes,
 			c.created_at, c.updated_at,
 			j.title as job_title, j.department as job_department
 		FROM candidates c
@@ -992,8 +1016,11 @@ func (r *recruitingRepository) GetRecentApplications(ctx context.Context, limit 
 		err := rows.Scan(
 			&c.ID, &c.JobPostingID, &c.FirstName, &c.LastName, &c.Email, &c.Phone,
 			&c.ResumeURL, &c.CoverLetter, &c.LinkedInURL, &c.PortfolioURL,
-			&c.Status, &c.Score, &c.AISummary, pq.Array(&c.Strengths), pq.Array(&c.Weaknesses),
-			&c.ExperienceYears, pq.Array(&c.Skills), &c.AppliedDate, &c.Notes,
+			&c.Status, &c.Score, &c.AISummary, 
+			&c.Strengths, &c.Weaknesses,
+			&c.ExperienceYears, 
+			&c.Skills, 
+			&c.AppliedDate, &c.Notes,
 			&c.CreatedAt, &c.UpdatedAt,
 			&c.JobTitle, &c.JobDepartment,
 		)
@@ -1032,8 +1059,8 @@ func (r *recruitingRepository) GetTopPerformingJobs(ctx context.Context, limit i
 		var job models.JobPosting
 		err := rows.Scan(
 			&job.ID, &job.Title, &job.Department, &job.Location, &job.EmploymentType,
-			&job.SalaryMin, &job.SalaryMax, &job.Description, pq.Array(&job.Requirements),
-			pq.Array(&job.Responsibilities), pq.Array(&job.Benefits), &job.Status,
+			&job.SalaryMin, &job.SalaryMax, &job.Description, &job.Requirements,
+			&job.Responsibilities, &job.Benefits, &job.Status,
 			&job.PostedDate, &job.ClosedDate, &job.ApplicationsCount, &job.CreatedBy,
 			&job.CreatedAt, &job.UpdatedAt,
 		)

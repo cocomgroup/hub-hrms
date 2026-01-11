@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"encoding/json"
 	"hub-hrms/backend/internal/integrations"
 	"hub-hrms/backend/internal/models"
 	"hub-hrms/backend/internal/repository"
@@ -45,6 +46,14 @@ type WorkflowService interface {
 	UpdateWorkflowTemplate(ctx context.Context, template *models.WorkflowTemplate, steps []models.WorkflowStepDef) error
 	DeleteWorkflowTemplate(ctx context.Context, templateID uuid.UUID) error
 
+	GetStats(ctx context.Context) (map[string]interface{}, error)
+	ListTemplates(ctx context.Context, activeOnly bool) ([]*models.WorkflowTemplate, error)
+	CreateTemplate(ctx context.Context, req interface{}) (*models.WorkflowTemplate, error)
+	GetTemplate(ctx context.Context, id string) (*models.WorkflowTemplate, error)
+	UpdateTemplate(ctx context.Context, id string, req interface{}) (*models.WorkflowTemplate, error) 
+	DeleteTemplate(ctx context.Context, id string) error
+	ToggleTemplate(ctx context.Context, id string) (*models.WorkflowTemplate, error)
+	GetRecentAssignments(ctx context.Context, limit int) ([]map[string]interface{}, error)
 }
 
 type workflowService struct {
@@ -106,9 +115,9 @@ func getCurrentStage(workflow *models.OnboardingWorkflow) string {
 }
 
 // InitiateWorkflow creates a new workflow from a template
-func (s *workflowService) InitiateWorkflow(ctx context.Context, employeeID uuid.UUID, templateName string, createdBy uuid.UUID) (*models.OnboardingWorkflow, error) {
-	log.Printf("DEBUG InitiateWorkflow: employeeID=%s, templateName=%s, createdBy=%s", employeeID, templateName, createdBy)
-	log.Printf("DEBUG InitiateWorkflow: createdBy is nil? %v", createdBy == uuid.Nil)
+func (s *workflowService) InitiateWorkflow(ctx context.Context, employeeID uuid.UUID, templateName string, createdByUserID uuid.UUID) (*models.OnboardingWorkflow, error) {
+	log.Printf("DEBUG InitiateWorkflow: employeeID=%s, templateName=%s, createdByUserID=%s", employeeID, templateName, createdByUserID)
+	log.Printf("DEBUG InitiateWorkflow: createdBy is nil? %v", createdByUserID == uuid.Nil)
 	
 	// Get employee details
 	employee, err := s.repos.Employee.GetByID(ctx, employeeID)
@@ -117,6 +126,12 @@ func (s *workflowService) InitiateWorkflow(ctx context.Context, employeeID uuid.
 	}
 	
 	now := time.Now()
+	
+	hrMgr, err := s.repos.Employee.GetByUserID(ctx, createdByUserID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get createdBy employee: %w", err)
+	}
+	createdBy := hrMgr.ID
 	
 	// Create workflow using NewHireOnboarding (OnboardingWorkflow) structure
 	workflow := &models.OnboardingWorkflow{
@@ -127,7 +142,7 @@ func (s *workflowService) InitiateWorkflow(ctx context.Context, employeeID uuid.
 		Status:                 "in_progress",  // not_started, in_progress, completed, overdue
 		StartDate:              now,
 		OverallProgress:        0,
-		CreatedBy:              &createdBy,
+		CreatedBy:              createdBy,  
 		CreatedAt:              now,
 		UpdatedAt:              now,
 	}
@@ -137,8 +152,10 @@ func (s *workflowService) InitiateWorkflow(ctx context.Context, employeeID uuid.
 	workflow.ExpectedCompletionDate = &expectedCompletion
 	
 	log.Printf("DEBUG InitiateWorkflow: workflow.CreatedBy = %v", workflow.CreatedBy)
-	if workflow.CreatedBy != nil {
-		log.Printf("DEBUG InitiateWorkflow: *workflow.CreatedBy = %s", *workflow.CreatedBy)
+	if workflow.CreatedBy != uuid.Nil {
+		log.Printf("DEBUG InitiateWorkflow: *workflow.CreatedBy = %s", workflow.CreatedBy)
+	} else {
+		log.Printf("DEBUG InitiateWorkflow: CreatedBy is nil (no user in context or user doesn't exist)")
 	}
 	
 	log.Printf("DEBUG InitiateWorkflow: About to call CreateOnboarding")
@@ -998,4 +1015,347 @@ func (s *workflowService) GetActiveTemplates(ctx context.Context) ([]*models.Wor
 	}
 
 	return active, nil
+}
+// GetStats returns workflow statistics for the dashboard
+func (s *workflowService) GetStats(ctx context.Context) (map[string]interface{}, error) {
+	// Count active workflow templates
+	templates, err := s.ListWorkflowTemplates(ctx)
+	if err != nil {
+		return nil, err
+	}
+	
+	activeTemplates := 0
+	for _, t := range templates {
+		if t.Status == "active" {
+			activeTemplates++
+		}
+	}
+	
+	// Count active workflows
+	workflows, err := s.ListWorkflows(ctx, map[string]interface{}{})
+	if err != nil {
+		return nil, err
+	}
+	
+	activeWorkflows := 0
+	completedThisMonth := 0
+	totalDays := 0
+	pendingAssignments := 0
+	
+	now := time.Now()
+	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	
+	for _, wf := range workflows {
+		switch wf.Status {
+		case "active", "in_progress":
+			activeWorkflows++
+		case "completed":
+			if wf.ActualCompletionDate != nil && wf.ActualCompletionDate.After(monthStart) {
+				completedThisMonth++
+				days := int(wf.ActualCompletionDate.Sub(wf.StartDate).Hours() / 24)
+				totalDays += days
+			}
+		case "pending":
+			pendingAssignments++
+		}
+	}
+	
+	avgDays := 0
+	if completedThisMonth > 0 {
+		avgDays = totalDays / completedThisMonth
+	}
+	
+	return map[string]interface{}{
+		"templates_count":      activeTemplates,
+		"active_workflows":     activeWorkflows,
+		"completed_this_month": completedThisMonth,
+		"avg_completion_time":  avgDays,
+		"pending_assignments":  pendingAssignments,
+	}, nil
+}
+
+// ListTemplates returns workflow templates with optional active filter
+func (s *workflowService) ListTemplates(ctx context.Context, activeOnly bool) ([]*models.WorkflowTemplate, error) {
+	templates, err := s.ListWorkflowTemplates(ctx)
+	if err != nil {
+		return nil, err
+	}
+	
+	if !activeOnly {
+		return templates, nil
+	}
+	
+	// Filter to only active templates
+	var activeTemplates []*models.WorkflowTemplate
+	for _, t := range templates {
+		if t.Status == "active" {
+			activeTemplates = append(activeTemplates, t)
+		}
+	}
+	
+	return activeTemplates, nil
+}
+
+// CreateTemplate creates a new workflow template
+// CreateTemplate creates a new workflow template
+func (s *workflowService) CreateTemplate(ctx context.Context, req interface{}) (*models.WorkflowTemplate, error) {
+	// Parse the request
+	reqData, ok := req.(map[string]interface{})
+	if !ok {
+		// Try to convert to map
+		jsonData, _ := json.Marshal(req)
+		json.Unmarshal(jsonData, &reqData)
+	}
+	
+	// Get user ID from context (if available)
+	userID := uuid.Nil
+	// In a real implementation, extract from context:
+	// userID := getUserIDFromContext(ctx)
+	
+	template := &models.WorkflowTemplate{
+		ID:           uuid.New(),
+		Name:         getStringOrEmpty(reqData, "name"),
+		Description:  getStringOrEmpty(reqData, "description"),
+		WorkflowType: getStringOrEmpty(reqData, "type"),
+		Status:       "active",
+		CreatedBy:    userID,
+		CreatedAt:    time.Now(),
+		UpdatedAt:    time.Now(),
+	}
+	
+	// Parse steps
+	var steps []models.WorkflowStepDef
+	if stepsData, ok := reqData["steps"].([]interface{}); ok {
+		for _, stepData := range stepsData {
+			if stepMap, ok := stepData.(map[string]interface{}); ok {
+				step := models.WorkflowStepDef{
+					ID:           uuid.New(),
+					WorkflowID:   template.ID,  // FIXED: Use template.ID (uuid.UUID)
+					StepOrder:    getIntOrZero(stepMap, "order"),
+					StepType:     getStringOrEmpty(stepMap, "step_type"),  // ADDED: Required field
+					StepName:     getStringOrEmpty(stepMap, "name"),
+					Description:  getStringOrEmpty(stepMap, "description"),
+					Required:     getBoolOrFalse(stepMap, "required"),
+					AutoTrigger:  getBoolOrFalse(stepMap, "auto_trigger"),
+					AssignedRole: getStringOrEmpty(stepMap, "assignee_role"),
+					DueDays:      getIntPointer(stepMap, "estimated_days"),  // FIXED: Pointer
+					CreatedAt:    time.Now(),
+				}
+				steps = append(steps, step)
+			}
+		}
+	}
+	
+	// Create template with steps
+	if err := s.CreateWorkflowTemplate(ctx, template, steps); err != nil {
+		return nil, err
+	}
+	
+	return template, nil
+}
+
+
+// GetTemplate retrieves a workflow template by ID
+func (s *workflowService) GetTemplate(ctx context.Context, id string) (*models.WorkflowTemplate, error) {
+	templateID, err := uuid.Parse(id)
+	if err != nil {
+		return nil, err
+	}
+	
+	return s.GetWorkflowTemplate(ctx, templateID)
+}
+
+// UpdateTemplate updates a workflow template
+func (s *workflowService) UpdateTemplate(ctx context.Context, id string, req interface{}) (*models.WorkflowTemplate, error) {
+	templateID, err := uuid.Parse(id)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Get existing template
+	template, err := s.GetWorkflowTemplate(ctx, templateID)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Parse the request
+	reqData, ok := req.(map[string]interface{})
+	if !ok {
+		jsonData, _ := json.Marshal(req)
+		json.Unmarshal(jsonData, &reqData)
+	}
+	
+	// Update template fields
+	if name, ok := reqData["name"].(string); ok {
+		template.Name = name
+	}
+	if desc, ok := reqData["description"].(string); ok {
+		template.Description = desc
+	}
+	if typ, ok := reqData["type"].(string); ok {
+		template.WorkflowType = typ
+	}
+
+	template.UpdatedAt = time.Now()
+	
+	// Parse steps
+	var steps []models.WorkflowStepDef
+	if stepsData, ok := reqData["steps"].([]interface{}); ok {
+		for _, stepData := range stepsData {
+			if stepMap, ok := stepData.(map[string]interface{}); ok {
+				step := models.WorkflowStepDef{
+					ID:           uuid.New(),
+					WorkflowID:   template.ID,  
+					StepOrder:    getIntOrZero(stepMap, "order"),
+					StepType:     getStringOrEmpty(stepMap, "step_type"),  
+					StepName:     getStringOrEmpty(stepMap, "name"),
+					Description:  getStringOrEmpty(stepMap, "description"),
+					Required:     getBoolOrFalse(stepMap, "required"),
+					AutoTrigger:  getBoolOrFalse(stepMap, "auto_trigger"),
+					AssignedRole: getStringOrEmpty(stepMap, "assignee_role"),
+					DueDays:      getIntPointer(stepMap, "estimated_days"),  
+					CreatedAt:    time.Now(),
+				}
+
+				steps = append(steps, step)
+			}
+		}
+	}
+	
+	// Update template with steps
+	if err := s.UpdateWorkflowTemplate(ctx, template, steps); err != nil {
+		return nil, err
+	}
+	
+	return template, nil
+}
+
+// DeleteTemplate deletes a workflow template
+func (s *workflowService) DeleteTemplate(ctx context.Context, id string) error {
+	templateID, err := uuid.Parse(id)
+	if err != nil {
+		return err
+	}
+	
+	return s.DeleteWorkflowTemplate(ctx, templateID)
+}
+
+// ToggleTemplate toggles the active status of a template
+func (s *workflowService) ToggleTemplate(ctx context.Context, id string) (*models.WorkflowTemplate, error) {
+	templateID, err := uuid.Parse(id)
+	if err != nil {
+		return nil, err
+	}
+	
+	template, err := s.GetWorkflowTemplate(ctx, templateID)
+	if err != nil {
+		return nil, err
+	}
+	
+	// Toggle active status
+	//template.Status = !template.Status
+	if template.Status == "draft" { 
+		template.Status = "active"
+	} else if template.Status == "active" { 
+		template.Status = "inactive" 
+	} else if template.Status == "inactive" {
+		template.Status = "active"
+	}
+	template.UpdatedAt = time.Now()
+	
+	// Update without changing steps
+	if err := s.UpdateWorkflowTemplate(ctx, template, nil); err != nil {
+		return nil, err
+	}
+	
+	return template, nil
+}
+
+// GetRecentAssignments returns recent workflow assignments
+func (s *workflowService) GetRecentAssignments(ctx context.Context, limit int) ([]map[string]interface{}, error) {
+	workflows, err := s.ListWorkflows(ctx, map[string]interface{}{})
+	if err != nil {
+		return nil, err
+	}
+	
+	// Convert to assignment format
+	var assignments []map[string]interface{}
+	count := 0
+	
+	// Sort by start date (most recent first)
+	for i := len(workflows) - 1; i >= 0 && count < limit; i-- {
+		wf := workflows[i]
+		
+		// Calculate progress
+		var progress = float64(wf.OverallProgress)
+		
+		assignment := map[string]interface{}{
+			"id":            wf.ID.String(),
+			"employee_id":   wf.EmployeeID.String(),
+			"employee_name": wf.EmployeeName, // Helper function
+			"template_name": s.getTemplateNameFromID(ctx, wf.WorkflowTemplateID ), // Helper function
+			"status":        wf.Status,
+			"progress":      progress,
+			"start_date":    wf.StartDate.Format(time.RFC3339),
+			"due_date":      wf.ExpectedCompletionDate.Format(time.RFC3339),
+		}
+		
+		assignments = append(assignments, assignment)
+		count++
+	}
+	
+	return assignments, nil
+}
+
+// Helper functions
+
+func getStringOrEmpty(m map[string]interface{}, key string) string {
+	if val, ok := m[key].(string); ok {
+		return val
+	}
+	return ""
+}
+
+func getIntOrZero(m map[string]interface{}, key string) int {
+	if val, ok := m[key].(float64); ok {
+		return int(val)
+	}
+	if val, ok := m[key].(int); ok {
+		return val
+	}
+	return 0
+}
+
+// Add this helper function near the other helper functions (around line 1290)
+func getIntPointer(m map[string]interface{}, key string) *int {
+	if val, ok := m[key].(float64); ok {
+		intVal := int(val)
+		return &intVal
+	}
+	if val, ok := m[key].(int); ok {
+		return &val
+	}
+	return nil
+}
+
+
+func getBoolOrFalse(m map[string]interface{}, key string) bool {
+	if val, ok := m[key].(bool); ok {
+		return val
+	}
+	return false
+}
+
+func (s *workflowService) getTemplateNameFromID(ctx context.Context, templateID *uuid.UUID) string {
+    // Handle nil pointer
+    if templateID == nil {
+        return "Direct Assignment"
+    }
+    
+    // Dereference pointer when calling GetTemplateByID
+    template, err := s.repos.Workflow.GetTemplateByID(ctx, *templateID)
+    if err != nil {
+        return "Template Not Found"
+    }
+    return template.Name
 }

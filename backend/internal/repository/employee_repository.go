@@ -15,6 +15,7 @@ import (
 type EmployeeRepository interface {
 	Create(ctx context.Context, employee *models.Employee) error
 	GetByID(ctx context.Context, id uuid.UUID) (*models.Employee, error)
+	GetByUserID(ctx context.Context, id uuid.UUID) (*models.Employee, error)
 	GetByEmail(ctx context.Context, email string) (*models.Employee, error)
 	List(ctx context.Context, filters map[string]interface{}) ([]*models.Employee, error)
 	Update(ctx context.Context, employee *models.Employee) error
@@ -91,14 +92,54 @@ func (r *employeeRepository) GetByID(ctx context.Context, id uuid.UUID) (*models
 	var phone, dept, pos, empType, addr, city, state, zip, country, ecName, ecPhone sql.NullString
 	
 	query := `
-		SELECT id, first_name, last_name, email, phone, date_of_birth, hire_date,
+		SELECT id, user_id, first_name, last_name, email, phone, date_of_birth, hire_date,
 			department, position, manager_id, employment_type, status,
 			street_address, city, state, zip_code, country,
 			emergency_contact_name, emergency_contact_phone, created_at, updated_at
 		FROM employees WHERE id = $1
 	`
 	err := r.db.QueryRow(ctx, query, id).Scan(
-		&employee.ID, &employee.FirstName, &employee.LastName, &employee.Email,
+		&employee.ID, &employee.UserID, &employee.FirstName, &employee.LastName, &employee.Email,
+		&phone, &employee.DateOfBirth, &employee.HireDate, &dept,
+		&pos, &employee.ManagerID, &empType, &employee.Status,
+		&addr, &city, &state, &zip,
+		&country, &ecName, &ecPhone,
+		&employee.CreatedAt, &employee.UpdatedAt,
+	)
+	
+	if err != nil {
+		return nil, err
+	}
+	
+	// Convert NullString to string
+	employee.Phone = phone.String
+	employee.Department = dept.String
+	employee.Position = pos.String
+	employee.EmploymentType = empType.String
+	employee.StreetAddress = addr.String
+	employee.City = city.String
+	employee.State = state.String
+	employee.ZipCode = zip.String
+	employee.Country = country.String
+	employee.EmergencyContactName = ecName.String
+	employee.EmergencyContactPhone = ecPhone.String
+	
+	return employee, nil
+}
+
+func (r *employeeRepository) GetByUserID(ctx context.Context, id uuid.UUID) (*models.Employee, error) {
+	employee := &models.Employee{}
+	var phone, dept, pos, empType, addr, city, state, zip, country, ecName, ecPhone sql.NullString
+	
+	query := `
+		SELECT id, user_id, first_name, last_name, email, phone, date_of_birth, hire_date,
+			department, position, manager_id, employment_type, status,
+			street_address, city, state, zip_code, country,
+			emergency_contact_name, emergency_contact_phone, created_at, updated_at
+		FROM employees WHERE user_id = $1
+	`
+	err := r.db.QueryRow(ctx, query, id).Scan(
+		&employee.ID, &employee.UserID, &employee.FirstName, &employee.LastName, &employee.Email,
 		&phone, &employee.DateOfBirth, &employee.HireDate, &dept,
 		&pos, &employee.ManagerID, &empType, &employee.Status,
 		&addr, &city, &state, &zip,

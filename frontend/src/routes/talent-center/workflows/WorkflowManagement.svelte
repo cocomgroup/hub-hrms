@@ -1,16 +1,18 @@
 <script lang="ts">
-  import { onMount, createEventDispatcher } from 'svelte';
-  import WorkflowManager from './WorkflowManager.svelte';
-  import OnboardingDashboard from './OnboardingDashboard.svelte';
+  import { onMount } from 'svelte';
+  import WorkflowTemplateManager from './WorkflowTemplateManager.svelte';
+  import WorkflowAssign from './WorkflowAssign.svelte';
+  import WorkflowMonitoring from './WorkflowMonitoring.svelte';
   
-  const dispatch = createEventDispatcher();
+  type Tab = 'templates' | 'assign' | 'monitoring';
   
-  let activeTab: 'templates' | 'onboarding' = 'templates';
+  let activeTab: Tab = 'templates';
   let stats = {
     templates: 0,
-    activeOnboardings: 0,
+    activeWorkflows: 0,
     completedThisMonth: 0,
-    averageCompletionTime: 0
+    averageCompletionTime: 0,
+    pendingAssignments: 0
   };
   let loading = true;
   
@@ -25,15 +27,16 @@
       const response = await fetch('/api/workflows/stats', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
+      
       if (response.ok) {
         const data = await response.json();
         stats = {
           templates: data.templates_count || 0,
-          activeOnboardings: data.active_onboardings || 0,
+          activeWorkflows: data.active_workflows || 0,
           completedThisMonth: data.completed_this_month || 0,
-          averageCompletionTime: data.avg_completion_time || 0
+          averageCompletionTime: Math.round(data.avg_completion_time || 0),
+          pendingAssignments: data.pending_assignments || 0
         };
-        dispatch('statsUpdated');
       }
     } catch (err) {
       console.error('Failed to load workflow stats:', err);
@@ -41,338 +44,345 @@
       loading = false;
     }
   }
+  
+  function handleStatsUpdate() {
+    loadStats();
+  }
 </script>
 
 <div class="workflow-management">
-  <!-- Header Stats -->
-  <div class="workflow-stats">
+  <!-- Header -->
+  <div class="page-header">
+    <div class="header-content">
+      <h1>Workflow Management</h1>
+      <p>Create templates, assign workflows to employees, and monitor progress</p>
+    </div>
+  </div>
+
+  <!-- Stats Cards -->
+  <div class="stats-grid">
     <div class="stat-card">
-      <div class="stat-icon">⚙️</div>
+      <div class="stat-icon">📋</div>
       <div class="stat-content">
         <div class="stat-value">{stats.templates}</div>
-        <div class="stat-label">Workflow Templates</div>
-        <div class="stat-sublabel">Active configurations</div>
+        <div class="stat-label">Templates</div>
+        <div class="stat-sublabel">Available workflow templates</div>
       </div>
     </div>
     
-    <div class="stat-card highlight">
+    <div class="stat-card active">
       <div class="stat-icon">🚀</div>
       <div class="stat-content">
-        <div class="stat-value">{stats.activeOnboardings}</div>
-        <div class="stat-label">Active Onboardings</div>
+        <div class="stat-value">{stats.activeWorkflows}</div>
+        <div class="stat-label">Active Workflows</div>
         <div class="stat-sublabel">Currently in progress</div>
       </div>
     </div>
     
     <div class="stat-card">
-      <div class="stat-icon">✓</div>
+      <div class="stat-icon">✅</div>
       <div class="stat-content">
         <div class="stat-value">{stats.completedThisMonth}</div>
-        <div class="stat-label">Completed This Month</div>
-        <div class="stat-sublabel">Successfully finished</div>
+        <div class="stat-label">Completed</div>
+        <div class="stat-sublabel">This month</div>
       </div>
     </div>
     
     <div class="stat-card">
       <div class="stat-icon">⏱️</div>
       <div class="stat-content">
-        <div class="stat-value">{stats.averageCompletionTime} days</div>
-        <div class="stat-label">Avg Completion Time</div>
-        <div class="stat-sublabel">Last 3 months</div>
+        <div class="stat-value">{stats.averageCompletionTime}d</div>
+        <div class="stat-label">Avg Time</div>
+        <div class="stat-sublabel">To completion</div>
       </div>
     </div>
-  </div>
-  
-  <!-- Info Banner -->
-  <div class="info-banner">
-    <div class="banner-icon">💡</div>
-    <div class="banner-content">
-      <h4>Workflow Management</h4>
-      <p>Create reusable templates for onboarding processes or monitor active new hire onboardings with real-time progress tracking.</p>
-    </div>
-  </div>
-  
-  <!-- Tab Navigation -->
-  <div class="workflow-tabs">
-    <button 
-      class="workflow-tab"
-      class:active={activeTab === 'templates'}
-      on:click={() => activeTab = 'templates'}
-    >
-      <span class="tab-icon">⚙️</span>
-      <span class="tab-text">Workflow Templates</span>
-      <span class="tab-description">Create and manage reusable workflows</span>
-    </button>
     
-    <button 
-      class="workflow-tab"
-      class:active={activeTab === 'onboarding'}
-      on:click={() => activeTab = 'onboarding'}
-    >
-      <span class="tab-icon">🚀</span>
-      <span class="tab-text">New Hire Onboarding</span>
-      <span class="tab-description">Monitor active onboarding processes</span>
-      {#if stats.activeOnboardings > 0}
-        <span class="tab-badge">{stats.activeOnboardings}</span>
-      {/if}
-    </button>
+    {#if stats.pendingAssignments > 0}
+      <div class="stat-card pending">
+        <div class="stat-icon">⚠️</div>
+        <div class="stat-content">
+          <div class="stat-value">{stats.pendingAssignments}</div>
+          <div class="stat-label">Pending</div>
+          <div class="stat-sublabel">Requires assignment</div>
+        </div>
+      </div>
+    {/if}
   </div>
-  
+
+  <!-- Tab Navigation -->
+  <div class="tabs-container">
+    <div class="tabs">
+      <button
+        class="tab"
+        class:active={activeTab === 'templates'}
+        on:click={() => activeTab = 'templates'}
+      >
+        <span class="tab-icon">📋</span>
+        <div class="tab-content">
+          <span class="tab-title">Add Workflow Template</span>
+          <span class="tab-description">Create reusable workflow templates</span>
+        </div>
+      </button>
+
+      <button
+        class="tab"
+        class:active={activeTab === 'assign'}
+        on:click={() => activeTab = 'assign'}
+      >
+        <span class="tab-icon">👤</span>
+        <div class="tab-content">
+          <span class="tab-title">Workflow Assign</span>
+          <span class="tab-description">Assign workflows to employees</span>
+        </div>
+        {#if stats.pendingAssignments > 0}
+          <span class="tab-badge">{stats.pendingAssignments}</span>
+        {/if}
+      </button>
+
+      <button
+        class="tab"
+        class:active={activeTab === 'monitoring'}
+        on:click={() => activeTab = 'monitoring'}
+      >
+        <span class="tab-icon">📊</span>
+        <div class="tab-content">
+          <span class="tab-title">Monitoring</span>
+          <span class="tab-description">Track employee workflow progress</span>
+        </div>
+        {#if stats.activeWorkflows > 0}
+          <span class="tab-badge">{stats.activeWorkflows}</span>
+        {/if}
+      </button>
+    </div>
+  </div>
+
   <!-- Tab Content -->
-  <div class="workflow-content">
+  <div class="tab-panel">
     {#if activeTab === 'templates'}
-      <div class="content-wrapper">
-        <div class="content-header">
-          <div>
-            <h3>Workflow Templates</h3>
-            <p>Define reusable workflow templates with steps, dependencies, and automation rules</p>
-          </div>
-        </div>
-        <WorkflowManager />
-      </div>
-    {:else}
-      <div class="content-wrapper">
-        <div class="content-header">
-          <div>
-            <h3>New Hire Onboarding</h3>
-            <p>Track onboarding progress, tasks completion, and AI-powered insights</p>
-          </div>
-        </div>
-        <OnboardingDashboard />
-      </div>
+      <WorkflowTemplateManager on:updated={handleStatsUpdate} />
+    {:else if activeTab === 'assign'}
+      <WorkflowAssign on:assigned={handleStatsUpdate} />
+    {:else if activeTab === 'monitoring'}
+      <WorkflowMonitoring on:updated={handleStatsUpdate} />
     {/if}
   </div>
 </div>
 
 <style>
   .workflow-management {
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
+    padding: 24px;
+    max-width: 1400px;
+    margin: 0 auto;
   }
-  
-  .workflow-stats {
+
+  .page-header {
+    margin-bottom: 32px;
+  }
+
+  .header-content h1 {
+    font-size: 32px;
+    font-weight: 700;
+    color: #1a202c;
+    margin: 0 0 8px 0;
+  }
+
+  .header-content p {
+    font-size: 16px;
+    color: #718096;
+    margin: 0;
+  }
+
+  /* Stats Grid */
+  .stats-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-    gap: 16px;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 20px;
+    margin-bottom: 32px;
   }
-  
+
   .stat-card {
     display: flex;
     align-items: center;
     gap: 16px;
-    padding: 20px;
+    padding: 24px;
     background: white;
     border-radius: 12px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    border: 1px solid #e2e8f0;
     transition: all 0.2s;
   }
-  
+
   .stat-card:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
   }
-  
-  .stat-card.highlight {
+
+  .stat-card.active {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
+    border: none;
   }
-  
+
+  .stat-card.pending {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+    border: none;
+  }
+
   .stat-icon {
-    font-size: 36px;
-    min-width: 50px;
+    font-size: 40px;
+    min-width: 60px;
     text-align: center;
   }
-  
+
   .stat-content {
     flex: 1;
   }
-  
+
   .stat-value {
-    font-size: 32px;
+    font-size: 36px;
     font-weight: 700;
     line-height: 1;
-    margin-bottom: 4px;
+    margin-bottom: 8px;
   }
-  
-  .stat-card.highlight .stat-value {
-    color: white;
-  }
-  
+
   .stat-label {
     font-size: 14px;
     font-weight: 600;
-    color: #111827;
-    margin-bottom: 2px;
+    margin-bottom: 4px;
   }
-  
-  .stat-card.highlight .stat-label {
+
+  .stat-card.active .stat-label,
+  .stat-card.pending .stat-label {
     color: rgba(255, 255, 255, 0.95);
   }
-  
+
   .stat-sublabel {
     font-size: 12px;
-    color: #6b7280;
+    opacity: 0.7;
   }
-  
-  .stat-card.highlight .stat-sublabel {
-    color: rgba(255, 255, 255, 0.8);
+
+  /* Tabs */
+  .tabs-container {
+    margin-bottom: 24px;
   }
-  
-  .info-banner {
-    display: flex;
-    align-items: start;
-    gap: 16px;
-    padding: 20px;
-    background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
-    border-left: 4px solid #3b82f6;
-    border-radius: 12px;
-  }
-  
-  .banner-icon {
-    font-size: 28px;
-  }
-  
-  .banner-content h4 {
-    font-size: 16px;
-    font-weight: 600;
-    color: #1e40af;
-    margin: 0 0 8px 0;
-  }
-  
-  .banner-content p {
-    font-size: 14px;
-    color: #1e3a8a;
-    margin: 0;
-    line-height: 1.5;
-  }
-  
-  .workflow-tabs {
+
+  .tabs {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
     gap: 16px;
     background: white;
     padding: 8px;
     border-radius: 12px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    border: 1px solid #e2e8f0;
   }
-  
-  .workflow-tab {
+
+  .tab {
     position: relative;
     display: flex;
-    flex-direction: column;
-    align-items: start;
-    gap: 8px;
+    align-items: center;
+    gap: 12px;
     padding: 20px;
-    background: white;
-    border: 2px solid #e5e7eb;
-    border-radius: 10px;
+    background: transparent;
+    border: 2px solid transparent;
+    border-radius: 8px;
     cursor: pointer;
     transition: all 0.2s;
     text-align: left;
   }
-  
-  .workflow-tab:hover {
-    border-color: #3b82f6;
-    background: #eff6ff;
+
+  .tab:hover {
+    background: #f7fafc;
+    border-color: #e2e8f0;
   }
-  
-  .workflow-tab.active {
+
+  .tab.active {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    border-color: #667eea;
     color: white;
+    border-color: transparent;
   }
-  
+
   .tab-icon {
-    font-size: 28px;
+    font-size: 32px;
+    min-width: 40px;
+    text-align: center;
   }
-  
-  .tab-text {
-    font-size: 18px;
-    font-weight: 600;
-  }
-  
-  .tab-description {
-    font-size: 13px;
-    color: #6b7280;
-  }
-  
-  .workflow-tab.active .tab-description {
-    color: rgba(255, 255, 255, 0.9);
-  }
-  
-  .tab-badge {
-    position: absolute;
-    top: 12px;
-    right: 12px;
-    padding: 4px 10px;
-    background: #ef4444;
-    color: white;
-    border-radius: 12px;
-    font-size: 12px;
-    font-weight: 600;
-  }
-  
-  .workflow-content {
-    background: white;
-    border-radius: 12px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    overflow: hidden;
-  }
-  
-  .content-wrapper {
+
+  .tab-content {
+    flex: 1;
     display: flex;
     flex-direction: column;
+    gap: 4px;
   }
-  
-  .content-header {
-    padding: 24px;
-    border-bottom: 1px solid #e5e7eb;
-    background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
-  }
-  
-  .content-header h3 {
-    font-size: 20px;
+
+  .tab-title {
+    font-size: 16px;
     font-weight: 600;
-    color: #111827;
-    margin: 0 0 8px 0;
   }
-  
-  .content-header p {
-    font-size: 14px;
-    color: #6b7280;
-    margin: 0;
+
+  .tab-description {
+    font-size: 12px;
+    opacity: 0.8;
   }
-  
-  @media (max-width: 1024px) {
-    .workflow-stats {
-      grid-template-columns: repeat(2, 1fr);
-    }
-    
-    .workflow-tabs {
-      grid-template-columns: 1fr;
-    }
+
+  .tab:not(.active) .tab-description {
+    color: #718096;
   }
-  
-  @media (max-width: 640px) {
-    .workflow-stats {
-      grid-template-columns: 1fr;
+
+  .tab-badge {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: #f56565;
+    color: white;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 8px;
+    border-radius: 12px;
+    min-width: 24px;
+    text-align: center;
+  }
+
+  .tab.active .tab-badge {
+    background: white;
+    color: #667eea;
+  }
+
+  /* Tab Panel */
+  .tab-panel {
+    background: white;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+    min-height: 500px;
+  }
+
+  @media (max-width: 768px) {
+    .workflow-management {
+      padding: 16px;
     }
-    
+
+    .stats-grid {
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 12px;
+    }
+
     .stat-card {
       padding: 16px;
     }
-    
+
     .stat-icon {
+      font-size: 32px;
+    }
+
+    .stat-value {
       font-size: 28px;
     }
-    
-    .stat-value {
-      font-size: 24px;
+
+    .tabs {
+      grid-template-columns: 1fr;
     }
-    
-    .info-banner {
-      flex-direction: column;
+
+    .tab {
+      padding: 16px;
     }
   }
 </style>

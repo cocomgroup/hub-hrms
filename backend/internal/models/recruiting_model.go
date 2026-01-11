@@ -8,49 +8,51 @@ import (
 
 // JobPosting represents a job opening
 type JobPosting struct {
-	ID                uuid.UUID `json:"id" db:"id"`
-	Title             string    `json:"title" db:"title"`
-	Department        string    `json:"department" db:"department"`
-	Location          string    `json:"location" db:"location"`
-	EmploymentType    string    `json:"employment_type" db:"employment_type"` // full-time, part-time, contract, internship
-	SalaryMin         *float64  `json:"salary_min,omitempty" db:"salary_min"`
-	SalaryMax         *float64  `json:"salary_max,omitempty" db:"salary_max"`
-	Description       string    `json:"description" db:"description"`
-	Requirements      []string  `json:"requirements" db:"requirements"`
-	Responsibilities  []string  `json:"responsibilities" db:"responsibilities"`
-	Benefits          []string  `json:"benefits" db:"benefits"`
-	Status            string    `json:"status" db:"status"` // draft, active, closed, filled
-	PostedDate        *time.Time `json:"posted_date,omitempty" db:"posted_date"`
-	ClosedDate        *time.Time `json:"closed_date,omitempty" db:"closed_date"`
-	ApplicationsCount int       `json:"applications_count" db:"applications_count"`
-	CreatedBy         uuid.UUID `json:"created_by" db:"created_by"`
-	CreatedAt         time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt         time.Time `json:"updated_at" db:"updated_at"`
+	ID                uuid.UUID   `json:"id" db:"id"`
+	Title             string      `json:"title" db:"title"`
+	Department        string      `json:"department" db:"department"`
+	Location          string      `json:"location" db:"location"`
+	EmploymentType    string      `json:"employment_type" db:"employment_type"` // full-time, part-time, contract, internship
+	SalaryMin         *float64    `json:"salary_min,omitempty" db:"salary_min"`
+	SalaryMax         *float64    `json:"salary_max,omitempty" db:"salary_max"`
+	SalaryCurrency    string      `json:"salary_currency" db:"salary_currency"` // ISO 4217 currency code (USD, EUR, GBP, etc.)
+	Description       string      `json:"description" db:"description"`
+	Requirements      StringArray `json:"requirements" db:"requirements"`
+	Responsibilities  StringArray `json:"responsibilities" db:"responsibilities"`
+	Benefits          StringArray `json:"benefits" db:"benefits"`
+	Status            string      `json:"status" db:"status"` // draft, active, closed, filled
+	Providers         StringArray `json:"providers" db:"providers"` // Array of provider IDs where job is posted
+	PostedDate        *time.Time  `json:"posted_date,omitempty" db:"posted_date"`
+	ClosedDate        *time.Time  `json:"closed_date,omitempty" db:"closed_date"`
+	ApplicationsCount int         `json:"applicant_count" db:"applications_count"` // Frontend expects applicant_count
+	CreatedBy         uuid.UUID   `json:"created_by" db:"created_by"`
+	CreatedAt         time.Time   `json:"created_at" db:"created_at"`
+	UpdatedAt         time.Time   `json:"updated_at" db:"updated_at"`
 }
 
 // Candidate represents a job applicant
 type Candidate struct {
-	ID             uuid.UUID  `json:"id" db:"id"`
-	JobPostingID   uuid.UUID  `json:"job_posting_id" db:"job_posting_id"`
-	FirstName      string     `json:"first_name" db:"first_name"`
-	LastName       string     `json:"last_name" db:"last_name"`
-	Email          string     `json:"email" db:"email"`
-	Phone          string     `json:"phone" db:"phone"`
-	ResumeURL      *string    `json:"resume_url,omitempty" db:"resume_url"`
-	CoverLetter    *string    `json:"cover_letter,omitempty" db:"cover_letter"`
-	LinkedInURL    *string    `json:"linkedin_url,omitempty" db:"linkedin_url"`
-	PortfolioURL   *string    `json:"portfolio_url,omitempty" db:"portfolio_url"`
-	Status         string     `json:"status" db:"status"` // new, screening, interview, offered, rejected, hired
-	Score          *int       `json:"score,omitempty" db:"score"` // AI match score 0-100
-	AISummary      *string    `json:"ai_summary,omitempty" db:"ai_summary"`
-	Strengths      []string   `json:"strengths,omitempty" db:"strengths"`
-	Weaknesses     []string   `json:"weaknesses,omitempty" db:"weaknesses"`
-	ExperienceYears *int      `json:"experience_years,omitempty" db:"experience_years"`
-	Skills         []string   `json:"skills" db:"skills"`
-	AppliedDate    time.Time  `json:"applied_date" db:"applied_date"`
-	Notes          *string    `json:"notes,omitempty" db:"notes"`
-	CreatedAt      time.Time  `json:"created_at" db:"created_at"`
-	UpdatedAt      time.Time  `json:"updated_at" db:"updated_at"`
+	ID              uuid.UUID   `json:"id" db:"id"`
+	JobPostingID    uuid.UUID   `json:"job_posting_id" db:"job_posting_id"`
+	FirstName       string      `json:"first_name" db:"first_name"`
+	LastName        string      `json:"last_name" db:"last_name"`
+	Email           string      `json:"email" db:"email"`
+	Phone           string      `json:"phone" db:"phone"`
+	ResumeURL       *string     `json:"resume_url,omitempty" db:"resume_url"`
+	CoverLetter     *string     `json:"cover_letter,omitempty" db:"cover_letter"`
+	LinkedInURL     *string     `json:"linkedin_url,omitempty" db:"linkedin_url"`
+	PortfolioURL    *string     `json:"portfolio_url,omitempty" db:"portfolio_url"`
+	Status          string      `json:"status" db:"status"` // new, screening, interview, offered, rejected, hired
+	Score           *int        `json:"score,omitempty" db:"score"` // AI match score 0-100
+	AISummary       *string     `json:"ai_summary,omitempty" db:"ai_summary"`
+	Strengths       StringArray `json:"strengths,omitempty" db:"strengths"`
+	Weaknesses      StringArray `json:"weaknesses,omitempty" db:"weaknesses"`
+	ExperienceYears *int        `json:"experience_years,omitempty" db:"experience_years"`
+	Skills          StringArray `json:"skills" db:"skills"`
+	AppliedDate     time.Time   `json:"applied_date" db:"applied_date"`
+	Notes           *string     `json:"notes,omitempty" db:"notes"`
+	CreatedAt       time.Time   `json:"created_at" db:"created_at"`
+	UpdatedAt       time.Time   `json:"updated_at" db:"updated_at"`
 }
 
 // CandidateWithJob includes job details with candidate
@@ -336,4 +338,19 @@ type WorkflowStats struct {
 type PostToProvidersRequest struct {
 	JobPostingID uuid.UUID   `json:"job_posting_id" validate:"required"`
 	ProviderIDs  []uuid.UUID `json:"provider_ids" validate:"required"` // Provider UUIDs
+}
+
+// JobUploadRequest represents the parsed job data from file
+type JobUploadRequest struct {
+	Title           string   `json:"title"`
+	Description     string   `json:"description"`
+	Department      string   `json:"department"`
+	Location        string   `json:"location"`
+	EmploymentType  string   `json:"employment_type"`
+	SalaryMin       int      `json:"salary_min"`
+	SalaryMax       int      `json:"salary_max"`
+	SalaryCurrency  string   `json:"salary_currency"`
+	Requirements    []string `json:"requirements"`
+	Responsibilities []string `json:"responsibilities"`
+	Benefits        []string `json:"benefits"`
 }

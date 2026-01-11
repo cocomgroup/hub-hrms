@@ -147,6 +147,8 @@ func setupRouter(services *service.Services, cfg *config.Config) *chi.Mux {
         api.RegisterProjectRoutes(r, services)
 		api.RegisterCompensationRoutes(r, services)
 		api.RegisterBankInfoRoutes(r, services)
+		api.RegisterAIRoutes(r, services)
+		api.RegisterBackgroundCheckRoutes(r, services)
 	})
 
 	return r
@@ -230,7 +232,7 @@ func runMigrations(database *db.Postgres) error {
         "014-seed-employees.sql",
         "015-seed-organizations.sql",
         "016-seed-pto-benefits.sql",
-        "017-seed-recruiting.sql",
+        //"017-seed-recruiting.sql",
         "018-seed-users.sql",
 	}
 

@@ -22,6 +22,9 @@ type RecruitingService interface {
 	PostToJobBoardsByProviderIDs(ctx context.Context, jobID uuid.UUID, providerIDs []uuid.UUID, userID uuid.UUID) error
 
 
+	// Applicants
+	CreateApplicant(ctx context.Context, applicant *models.Applicant) error
+
 	// Candidates
 	CreateCandidate(ctx context.Context, req *models.CreateCandidateRequest) (*models.Candidate, error)
 	GetCandidate(ctx context.Context, id uuid.UUID) (*models.Candidate, error)
@@ -74,27 +77,18 @@ func (s *recruitingService) CreateJobPosting(ctx context.Context, req *models.Cr
 		EmploymentType:    req.EmploymentType,
 		SalaryMin:         req.SalaryMin,
 		SalaryMax:         req.SalaryMax,
+		SalaryCurrency:    "USD", // Default to USD
 		Description:       req.Description,
-		Requirements:      req.Requirements,
-		Responsibilities:  req.Responsibilities,
-		Benefits:          req.Benefits,
+		Requirements:      models.FromSlice(req.Requirements),
+		Responsibilities:  models.FromSlice(req.Responsibilities),
+		Benefits:          models.FromSlice(req.Benefits),
 		Status:            "draft",
+		Providers:         models.StringArray{}, // Initialize empty providers array
 		PostedDate:        nil,
 		ApplicationsCount: 0,
 		CreatedBy:         userID,
 		CreatedAt:         now,
 		UpdatedAt:         now,
-	}
-
-	// Initialize empty arrays if nil
-	if job.Requirements == nil {
-		job.Requirements = []string{}
-	}
-	if job.Responsibilities == nil {
-		job.Responsibilities = []string{}
-	}
-	if job.Benefits == nil {
-		job.Benefits = []string{}
 	}
 
 	err := s.repos.Recruiting.CreateJobPosting(ctx, job)
@@ -312,7 +306,7 @@ func (s *recruitingService) CreateCandidate(ctx context.Context, req *models.Cre
 }
 
 func (s *recruitingService) GetCandidate(ctx context.Context, id uuid.UUID) (*models.Candidate, error) {
-	return s.repos.Recruiting.GetCandidate(ctx, id)
+	return s.repos.Recruiting.GetCandidateByID(ctx, id)
 }
 
 func (s *recruitingService) GetCandidatesByJob(ctx context.Context, jobID uuid.UUID, status string) ([]*models.Candidate, error) {
@@ -352,7 +346,7 @@ func (s *recruitingService) UpdateCandidate(ctx context.Context, id uuid.UUID, r
 		return nil, fmt.Errorf("failed to update candidate: %w", err)
 	}
 
-	return s.repos.Recruiting.GetCandidate(ctx, id)
+	return s.repos.Recruiting.GetCandidateByID(ctx, id)
 }
 
 func (s *recruitingService) DeleteCandidate(ctx context.Context, id uuid.UUID) error {
@@ -362,7 +356,7 @@ func (s *recruitingService) DeleteCandidate(ctx context.Context, id uuid.UUID) e
 // AI Services
 func (s *recruitingService) AnalyzeResume(ctx context.Context, candidateID uuid.UUID) (*models.ResumeAnalysisResponse, error) {
 	// Get candidate
-	candidate, err := s.repos.Recruiting.GetCandidate(ctx, candidateID)
+	candidate, err := s.repos.Recruiting.GetCandidateByID(ctx, candidateID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get candidate: %w", err)
 	}
@@ -453,7 +447,7 @@ func (s *recruitingService) mockResumeAnalysis(candidate *models.Candidate, job 
 
 func (s *recruitingService) GenerateEmail(ctx context.Context, req *models.EmailGenerationRequest) (*models.EmailGenerationResponse, error) {
 	// Get candidate
-	candidate, err := s.repos.Recruiting.GetCandidate(ctx, req.CandidateID)
+	candidate, err := s.repos.Recruiting.GetCandidateByID(ctx, req.CandidateID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get candidate: %w", err)
 	}
@@ -562,7 +556,7 @@ Hiring Team`, candidateName, job.Title)
 
 func (s *recruitingService) SendEmail(ctx context.Context, req *models.SendEmailRequest, sentBy uuid.UUID) error {
 	// Get candidate to validate
-	_, err := s.repos.Recruiting.GetCandidate(ctx, req.CandidateID)
+	_, err := s.repos.Recruiting.GetCandidateByID(ctx, req.CandidateID)
 	if err != nil {
 		return fmt.Errorf("failed to get candidate: %w", err)
 	}
@@ -950,4 +944,40 @@ func (s *recruitingService) PostToJobBoardsEnhanced(ctx context.Context, req *mo
 	}
 
 	return nil
+}
+
+func (s *recruitingService) CreateJobFromUpload(ctx context.Context, req *models.JobUploadRequest, userID uuid.UUID) (*models.JobPosting, error) {
+	// Convert JobUploadRequest to CreateJobPostingRequest
+	var salaryMin, salaryMax *float64
+	
+	if req.SalaryMin > 0 {
+		f := float64(req.SalaryMin)
+		salaryMin = &f
+	}
+	
+	if req.SalaryMax > 0 {
+		f := float64(req.SalaryMax)
+		salaryMax = &f
+	}
+
+	createReq := &models.CreateJobPostingRequest{
+		Title:            req.Title,
+		Department:       req.Department,
+		Location:         req.Location,
+		EmploymentType:   req.EmploymentType,
+		SalaryMin:        salaryMin,
+		SalaryMax:        salaryMax,
+		Description:      req.Description,
+		Requirements:     req.Requirements,
+		Responsibilities: req.Responsibilities,
+		Benefits:         req.Benefits,
+	}
+
+	// Use existing CreateJobPosting method
+	return s.CreateJobPosting(ctx, createReq, userID)
+}
+
+// CreateApplicant creates a new applicant record
+func (s *recruitingService) CreateApplicant(ctx context.Context, applicant *models.Applicant) error {
+	return s.repos.Applicant.Create(ctx, applicant)
 }

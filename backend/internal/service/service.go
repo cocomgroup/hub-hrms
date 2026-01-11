@@ -24,44 +24,145 @@ var (
 )
 
 type Services struct {
-	Auth         AuthService
-	User 	     UserService
-	Employee     EmployeeService
-	Onboarding   OnboardingService
-	Workflow     WorkflowService
-	Timesheet    TimesheetService
-	PTO          PTOService
-	Benefits     BenefitsService
-	Payroll      PayrollService
-	Recruiting   RecruitingService
-	Organization OrganizationService
-	Project      ProjectService
-	Compensation CompensationService
-	BankInfo     BankInfoService
+	Auth                AuthService
+	User                UserService
+	Employee            EmployeeService
+	Onboarding          OnboardingService
+	Workflow            WorkflowService
+	Timesheet           TimesheetService
+	PTO                 PTOService
+	Benefits            BenefitsService
+	Payroll             PayrollService
+	Recruiting          RecruitingService
+	Organization        OrganizationService
+	Project             ProjectService
+	Compensation        CompensationService
+	BankInfo            BankInfoService
+	BackgroundCheck     *BackgroundCheckService
+	// Notification services
+	Email               EmailService
+	InAppNotification   InAppNotificationService
+	BGCheckNotification NotificationService
 }
 
 func NewServices(repos *repository.Repositories, cfg *config.Config) *Services {
-		// Get encryption key from config/environment
+	// Get encryption key from config/environment
 	encryptionKey := os.Getenv("BANK_INFO_ENCRYPTION_KEY")
 	if encryptionKey == "" {
 		log.Fatal("BANK_INFO_ENCRYPTION_KEY must be set in environment")
 	}
+
+	// Initialize notification services
+	// For now, using mock services. In production, you would check environment
+	// and initialize AWS SES and DynamoDB services accordingly.
+	emailService := initializeEmailService()
+	inAppService := initializeInAppNotificationService()
+	
+	// Create employee repository adapter for notification service
+	employeeRepoAdapter := newEmployeeRepositoryAdapter(repos.Employee)
+	
+	// Create background check notification service
+	bgCheckNotificationService := NewBackgroundCheckNotificationService(
+		emailService,
+		inAppService,
+		employeeRepoAdapter,
+	)
+	
+	// Create background check service with notification support
+	bgCheckService := NewBackgroundCheckService(
+		repos.BackgroundCheck,
+		bgCheckNotificationService,
+	)
+	
 	return &Services{
-		Auth:         NewAuthService(repos, cfg),
-		User:   	  NewUserService(repos),
-		Employee:     NewEmployeeService(repos),
-		Onboarding:   NewOnboardingService(repos),
-		Workflow:     NewWorkflowService(repos),
-		Timesheet:    NewTimesheetService(repos.Timesheet, repos.Project),
-		PTO:          NewPTOService(repos),
-		Benefits:     NewBenefitsService(repos),
-		Payroll:      NewPayrollService(repos),
-		Recruiting:   NewRecruitingService(repos),
-		Organization: NewOrganizationService(repos),
-		Project:	  NewProjectService(repos),
-		Compensation: NewCompensationService(repos),
-		BankInfo:     NewBankInfoService(repos, encryptionKey),
+		Auth:                NewAuthService(repos, cfg),
+		User:                NewUserService(repos),
+		Employee:            NewEmployeeService(repos),
+		Onboarding:          NewOnboardingService(repos),
+		Workflow:            NewWorkflowService(repos),
+		Timesheet:           NewTimesheetService(repos.Timesheet, repos.Project),
+		PTO:                 NewPTOService(repos),
+		Benefits:            NewBenefitsService(repos),
+		Payroll:             NewPayrollService(repos),
+		Recruiting:          NewRecruitingService(repos),
+		Organization:        NewOrganizationService(repos),
+		Project:             NewProjectService(repos),
+		Compensation:        NewCompensationService(repos),
+		BankInfo:            NewBankInfoService(repos, encryptionKey),
+		BackgroundCheck:     bgCheckService,
+		Email:               emailService,
+		InAppNotification:   inAppService,
+		BGCheckNotification: bgCheckNotificationService,
 	}
+}
+
+// initializeEmailService creates the email service based on environment
+func initializeEmailService() EmailService {
+	// Check if we should use AWS SES or mock
+	useMock := os.Getenv("USE_MOCK_EMAIL") == "true"
+	
+	if useMock {
+		log.Println("Email service: Using mock implementation (development mode)")
+		return NewMockEmailService()
+	}
+	
+	// TODO: When you're ready for production, uncomment and configure AWS SES:
+	/*
+	awsConfig, err := awsconfig.LoadDefaultConfig(context.Background())
+	if err != nil {
+		log.Printf("WARNING: Failed to load AWS config: %v. Falling back to mock email service.", err)
+		return NewMockEmailService()
+	}
+	
+	sesClient := ses.NewFromConfig(awsConfig)
+	fromEmail := os.Getenv("HRMS_FROM_EMAIL")
+	replyToEmail := os.Getenv("HRMS_REPLY_TO_EMAIL")
+	
+	if fromEmail == "" || replyToEmail == "" {
+		log.Println("WARNING: Email addresses not configured. Using mock email service.")
+		return NewMockEmailService()
+	}
+	
+	log.Printf("Email service: Using AWS SES (from: %s, reply-to: %s)", fromEmail, replyToEmail)
+	return NewSESEmailService(sesClient, fromEmail, replyToEmail)
+	*/
+	
+	// For now, default to mock
+	log.Println("Email service: Using mock implementation (AWS SES not configured)")
+	return NewMockEmailService()
+}
+
+// initializeInAppNotificationService creates the in-app notification service
+func initializeInAppNotificationService() InAppNotificationService {
+	// Check if we should use DynamoDB or mock
+	useMock := os.Getenv("USE_MOCK_NOTIFICATIONS") == "true"
+	
+	if useMock {
+		log.Println("In-app notification service: Using mock implementation (development mode)")
+		return NewMockInAppNotificationService()
+	}
+	
+	// TODO: When you're ready for production, uncomment and configure DynamoDB:
+	/*
+	awsConfig, err := awsconfig.LoadDefaultConfig(context.Background())
+	if err != nil {
+		log.Printf("WARNING: Failed to load AWS config: %v. Falling back to mock notification service.", err)
+		return NewMockInAppNotificationService()
+	}
+	
+	dynamoClient := dynamodb.NewFromConfig(awsConfig)
+	tableName := os.Getenv("DYNAMODB_TABLE_NAME")
+	if tableName == "" {
+		tableName = "hrms-notifications" // default table name
+	}
+	
+	log.Printf("In-app notification service: Using DynamoDB (table: %s)", tableName)
+	return NewDynamoDBInAppNotificationService(dynamoClient, tableName)
+	*/
+	
+	// For now, default to mock
+	log.Println("In-app notification service: Using mock implementation (DynamoDB not configured)")
+	return NewMockInAppNotificationService()
 }
 
 // AuthService handles authentication and authorization

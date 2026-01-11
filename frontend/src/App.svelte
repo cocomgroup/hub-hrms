@@ -237,8 +237,6 @@
           <ProjectManagement {navigate} />
         {:else if currentPage === 'recruiting'}
           <Recruiting />
-        {:else if currentPage === 'hr-dashboard'}
-          <HRDashboard navigate={navigate} />
         {:else if currentPage === 'users'}
           <Users />
         {/if}

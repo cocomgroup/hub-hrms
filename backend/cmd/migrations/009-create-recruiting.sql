@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS job_postings (
     employment_type VARCHAR(50) NOT NULL CHECK (employment_type IN ('full-time', 'part-time', 'contract', 'internship')),
     salary_min DECIMAL(12,2),
     salary_max DECIMAL(12,2),
+    salary_currency VARCHAR(3) DEFAULT 'USD',
     description TEXT NOT NULL,
     requirements TEXT[] DEFAULT '{}',
     responsibilities TEXT[] DEFAULT '{}',
@@ -18,6 +19,7 @@ CREATE TABLE IF NOT EXISTS job_postings (
     posted_date TIMESTAMP,
     closed_date TIMESTAMP,
     applications_count INTEGER DEFAULT 0,
+    providers TEXT[] DEFAULT '{}',
     created_by UUID NOT NULL REFERENCES users(id),
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
@@ -26,6 +28,9 @@ CREATE TABLE IF NOT EXISTS job_postings (
 CREATE INDEX IF NOT EXISTS idx_job_postings_status ON job_postings(status);
 CREATE INDEX IF NOT EXISTS idx_job_postings_department ON job_postings(department);
 CREATE INDEX IF NOT EXISTS idx_job_postings_created_at ON job_postings(created_at DESC);
+
+COMMENT ON COLUMN job_postings.providers IS 'Array of provider IDs where this job is posted';
+COMMENT ON COLUMN job_postings.salary_currency IS 'ISO 4217 currency code for salary (USD, EUR, GBP, etc.)';
 
 -- Description: Stores recruiting platform integrations (LinkedIn, Indeed, etc.)
 
@@ -45,9 +50,9 @@ CREATE TABLE IF NOT EXISTS recruiting_providers (
 );
 
 -- Create indexes
-CREATE INDEX idx_recruiting_providers_type ON recruiting_providers(type);
-CREATE INDEX idx_recruiting_providers_is_connected ON recruiting_providers(is_connected);
-CREATE INDEX idx_recruiting_providers_created_at ON recruiting_providers(created_at);
+CREATE INDEX IF NOT EXISTS idx_recruiting_providers_type ON recruiting_providers(type);
+CREATE INDEX IF NOT EXISTS idx_recruiting_providers_is_connected ON recruiting_providers(is_connected);
+CREATE INDEX IF NOT EXISTS idx_recruiting_providers_created_at ON recruiting_providers(created_at);
 
 -- Add comments
 COMMENT ON TABLE recruiting_providers IS 'Recruiting platform integrations and their configurations';

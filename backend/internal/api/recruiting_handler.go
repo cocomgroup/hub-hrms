@@ -4,6 +4,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"log"
+	"strings"
+	"regexp"
+	"strconv"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -41,10 +49,12 @@ func RegisterRecruitingRoutes(r chi.Router, services *service.Services) {
 			r.Post("/{id}/post", postToJobBoardsHandler(services))
 			r.Post("/{id}/close", closeJobPostingHandler(services))
 			r.Get("/{job_id}/candidates", getCandidatesByJobHandler(services))
+			r.Post("/upload", uploadJobHandler(services))
 		})
 
 		// Applicants/Candidates endpoints
 		r.Route("/applicants", func(r chi.Router) {
+			r.Post("/upload", uploadApplicantResumeHandler(services))
 			r.Get("/", listApplicantsHandler(services))
 			r.Get("/leaderboard", getApplicantLeaderboardHandler(services))
 			r.Post("/{id}/analyze", analyzeCandidateHandler(services))
@@ -554,6 +564,7 @@ func getInterviewsByCandidateHandler(services *service.Services) http.HandlerFun
 		respondJSON(w, http.StatusOK, interviews)
 	}
 }
+
 func listJobPostingsHandler(services *service.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, err := getUserIDFromContext(r.Context())
@@ -683,6 +694,354 @@ func deleteJobPostingHandler(services *service.Services) http.HandlerFunc {
 		respondJSON(w, http.StatusOK, map[string]string{"message": "job deleted successfully"})
 	}
 }
+
+func uploadJobHandler(services *service.Services) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Get user ID from context
+		userID, err := getUserIDFromContext(r.Context())
+		if err != nil {
+			respondError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+
+		// Parse multipart form (10MB max)
+		err = r.ParseMultipartForm(10 << 20)
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "Failed to parse form")
+			return
+		}
+
+		// Get the file
+		file, header, err := r.FormFile("file")
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "Failed to get file from form")
+			return
+		}
+		defer file.Close()
+
+		// Validate file size (10MB)
+		if header.Size > 10*1024*1024 {
+			respondError(w, http.StatusBadRequest, "File size exceeds 10MB limit")
+			return
+		}
+
+		// Validate file name
+		if strings.Contains(header.Filename, "..") || strings.Contains(header.Filename, "/") {
+			respondError(w, http.StatusBadRequest, "Invalid filename")
+			return
+		}
+
+		// Read file content
+		content, err := io.ReadAll(file)
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "Failed to read file")
+			return
+		}
+
+		// Parse based on file extension
+		var jobData models.JobUploadRequest
+		filename := strings.ToLower(header.Filename)
+
+		if strings.HasSuffix(filename, ".json") {
+			err = json.Unmarshal(content, &jobData)
+			if err != nil {
+				respondError(w, http.StatusBadRequest, fmt.Sprintf("Failed to parse JSON: %v", err))
+				return
+			}
+		} else if strings.HasSuffix(filename, ".md") || strings.HasSuffix(filename, ".txt") {
+			jobData, err = parseJobFromText(string(content))
+			if err != nil {
+				respondError(w, http.StatusBadRequest, fmt.Sprintf("Failed to parse text file: %v", err))
+				return
+			}
+		} else {
+			respondError(w, http.StatusBadRequest, "Unsupported file type. Use .json, .md, or .txt")
+			return
+		}
+
+		// Validate required fields
+		if jobData.Title == "" {
+			respondError(w, http.StatusBadRequest, "Job title is required")
+			return
+		}
+
+		// Set defaults
+		if jobData.EmploymentType == "" {
+			jobData.EmploymentType = "full-time"
+		}
+		if jobData.Requirements == nil {
+			jobData.Requirements = []string{}
+		}
+		if jobData.Responsibilities == nil {
+			jobData.Responsibilities = []string{}
+		}
+		if jobData.Benefits == nil {
+			jobData.Benefits = []string{}
+		}
+
+		// Check if we should save directly or just return parsed data
+		saveDirectly := r.URL.Query().Get("save") == "true"
+
+		if saveDirectly {
+			// Create job posting directly in database
+			createReq := &models.CreateJobPostingRequest{
+				Title:            jobData.Title,
+				Department:       jobData.Department,
+				Location:         jobData.Location,
+				EmploymentType:   jobData.EmploymentType,
+				SalaryMin:        convertIntToFloatPtr(jobData.SalaryMin),
+				SalaryMax:        convertIntToFloatPtr(jobData.SalaryMax),
+				Description:      jobData.Description,
+				Requirements:     jobData.Requirements,
+				Responsibilities: jobData.Responsibilities,
+				Benefits:         jobData.Benefits,
+			}
+
+			job, err := services.Recruiting.CreateJobPosting(r.Context(), createReq, userID)
+			if err != nil {
+				log.Printf("Failed to create job from upload: %v", err)
+				respondError(w, http.StatusInternalServerError, "failed to create job")
+				return
+			}
+
+			respondJSON(w, http.StatusCreated, job)
+		} else {
+			// Return parsed data for frontend review
+			respondJSON(w, http.StatusOK, jobData)
+		}
+	}
+}
+// Helper function to convert int to *float64
+func convertIntToFloatPtr(val int) *float64 {
+	if val == 0 {
+		return nil
+	}
+	f := float64(val)
+	return &f
+}
+
+// parseJobFromText parses markdown/text format job postings
+func parseJobFromText(content string) (models.JobUploadRequest, error) {
+	job := models.JobUploadRequest{
+		Requirements:     []string{},
+		Responsibilities: []string{},
+		Benefits:         []string{},
+	}
+
+	lines := strings.Split(content, "\n")
+	currentSection := ""
+	descriptionLines := []string{}
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+
+		// Extract title (first h1)
+		if job.Title == "" && strings.HasPrefix(trimmed, "# ") {
+			job.Title = strings.TrimSpace(strings.TrimPrefix(trimmed, "# "))
+			continue
+		}
+
+		// Check for **Label:** format (Position Overview section)
+		if strings.Contains(trimmed, "**") && strings.Contains(trimmed, ":") {
+			// Extract bold label and value
+			parts := strings.Split(trimmed, ":")
+			if len(parts) >= 2 {
+				label := strings.ToLower(strings.Trim(parts[0], "* "))
+				value := strings.TrimSpace(strings.Join(parts[1:], ":"))
+				
+				// Remove trailing ** from value
+				value = strings.TrimSuffix(value, "**")
+				value = strings.TrimSpace(value)
+				
+				if strings.Contains(label, "department") {
+					job.Department = value
+					continue
+				}
+				if strings.Contains(label, "location") {
+					job.Location = value
+					continue
+				}
+				if strings.Contains(label, "title") && job.Title == "" {
+					job.Title = value
+					continue
+				}
+				if strings.Contains(label, "employment") || strings.Contains(label, "type") {
+					lowerValue := strings.ToLower(value)
+					if strings.Contains(lowerValue, "full-time") || strings.Contains(lowerValue, "full time") {
+						job.EmploymentType = "full-time"
+					} else if strings.Contains(lowerValue, "part-time") || strings.Contains(lowerValue, "part time") {
+						job.EmploymentType = "part-time"
+					} else if strings.Contains(lowerValue, "contract") {
+						job.EmploymentType = "contract"
+					} else if strings.Contains(lowerValue, "intern") {
+						job.EmploymentType = "internship"
+					}
+					continue
+				}
+			}
+		}
+
+		// Detect sections by headers
+		if strings.HasPrefix(trimmed, "## ") {
+			sectionName := strings.TrimSpace(strings.TrimPrefix(trimmed, "## "))
+			sectionName = strings.ToLower(sectionName)
+
+			if strings.Contains(sectionName, "description") || 
+			   strings.Contains(sectionName, "about") || 
+			   strings.Contains(sectionName, "overview") ||
+			   strings.Contains(sectionName, "summary") {
+				currentSection = "description"
+			} else if strings.Contains(sectionName, "requirement") || 
+					  strings.Contains(sectionName, "qualification") ||
+					  strings.Contains(sectionName, "skills") {
+				currentSection = "requirements"
+			} else if strings.Contains(sectionName, "responsibilit") || 
+					  strings.Contains(sectionName, "duties") ||
+					  strings.Contains(sectionName, "role") {
+				currentSection = "responsibilities"
+			} else if strings.Contains(sectionName, "benefit") || 
+					  strings.Contains(sectionName, "perk") ||
+					  strings.Contains(sectionName, "compensation") {
+				currentSection = "benefits"
+			} else if strings.Contains(sectionName, "department") {
+				currentSection = "department"
+			} else if strings.Contains(sectionName, "location") {
+				currentSection = "location"
+			} else if strings.Contains(sectionName, "position") {
+				// Position Overview section - continue processing
+				continue
+			} else {
+				// Unknown section, keep processing in current section
+			}
+			continue
+		}
+
+		// Extract salary range
+		salaryRegex := regexp.MustCompile(`\$?\s*([\d,]+)\s*-\s*\$?\s*([\d,]+)`)
+		if matches := salaryRegex.FindStringSubmatch(trimmed); len(matches) == 3 {
+			min, _ := strconv.Atoi(strings.ReplaceAll(matches[1], ",", ""))
+			max, _ := strconv.Atoi(strings.ReplaceAll(matches[2], ",", ""))
+			job.SalaryMin = min
+			job.SalaryMax = max
+			continue
+		}
+
+		// Extract employment type from inline mentions
+		lowerTrimmed := strings.ToLower(trimmed)
+		if strings.Contains(lowerTrimmed, "full-time") || strings.Contains(lowerTrimmed, "full time") {
+			if job.EmploymentType == "" {
+				job.EmploymentType = "full-time"
+			}
+		} else if strings.Contains(lowerTrimmed, "part-time") || strings.Contains(lowerTrimmed, "part time") {
+			if job.EmploymentType == "" {
+				job.EmploymentType = "part-time"
+			}
+		} else if strings.Contains(lowerTrimmed, "contract") {
+			if job.EmploymentType == "" {
+				job.EmploymentType = "contract"
+			}
+		} else if strings.Contains(lowerTrimmed, "intern") {
+			if job.EmploymentType == "" {
+				job.EmploymentType = "internship"
+			}
+		}
+
+		// Simple key: value format (for text files)
+		if strings.Contains(trimmed, ":") && !strings.HasPrefix(trimmed, "-") && !strings.HasPrefix(trimmed, "*") {
+			parts := strings.SplitN(trimmed, ":", 2)
+			if len(parts) == 2 {
+				key := strings.ToLower(strings.TrimSpace(parts[0]))
+				value := strings.TrimSpace(parts[1])
+				
+				if key == "department" {
+					job.Department = value
+					continue
+				}
+				if key == "location" {
+					job.Location = value
+					continue
+				}
+				if strings.Contains(key, "type") {
+					lowerValue := strings.ToLower(value)
+					if strings.Contains(lowerValue, "full-time") || strings.Contains(lowerValue, "full time") {
+						job.EmploymentType = "full-time"
+					} else if strings.Contains(lowerValue, "part-time") || strings.Contains(lowerValue, "part time") {
+						job.EmploymentType = "part-time"
+					} else if strings.Contains(lowerValue, "contract") {
+						job.EmploymentType = "contract"
+					} else if strings.Contains(lowerValue, "intern") {
+						job.EmploymentType = "internship"
+					}
+					continue
+				}
+			}
+		}
+
+		// Add content to sections
+		if currentSection != "" {
+			// Clean bullet points and numbering
+			content := trimmed
+			content = strings.TrimPrefix(content, "- ")
+			content = strings.TrimPrefix(content, "* ")
+			content = strings.TrimPrefix(content, "• ")
+			content = regexp.MustCompile(`^\d+\.\s+`).ReplaceAllString(content, "")
+			
+			// Skip if it's a header or bold label line
+			if strings.HasPrefix(content, "#") || strings.HasPrefix(content, "**") {
+				continue
+			}
+			
+			if content == "" {
+				continue
+			}
+
+			switch currentSection {
+			case "description":
+				// Skip Position Overview section content (already processed)
+				if !strings.Contains(strings.ToLower(content), "title:") && 
+				   !strings.Contains(strings.ToLower(content), "department:") && 
+				   !strings.Contains(strings.ToLower(content), "location:") {
+					descriptionLines = append(descriptionLines, content)
+				}
+			case "department":
+				if job.Department == "" {
+					job.Department = content
+				}
+				currentSection = "" // Single value
+			case "location":
+				if job.Location == "" {
+					job.Location = content
+				}
+				currentSection = "" // Single value
+			case "requirements":
+				job.Requirements = append(job.Requirements, content)
+			case "responsibilities":
+				job.Responsibilities = append(job.Responsibilities, content)
+			case "benefits":
+				job.Benefits = append(job.Benefits, content)
+			}
+		}
+	}
+
+	// Join description lines
+	if len(descriptionLines) > 0 {
+		job.Description = strings.Join(descriptionLines, "\n")
+	}
+
+	// Set defaults if missing
+	if job.EmploymentType == "" {
+		job.EmploymentType = "full-time"
+	}
+
+	// Set default currency
+	job.SalaryCurrency = "USD"
+
+	return job, nil
+}
+
 
 func postToJobBoardsHandler(services *service.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -908,3 +1267,148 @@ func sendEmailHandler(services *service.Services) http.HandlerFunc {
 		respondJSON(w, http.StatusOK, map[string]string{"message": "email sent successfully"})
 	}
 }
+
+// uploadApplicantResumeHandler handles resume file uploads
+func uploadApplicantResumeHandler(services *service.Services) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Parse multipart form (10 MB max)
+		if err := r.ParseMultipartForm(10 << 20); err != nil {
+			respondError(w, http.StatusBadRequest, "File too large. Maximum size is 10MB")
+			return
+		}
+
+		// Get form fields
+		name := r.FormValue("name")
+		email := r.FormValue("email")
+		phone := r.FormValue("phone")
+		position := r.FormValue("position")
+		source := r.FormValue("source")
+
+		// Validate required fields
+		if name == "" || email == "" || position == "" {
+			respondError(w, http.StatusBadRequest, "Name, email, and position are required")
+			return
+		}
+
+		// Get uploaded file
+		file, header, err := r.FormFile("resume")
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "Resume file is required")
+			return
+		}
+		defer file.Close()
+
+		// Validate file extension
+		ext := strings.ToLower(filepath.Ext(header.Filename))
+		allowedExts := map[string]bool{
+			".pdf":  true,
+			".doc":  true,
+			".docx": true,
+		}
+		if !allowedExts[ext] {
+			respondError(w, http.StatusBadRequest, "Invalid file type. Only PDF and Word documents are allowed")
+			return
+		}
+
+		// Validate file size (5MB)
+		if header.Size > 5*1024*1024 {
+			respondError(w, http.StatusBadRequest, "File size must be less than 5MB")
+			return
+		}
+
+		// Generate unique filename
+		applicantID := uuid.New()
+		filename := fmt.Sprintf("%s_%s%s", applicantID.String(), sanitizeFilename(name), ext)
+		
+		// Determine upload path based on environment
+		var uploadPath string
+		if os.Getenv("ENVIRONMENT") == "production" || os.Getenv("AWS_REGION") != "" {
+			// AWS environment - use /tmp for Lambda or writable directory
+			uploadPath = "/tmp/resumes"
+		} else {
+			// Local/Windows development
+			uploadPath = "./uploads/resumes"
+		}
+		
+		// Create directory if it doesn't exist
+		if err := os.MkdirAll(uploadPath, 0755); err != nil {
+			log.Printf("Failed to create upload directory: %v", err)
+			respondError(w, http.StatusInternalServerError, "Failed to create upload directory")
+			return
+		}
+		
+		filepath := filepath.Join(uploadPath, filename)
+
+		// Save file to disk
+		dst, err := os.Create(filepath)
+		if err != nil {
+			log.Printf("Failed to create file: %v", err)
+			respondError(w, http.StatusInternalServerError, "Failed to save file")
+			return
+		}
+		defer dst.Close()
+
+		if _, err := io.Copy(dst, file); err != nil {
+			os.Remove(filepath)
+			log.Printf("Failed to copy file: %v", err)
+			respondError(w, http.StatusInternalServerError, "Failed to save file")
+			return
+		}
+
+		// Create applicant record
+		applicant := &models.Applicant{
+			ID:          applicantID,
+			Name:        name,
+			Email:       email,
+			Phone:       phone,
+			Position:    position,
+			Source:      source,
+			ResumeURL:   fmt.Sprintf("/uploads/resumes/%s", filename),
+			AppliedDate: time.Now(),
+			Status:      "new",
+			AIScore:     0.0,
+			Notes:       "",
+			CreatedAt:   time.Now(),
+			UpdatedAt:   time.Now(),
+		}
+
+		// Save to database via service
+		if err := services.Recruiting.CreateApplicant(r.Context(), applicant); err != nil {
+			os.Remove(filepath)
+			log.Printf("Failed to create applicant: %v", err)
+			respondError(w, http.StatusInternalServerError, "Failed to create applicant record")
+			return
+		}
+
+		// TODO: Trigger AI analysis in background
+		// go services.AI.AnalyzeResume(applicant.ID)
+
+		respondJSON(w, http.StatusOK, applicant)
+	}
+}
+
+// sanitizeFilename removes special characters from filename
+func sanitizeFilename(name string) string {
+	// Remove special characters and replace spaces
+	replacer := strings.NewReplacer(
+		" ", "_",
+		"/", "_",
+		"\\", "_",
+		":", "_",
+		"*", "_",
+		"?", "_",
+		"\"", "_",
+		"<", "_",
+		">", "_",
+		"|", "_",
+	)
+	
+	sanitized := replacer.Replace(name)
+	// Limit length
+	if len(sanitized) > 50 {
+		sanitized = sanitized[:50]
+	}
+	
+	return strings.ToLower(sanitized)
+}
+

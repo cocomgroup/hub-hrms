@@ -31,6 +31,20 @@
   let filterStatus = 'all';
   let analyzing = false;
   
+  // Upload Resume state
+  let showUploadModal = false;
+  let uploadForm = {
+    name: '',
+    email: '',
+    phone: '',
+    position: '',
+    source: 'manual'
+  };
+  let selectedFile: File | null = null;
+  let uploading = false;
+  let uploadError = '';
+  let uploadSuccess = '';
+  
   $: sortedApplicants = applicants
     .filter(a => filterStatus === 'all' || a.status === filterStatus)
     .sort((a, b) => {
@@ -80,6 +94,108 @@
     }
   }
   
+  function handleFileSelect(event: Event) {
+    const input = event.target as HTMLInputElement;
+    if (input.files && input.files[0]) {
+      selectedFile = input.files[0];
+      
+      // Validate file type
+      const allowedTypes = ['application/pdf', 'application/msword', 
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+      if (!allowedTypes.includes(selectedFile.type)) {
+        uploadError = 'Please upload a PDF or Word document';
+        selectedFile = null;
+        return;
+      }
+      
+      // Validate file size (5MB max)
+      if (selectedFile.size > 5 * 1024 * 1024) {
+        uploadError = 'File size must be less than 5MB';
+        selectedFile = null;
+        return;
+      }
+      
+      uploadError = '';
+    }
+  }
+  
+  async function uploadResume() {
+    if (!selectedFile) {
+      uploadError = 'Please select a resume file';
+      return;
+    }
+    
+    if (!uploadForm.name || !uploadForm.email || !uploadForm.position) {
+      uploadError = 'Please fill in all required fields';
+      return;
+    }
+    
+    try {
+      uploading = true;
+      uploadError = '';
+      
+      const formData = new FormData();
+      formData.append('resume', selectedFile);
+      formData.append('name', uploadForm.name);
+      formData.append('email', uploadForm.email);
+      formData.append('phone', uploadForm.phone);
+      formData.append('position', uploadForm.position);
+      formData.append('source', uploadForm.source);
+      
+      const token = localStorage.getItem('token');
+      const response = await fetch('/api/recruiting/applicants/upload', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      });
+      
+      if (response.ok) {
+        uploadSuccess = 'Resume uploaded successfully!';
+        // Reset form
+        uploadForm = {
+          name: '',
+          email: '',
+          phone: '',
+          position: '',
+          source: 'manual'
+        };
+        selectedFile = null;
+        
+        // Reload applicants
+        await loadApplicants();
+        
+        // Close modal after 2 seconds
+        setTimeout(() => {
+          showUploadModal = false;
+          uploadSuccess = '';
+        }, 2000);
+      } else {
+        const error = await response.text();
+        uploadError = error || 'Failed to upload resume';
+      }
+    } catch (err) {
+      uploadError = 'Failed to upload resume: ' + (err as Error).message;
+    } finally {
+      uploading = false;
+    }
+  }
+  
+  function closeUploadModal() {
+    showUploadModal = false;
+    uploadError = '';
+    uploadSuccess = '';
+    uploadForm = {
+      name: '',
+      email: '',
+      phone: '',
+      position: '',
+      source: 'manual'
+    };
+    selectedFile = null;
+  }
+  
   async function updateApplicantStatus(applicantId: string, status: string) {
     try {
       const token = localStorage.getItem('token');
@@ -123,6 +239,13 @@
     </div>
     
     <div class="controls">
+      <button 
+        class="btn-upload"
+        on:click={() => showUploadModal = true}
+      >
+        📎 Upload Resume
+      </button>
+      
       <select bind:value={filterStatus} class="control-select">
         <option value="all">All Status</option>
         <option value="new">New</option>
@@ -363,6 +486,123 @@
   </div>
 {/if}
 
+<!-- Upload Resume Modal -->
+{#if showUploadModal}
+  <div class="modal-overlay" on:click={closeUploadModal}>
+    <div class="modal" on:click|stopPropagation>
+      <div class="modal-header">
+        <h3>📎 Upload Resume</h3>
+        <button class="close-btn" on:click={closeUploadModal}>✕</button>
+      </div>
+      
+      <div class="modal-body">
+        {#if uploadSuccess}
+          <div class="alert alert-success">
+            ✓ {uploadSuccess}
+          </div>
+        {/if}
+        
+        {#if uploadError}
+          <div class="alert alert-error">
+            ⚠️ {uploadError}
+          </div>
+        {/if}
+        
+        <form on:submit|preventDefault={uploadResume}>
+          <div class="form-group">
+            <label for="name">Full Name *</label>
+            <input 
+              type="text" 
+              id="name"
+              bind:value={uploadForm.name}
+              required
+              placeholder="John Doe"
+            />
+          </div>
+          
+          <div class="form-group">
+            <label for="email">Email *</label>
+            <input 
+              type="email" 
+              id="email"
+              bind:value={uploadForm.email}
+              required
+              placeholder="john@example.com"
+            />
+          </div>
+          
+          <div class="form-group">
+            <label for="phone">Phone</label>
+            <input 
+              type="tel" 
+              id="phone"
+              bind:value={uploadForm.phone}
+              placeholder="+1 (555) 123-4567"
+            />
+          </div>
+          
+          <div class="form-group">
+            <label for="position">Position *</label>
+            <input 
+              type="text" 
+              id="position"
+              bind:value={uploadForm.position}
+              required
+              placeholder="Software Engineer"
+            />
+          </div>
+          
+          <div class="form-group">
+            <label for="source">Source</label>
+            <select id="source" bind:value={uploadForm.source}>
+              <option value="manual">Manual Upload</option>
+              <option value="linkedin">LinkedIn</option>
+              <option value="indeed">Indeed</option>
+              <option value="referral">Referral</option>
+              <option value="website">Company Website</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label for="resume">Resume File * (PDF or Word)</label>
+            <input 
+              type="file" 
+              id="resume"
+              accept=".pdf,.doc,.docx"
+              on:change={handleFileSelect}
+              required
+            />
+            {#if selectedFile}
+              <p class="file-info">
+                📄 {selectedFile.name} ({(selectedFile.size / 1024).toFixed(1)} KB)
+              </p>
+            {/if}
+          </div>
+          
+          <div class="modal-footer">
+            <button 
+              type="button"
+              class="btn-secondary" 
+              on:click={closeUploadModal}
+              disabled={uploading}
+            >
+              Cancel
+            </button>
+            <button 
+              type="submit"
+              class="btn-primary" 
+              disabled={uploading || !selectedFile}
+            >
+              {uploading ? 'Uploading...' : 'Upload Resume'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+{/if}
+
 <style>
   .leaderboard-container { display: flex; flex-direction: column; gap: 24px; }
   .leaderboard-header { display: flex; justify-content: space-between; align-items: start; flex-wrap: wrap; gap: 16px; }
@@ -371,6 +611,27 @@
   .controls { display: flex; gap: 12px; }
   .control-select { padding: 8px 16px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 14px; background: white; cursor: pointer; }
   .control-select:focus { outline: none; border-color: #3b82f6; }
+  
+  .btn-upload {
+    padding: 10px 20px;
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  
+  .btn-upload:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+  }
   
   .leaderboard-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 20px; }
   .applicant-card { background: white; border-radius: 12px; padding: 20px; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); cursor: pointer; transition: all 0.2s; border: 2px solid transparent; }
@@ -470,6 +731,181 @@
   .notes-textarea:focus { outline: none; border-color: #3b82f6; }
   .save-notes-btn { margin-top: 8px; padding: 8px 16px; background: #3b82f6; color: white; border: none; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; }
   .save-notes-btn:hover { background: #2563eb; }
+  
+  /* Upload Modal */
+  .modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 20px;
+  }
+  
+  .modal {
+    background: white;
+    border-radius: 12px;
+    max-width: 600px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+  }
+  
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 24px;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  
+  .modal-header h3 {
+    font-size: 20px;
+    font-weight: 700;
+    color: #111827;
+    margin: 0;
+  }
+  
+  .close-btn {
+    background: none;
+    border: none;
+    font-size: 24px;
+    color: #9ca3af;
+    cursor: pointer;
+    transition: color 0.2s;
+  }
+  
+  .close-btn:hover {
+    color: #374151;
+  }
+  
+  .modal-body {
+    padding: 24px;
+  }
+  
+  .form-group {
+    margin-bottom: 20px;
+  }
+  
+  .form-group label {
+    display: block;
+    font-size: 14px;
+    font-weight: 600;
+    color: #374151;
+    margin-bottom: 8px;
+  }
+  
+  .form-group input[type="text"],
+  .form-group input[type="email"],
+  .form-group input[type="tel"],
+  .form-group select {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 14px;
+    transition: border-color 0.2s;
+  }
+  
+  .form-group input:focus,
+  .form-group select:focus {
+    outline: none;
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  }
+  
+  .form-group input[type="file"] {
+    width: 100%;
+    padding: 10px;
+    border: 2px dashed #d1d5db;
+    border-radius: 8px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  
+  .file-info {
+    margin-top: 8px;
+    font-size: 13px;
+    color: #10b981;
+    font-weight: 500;
+  }
+  
+  .alert {
+    padding: 12px 16px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    font-size: 14px;
+    font-weight: 500;
+  }
+  
+  .alert-success {
+    background: #d1fae5;
+    color: #065f46;
+    border: 1px solid #6ee7b7;
+  }
+  
+  .alert-error {
+    background: #fee2e2;
+    color: #991b1b;
+    border: 1px solid #fca5a5;
+  }
+  
+  .modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 24px;
+  }
+  
+  .btn-primary {
+    padding: 10px 24px;
+    background: #3b82f6;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  
+  .btn-primary:hover:not(:disabled) {
+    background: #2563eb;
+    transform: translateY(-1px);
+  }
+  
+  .btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  
+  .btn-secondary {
+    padding: 10px 24px;
+    background: white;
+    color: #374151;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  
+  .btn-secondary:hover:not(:disabled) {
+    background: #f9fafb;
+    border-color: #9ca3af;
+  }
+  
+  .btn-secondary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
   
   @media (max-width: 1024px) {
     .detail-grid { grid-template-columns: 1fr; }

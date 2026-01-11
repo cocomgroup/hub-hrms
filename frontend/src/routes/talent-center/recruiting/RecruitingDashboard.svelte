@@ -3,10 +3,11 @@
   import RecruitingProviders from './RecruitingProviders.svelte';
   import JobPostingManager from './JobPostingManager.svelte';
   import ApplicantLeaderboard from './ApplicantLeaderboard.svelte';
+  import CandidateSummary from './CandidateSummary.svelte';
   
   const dispatch = createEventDispatcher();
   
-  let activeView: 'overview' | 'providers' | 'jobs' | 'applicants' = 'overview';
+  let activeView: 'overview' | 'providers' | 'jobs' | 'leaderboard' | 'summary' = 'overview';
   let stats = {
     activeJobs: 0,
     totalApplicants: 0,
@@ -85,7 +86,7 @@
             <h3>Total Applicants</h3>
           </div>
           <div class="stat-value">{stats.totalApplicants}</div>
-          <button class="stat-action" on:click={() => activeView = 'applicants'}>
+          <button class="stat-action" on:click={() => activeView = 'leaderboard'}>
             View Leaderboard →
           </button>
         </div>
@@ -105,179 +106,172 @@
             <h3>Scheduled Interviews</h3>
           </div>
           <div class="stat-value">{stats.scheduledInterviews}</div>
-          <div class="stat-subtitle">Upcoming</div>
-        </div>
-        
-        <div class="stat-card info">
-          <div class="stat-header">
-            <span class="stat-icon">⚡</span>
-            <h3>Avg Time to Hire</h3>
-          </div>
-          <div class="stat-value">{stats.avgTimeToHire} days</div>
-          <div class="stat-subtitle">Last 90 days</div>
-        </div>
-        
-        <div class="stat-card">
-          <div class="stat-header">
-            <span class="stat-icon">🔗</span>
-            <h3>Connected Providers</h3>
-          </div>
-          <div class="stat-value">{stats.connectedProviders}</div>
-          <button class="stat-action" on:click={() => activeView = 'providers'}>
-            Manage Providers →
-          </button>
+          <div class="stat-subtitle">This week</div>
         </div>
       </div>
       
       <!-- Quick Actions -->
-      <div class="section-card">
-        <h2 class="section-title">Quick Actions</h2>
-        <div class="action-buttons">
-          <button class="action-btn primary" on:click={() => activeView = 'jobs'}>
-            <span class="btn-icon">➕</span>
-            Post New Job
+      <div class="quick-actions-section">
+        <h2>Quick Actions</h2>
+        <div class="quick-actions">
+          <button class="action-card" on:click={() => activeView = 'jobs'}>
+            <span class="action-icon">➕</span>
+            <div class="action-content">
+              <h3>Post New Job</h3>
+              <p>Create and publish job posting</p>
+            </div>
           </button>
-          <button class="action-btn" on:click={() => activeView = 'providers'}>
-            <span class="btn-icon">🔗</span>
-            Configure Providers
+          
+          <button class="action-card" on:click={() => activeView = 'leaderboard'}>
+            <span class="action-icon">🏆</span>
+            <div class="action-content">
+              <h3>Applicant Leaderboard</h3>
+              <p>View ranked candidates by job</p>
+            </div>
           </button>
-          <button class="action-btn" on:click={() => activeView = 'applicants'}>
-            <span class="btn-icon">📊</span>
-            Review Applicants
+          
+          <button class="action-card" on:click={() => activeView = 'summary'}>
+            <span class="action-icon">📊</span>
+            <div class="action-content">
+              <h3>Candidate Summary</h3>
+              <p>Generate AI summary of top candidates</p>
+            </div>
+          </button>
+          
+          <button class="action-card" on:click={() => activeView = 'providers'}>
+            <span class="action-icon">🔗</span>
+            <div class="action-content">
+              <h3>Connect Providers</h3>
+              <p>Integrate with job boards</p>
+            </div>
           </button>
         </div>
       </div>
       
-      <!-- Recent Jobs -->
-      <div class="section-card">
+      <!-- Recent Activity -->
+      <div class="activity-section">
         <div class="section-header">
-          <h2 class="section-title">Recent Job Postings</h2>
-          <button class="view-all-btn" on:click={() => activeView = 'jobs'}>
-            View All →
+          <h2>Recent Job Postings</h2>
+          <button class="btn-secondary" on:click={() => activeView = 'jobs'}>
+            View All
           </button>
         </div>
-        
-        {#if recentJobs.length > 0}
-          <div class="jobs-list">
-            {#each recentJobs as job}
+        <div class="recent-jobs">
+          {#if recentJobs.length > 0}
+            {#each recentJobs.slice(0, 5) as job}
               <div class="job-item">
-                <div class="job-header">
-                  <h3 class="job-title">{job.title}</h3>
-                  <span class="job-status status-{job.status}">{job.status}</span>
+                <div class="job-info">
+                  <h3>{job.title}</h3>
+                  <p>{job.department} • {job.location}</p>
                 </div>
-                <div class="job-meta">
-                  <span class="meta-item">
-                    <span class="meta-icon">📍</span>
-                    {job.location}
-                  </span>
-                  <span class="meta-item">
-                    <span class="meta-icon">💰</span>
-                    {job.salary_range}
-                  </span>
-                  <span class="meta-item">
-                    <span class="meta-icon">👥</span>
-                    {job.applicant_count} applicants
+                <div class="job-stats">
+                  <span class="applicant-count">{job.applicant_count || 0} applicants</span>
+                  <span class="status-badge" class:active={job.status === 'active'}>
+                    {job.status}
                   </span>
                 </div>
-                {#if job.providers && job.providers.length > 0}
-                  <div class="job-providers">
-                    {#each job.providers as provider}
-                      <span class="provider-badge">{provider}</span>
-                    {/each}
-                  </div>
-                {/if}
               </div>
             {/each}
-          </div>
-        {:else}
-          <div class="empty-state">
-            <span class="empty-icon">📋</span>
-            <p>No job postings yet</p>
-            <button class="empty-action" on:click={() => activeView = 'jobs'}>
-              Create Your First Job
-            </button>
-          </div>
-        {/if}
+          {:else}
+            <div class="empty-state">
+              <p>No recent jobs. Post your first job to get started!</p>
+            </div>
+          {/if}
+        </div>
       </div>
       
       <!-- Top Applicants Preview -->
-      <div class="section-card">
+      <div class="activity-section">
         <div class="section-header">
-          <h2 class="section-title">🏆 Top Ranked Applicants</h2>
-          <button class="view-all-btn" on:click={() => activeView = 'applicants'}>
-            View Leaderboard →
+          <h2>Top Applicants This Week</h2>
+          <button class="btn-secondary" on:click={() => activeView = 'leaderboard'}>
+            View Leaderboard
           </button>
         </div>
-        
-        {#if topApplicants.length > 0}
-          <div class="applicants-preview">
+        <div class="top-applicants">
+          {#if topApplicants.length > 0}
             {#each topApplicants.slice(0, 5) as applicant, index}
               <div class="applicant-item">
-                <div class="applicant-rank">#{index + 1}</div>
+                <div class="rank"># {index + 1}</div>
                 <div class="applicant-info">
-                  <div class="applicant-name">{applicant.name}</div>
-                  <div class="applicant-role">{applicant.position}</div>
+                  <h4>{applicant.name}</h4>
+                  <p>{applicant.position}</p>
                 </div>
                 <div class="applicant-score">
-                  <div class="score-value">{applicant.ai_score}/100</div>
-                  <div class="score-bar">
-                    <div class="score-fill" style="width: {applicant.ai_score}%"></div>
-                  </div>
+                  <span class="score">{applicant.score || 0}</span>
+                  <span class="score-label">Score</span>
                 </div>
               </div>
             {/each}
-          </div>
-        {:else}
-          <div class="empty-state small">
-            <p>No applicants to rank yet</p>
-          </div>
-        {/if}
+          {:else}
+            <div class="empty-state">
+              <p>No applicants yet. They'll appear here once you start receiving applications!</p>
+            </div>
+          {/if}
+        </div>
       </div>
     </div>
+    
   {:else if activeView === 'providers'}
-    <!-- Providers Management -->
-    <div class="view-header">
-      <button class="back-btn" on:click={() => activeView = 'overview'}>
-        ← Back to Overview
-      </button>
-      <h2>Recruiting Providers</h2>
+    <div class="view-container">
+      <div class="view-header">
+        <button class="btn-back" on:click={() => activeView = 'overview'}>
+          ← Back to Overview
+        </button>
+        <h2>Recruiting Providers</h2>
+      </div>
+      <RecruitingProviders on:providerUpdated={handleProviderUpdated} />
     </div>
-    <RecruitingProviders on:providerUpdated={handleProviderUpdated} />
+    
   {:else if activeView === 'jobs'}
-    <!-- Job Posting Management -->
-    <div class="view-header">
-      <button class="back-btn" on:click={() => activeView = 'overview'}>
-        ← Back to Overview
-      </button>
-      <h2>Job Postings</h2>
+    <div class="view-container">
+      <div class="view-header">
+        <button class="btn-back" on:click={() => activeView = 'overview'}>
+          ← Back to Overview
+        </button>
+        <h2>Job Posting Manager</h2>
+      </div>
+      <JobPostingManager on:jobUpdated={loadDashboard} />
     </div>
-    <JobPostingManager on:jobUpdated={loadDashboard} />
-  {:else if activeView === 'applicants'}
-    <!-- Applicant Leaderboard -->
-    <div class="view-header">
-      <button class="back-btn" on:click={() => activeView = 'overview'}>
-        ← Back to Overview
-      </button>
-      <h2>Applicant Leaderboard</h2>
+    
+  {:else if activeView === 'leaderboard'}
+    <div class="view-container">
+      <div class="view-header">
+        <button class="btn-back" on:click={() => activeView = 'overview'}>
+          ← Back to Overview
+        </button>
+        <h2>📊 Applicant Leaderboard</h2>
+      </div>
+      <ApplicantLeaderboard />
     </div>
-    <ApplicantLeaderboard />
+    
+  {:else if activeView === 'summary'}
+    <div class="view-container">
+      <div class="view-header">
+        <button class="btn-back" on:click={() => activeView = 'overview'}>
+          ← Back to Overview
+        </button>
+        <h2>🎯 Candidate Summary</h2>
+      </div>
+      <CandidateSummary />
+    </div>
   {/if}
 </div>
 
 <style>
   .recruiting-dashboard {
-    min-height: 100%;
+    min-height: 600px;
   }
   
   .overview-container {
     display: flex;
     flex-direction: column;
-    gap: 24px;
+    gap: 32px;
   }
   
   .stats-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
     gap: 20px;
   }
   
@@ -285,29 +279,29 @@
     background: white;
     border-radius: 12px;
     padding: 24px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    transition: transform 0.2s, box-shadow 0.2s;
+    border: 1px solid #e5e7eb;
+    transition: all 0.2s;
   }
   
   .stat-card:hover {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   }
   
   .stat-card.primary {
-    border-left: 4px solid #3b82f6;
-  }
-  
-  .stat-card.success {
-    border-left: 4px solid #10b981;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
   }
   
   .stat-card.warning {
-    border-left: 4px solid #f59e0b;
+    background: #fef3c7;
+    border-color: #fbbf24;
   }
   
-  .stat-card.info {
-    border-left: 4px solid #6366f1;
+  .stat-card.success {
+    background: #d1fae5;
+    border-color: #10b981;
   }
   
   .stat-header {
@@ -322,47 +316,107 @@
   }
   
   .stat-header h3 {
-    margin: 0;
     font-size: 14px;
     font-weight: 600;
-    color: #6b7280;
+    opacity: 0.9;
+    margin: 0;
   }
   
   .stat-value {
     font-size: 36px;
     font-weight: 700;
-    color: #111827;
     margin-bottom: 8px;
   }
   
   .stat-subtitle {
     font-size: 13px;
-    color: #6b7280;
+    opacity: 0.7;
   }
   
   .stat-action {
-    margin-top: 12px;
-    padding: 8px 0;
-    background: none;
-    border: none;
-    color: #3b82f6;
+    background: rgba(255, 255, 255, 0.2);
+    color: inherit;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    padding: 8px 16px;
+    border-radius: 6px;
     font-size: 13px;
     font-weight: 500;
     cursor: pointer;
-    transition: color 0.2s;
-    width: 100%;
-    text-align: left;
+    transition: all 0.2s;
+    margin-top: 12px;
   }
   
   .stat-action:hover {
-    color: #2563eb;
+    background: rgba(255, 255, 255, 0.3);
   }
   
-  .section-card {
+  .stat-card.primary .stat-action {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.3);
+  }
+  
+  .stat-card.warning .stat-action,
+  .stat-card.success .stat-action {
+    background: white;
+    color: #111827;
+    border-color: #d1d5db;
+  }
+  
+  .quick-actions-section h2 {
+    font-size: 20px;
+    font-weight: 700;
+    color: #111827;
+    margin-bottom: 16px;
+  }
+  
+  .quick-actions {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+  }
+  
+  .action-card {
+    background: white;
+    border: 2px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-align: left;
+  }
+  
+  .action-card:hover {
+    border-color: #667eea;
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
+    transform: translateY(-2px);
+  }
+  
+  .action-icon {
+    font-size: 32px;
+    flex-shrink: 0;
+  }
+  
+  .action-content h3 {
+    font-size: 16px;
+    font-weight: 600;
+    color: #111827;
+    margin: 0 0 4px 0;
+  }
+  
+  .action-content p {
+    font-size: 13px;
+    color: #6b7280;
+    margin: 0;
+  }
+  
+  .activity-section {
     background: white;
     border-radius: 12px;
     padding: 24px;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    border: 1px solid #e5e7eb;
   }
   
   .section-header {
@@ -372,160 +426,85 @@
     margin-bottom: 20px;
   }
   
-  .section-title {
+  .section-header h2 {
     font-size: 18px;
-    font-weight: 600;
+    font-weight: 700;
     color: #111827;
     margin: 0;
   }
   
-  .view-all-btn {
-    background: none;
-    border: none;
-    color: #3b82f6;
-    font-size: 14px;
+  .btn-secondary {
+    background: #f3f4f6;
+    color: #374151;
+    border: 1px solid #d1d5db;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 13px;
     font-weight: 500;
     cursor: pointer;
-    transition: color 0.2s;
+    transition: all 0.2s;
   }
   
-  .view-all-btn:hover {
-    color: #2563eb;
+  .btn-secondary:hover {
+    background: #e5e7eb;
   }
   
-  .action-buttons {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  .recent-jobs {
+    display: flex;
+    flex-direction: column;
     gap: 12px;
   }
   
-  .action-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    padding: 14px 20px;
-    background: white;
-    border: 2px solid #e5e7eb;
-    border-radius: 8px;
-    font-size: 14px;
-    font-weight: 500;
-    color: #374151;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-  
-  .action-btn:hover {
-    border-color: #3b82f6;
-    color: #3b82f6;
-    transform: translateY(-1px);
-  }
-  
-  .action-btn.primary {
-    background: #3b82f6;
-    border-color: #3b82f6;
-    color: white;
-  }
-  
-  .action-btn.primary:hover {
-    background: #2563eb;
-    border-color: #2563eb;
-    color: white;
-  }
-  
-  .btn-icon {
-    font-size: 18px;
-  }
-  
-  .jobs-list {
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-  }
-  
   .job-item {
-    padding: 16px;
-    border: 1px solid #e5e7eb;
-    border-radius: 8px;
-    transition: all 0.2s;
-  }
-  
-  .job-item:hover {
-    border-color: #3b82f6;
-    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.1);
-  }
-  
-  .job-header {
     display: flex;
     justify-content: space-between;
-    align-items: start;
-    margin-bottom: 12px;
+    align-items: center;
+    padding: 16px;
+    background: #f9fafb;
+    border-radius: 8px;
+    border: 1px solid #e5e7eb;
   }
   
-  .job-title {
-    margin: 0;
-    font-size: 16px;
+  .job-info h3 {
+    font-size: 15px;
     font-weight: 600;
     color: #111827;
+    margin: 0 0 4px 0;
   }
   
-  .job-status {
-    padding: 4px 12px;
-    border-radius: 12px;
-    font-size: 12px;
-    font-weight: 500;
+  .job-info p {
+    font-size: 13px;
+    color: #6b7280;
+    margin: 0;
   }
   
-  .job-status.status-active {
-    background: #d1fae5;
-    color: #065f46;
-  }
-  
-  .job-status.status-draft {
-    background: #fef3c7;
-    color: #92400e;
-  }
-  
-  .job-status.status-closed {
-    background: #e5e7eb;
-    color: #374151;
-  }
-  
-  .job-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 16px;
-    margin-bottom: 12px;
-  }
-  
-  .meta-item {
+  .job-stats {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 12px;
+  }
+  
+  .applicant-count {
     font-size: 13px;
     color: #6b7280;
   }
   
-  .meta-icon {
-    font-size: 14px;
+  .status-badge {
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: capitalize;
+    background: #e5e7eb;
+    color: #6b7280;
   }
   
-  .job-providers {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
+  .status-badge.active {
+    background: #d1fae5;
+    color: #065f46;
   }
   
-  .provider-badge {
-    padding: 4px 10px;
-    background: #ede9fe;
-    color: #5b21b6;
-    border-radius: 6px;
-    font-size: 11px;
-    font-weight: 500;
-  }
-  
-  .applicants-preview {
+  .top-applicants {
     display: flex;
     flex-direction: column;
     gap: 12px;
@@ -535,113 +514,77 @@
     display: flex;
     align-items: center;
     gap: 16px;
-    padding: 12px;
-    border: 1px solid #e5e7eb;
+    padding: 16px;
+    background: #f9fafb;
     border-radius: 8px;
+    border: 1px solid #e5e7eb;
   }
   
-  .applicant-rank {
-    font-size: 20px;
+  .rank {
+    font-size: 18px;
     font-weight: 700;
-    color: #3b82f6;
+    color: #667eea;
     min-width: 40px;
-    text-align: center;
   }
   
   .applicant-info {
     flex: 1;
   }
   
-  .applicant-name {
-    font-size: 14px;
+  .applicant-info h4 {
+    font-size: 15px;
     font-weight: 600;
     color: #111827;
+    margin: 0 0 4px 0;
   }
   
-  .applicant-role {
-    font-size: 12px;
+  .applicant-info p {
+    font-size: 13px;
     color: #6b7280;
+    margin: 0;
   }
   
   .applicant-score {
-    min-width: 120px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 8px 16px;
+    background: white;
+    border-radius: 8px;
   }
   
-  .score-value {
-    font-size: 16px;
-    font-weight: 600;
-    color: #3b82f6;
-    margin-bottom: 4px;
+  .score {
+    font-size: 20px;
+    font-weight: 700;
+    color: #667eea;
   }
   
-  .score-bar {
-    width: 100%;
-    height: 6px;
-    background: #e5e7eb;
-    border-radius: 3px;
-    overflow: hidden;
-  }
-  
-  .score-fill {
-    height: 100%;
-    background: linear-gradient(90deg, #3b82f6 0%, #8b5cf6 100%);
-    transition: width 0.3s;
+  .score-label {
+    font-size: 11px;
+    color: #6b7280;
+    text-transform: uppercase;
   }
   
   .empty-state {
     text-align: center;
     padding: 48px 24px;
-  }
-  
-  .empty-state.small {
-    padding: 24px;
-  }
-  
-  .empty-icon {
-    font-size: 48px;
-    display: block;
-    margin-bottom: 16px;
+    color: #6b7280;
   }
   
   .empty-state p {
-    color: #6b7280;
-    margin: 0 0 16px 0;
+    margin: 0;
   }
   
-  .empty-action {
-    padding: 10px 20px;
-    background: #3b82f6;
-    color: white;
-    border: none;
-    border-radius: 8px;
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: background 0.2s;
-  }
-  
-  .empty-action:hover {
-    background: #2563eb;
+  .view-container {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
   }
   
   .view-header {
-    margin-bottom: 24px;
-  }
-  
-  .back-btn {
-    background: none;
-    border: none;
-    color: #3b82f6;
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    padding: 8px 0;
-    margin-bottom: 12px;
-    transition: color 0.2s;
-  }
-  
-  .back-btn:hover {
-    color: #2563eb;
+    display: flex;
+    align-items: center;
+    gap: 16px;
   }
   
   .view-header h2 {
@@ -651,27 +594,40 @@
     margin: 0;
   }
   
+  .btn-back {
+    background: #f3f4f6;
+    color: #374151;
+    border: 1px solid #d1d5db;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  
+  .btn-back:hover {
+    background: #e5e7eb;
+  }
+  
   @media (max-width: 768px) {
     .stats-grid {
       grid-template-columns: 1fr;
     }
     
-    .action-buttons {
+    .quick-actions {
       grid-template-columns: 1fr;
     }
     
-    .job-header {
-      flex-direction: column;
-      gap: 8px;
-    }
-    
-    .applicant-item {
+    .job-item {
       flex-direction: column;
       align-items: flex-start;
+      gap: 12px;
     }
     
-    .applicant-score {
+    .job-stats {
       width: 100%;
+      justify-content: space-between;
     }
   }
 </style>

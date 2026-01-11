@@ -3,9 +3,9 @@
   import { authStore } from '../stores/auth';
   import { getApiBaseUrl } from '../lib/api';
   import EmployeeDetail from '../components/EmployeeDetail.svelte';
-  //import WorkflowManager from '../components/WorkflowManager.svelte';
   import Compensation from '../components/Compensation.svelte';
   import EmployeeList from '../components/EmployeeList.svelte';
+  import OrganizationDashboard from '../components/OrganizationDashboard.svelte';
   import TalentCenter from './talent-center/TalentCenter.svelte';
   import PayExpenses from './pay-expenses/PayExpenses.svelte';
   import ComplianceDashboard from './compliance/ComplianceDashboard.svelte';
@@ -43,8 +43,8 @@
   let selectedEmployeeId: string | null = null;
   let showEmployeeDetail = false;
   let showCompensation = false;
-  //let showWorkflowManager = false; 
   let showTalentCenter = false;
+  let showOrganizationManagment = false;
   let showPayExpenses = false;
   let showCompliance = false;
   let showBenefits = false;
@@ -151,12 +151,20 @@
     <div class="section">
       <h2>Quick Actions</h2>
       <div class="quick-actions-grid">
-        
+        <!--
         <button class="action-card" onclick={openEmployeeListModal}>
           <div class="action-icon">👥</div>
           <div class="action-content">
             <h3>View All Employees</h3>
             <p>Search, filter & manage employees</p>
+          </div>
+        </button>
+      -->
+        <button class="action-card" onclick={() => showOrganizationManagment = true}>
+          <div class="action-icon">👥</div>
+          <div class="action-content">
+            <h3>Organization Management</h3>
+            <p>Manage employees & organization</p>
           </div>
         </button>
 
@@ -247,25 +255,29 @@
   </div>
 {/if}
 
-<!-- Workflow Manager Modal 
-{#if showWorkflowManager}
-  <div class="modal-overlay" onclick={() => showWorkflowManager = false} onkeydown={(e) => e.key === 'Escape' && (showWorkflowManager = false)} role="button" tabindex="0">
-    <div class="modal full-screen" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Escape' && (showWorkflowManager = false)} role="dialog" aria-modal="true" tabindex="-1">
-      <div class="modal-header">
-        <h2>Workflow Management</h2>
-        <button class="close-btn" onclick={() => showWorkflowManager = false}>×</button>
+<!-- Organization Management Modal -->
+{#if showOrganizationManagment}
+  <div class="modal-overlay" onclick={() => showOrganizationManagment = false} onkeydown={(e) => e.key === 'Escape' && (showOrganizationManagment = false)} role="button" tabindex="0">
+    <div class="modal full-screen" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Escape' && (showOrganizationManagment = false)} role="dialog" aria-modal="true" tabindex="-1">
+      <div class="title-section h1">
+        <h1>🎯 Talent Center</h1>
+        <p class="subtitle">Employee and Organization Management</p>
+
+        <button class="close-btn" onclick={() => showOrganizationManagment = false}>×</button>
       </div>
-      <WorkflowManager />
+      <OrganizationDashboard />
     </div>
   </div>
 {/if}
--->
-<!-- Workflow Manager Modal -->
+
+<!-- Talent Center Modal -->
 {#if showTalentCenter}
   <div class="modal-overlay" onclick={() => showTalentCenter = false} onkeydown={(e) => e.key === 'Escape' && (showTalentCenter = false)} role="button" tabindex="0">
     <div class="modal full-screen" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.key === 'Escape' && (showTalentCenter = false)} role="dialog" aria-modal="true" tabindex="-1">
-      <div class="modal-header">
-        <h2>Workflow Management</h2>
+      <div class="title-section h1">
+        <h1>🎯 Talent Center</h1>
+        <p class="subtitle">Recruiting, Onboarding & Workflow Management</p>
+
         <button class="close-btn" onclick={() => showTalentCenter = false}>×</button>
       </div>
       <TalentCenter />
@@ -406,6 +418,20 @@
     font-weight: 600;
     color: #111827;
     margin: 0 0 20px 0;
+  }
+
+  .title-section h1 {
+    font-size: 32px;
+    font-weight: 700;
+    color: #111827;
+    margin: 0 0 8px 0;
+  }
+  
+  .subtitle {
+    font-size: 16px;
+    opacity: 0.9;
+    margin: 0 0 24px 0;
+    color: #111827
   }
 
   .quick-actions-grid {

@@ -73,7 +73,7 @@ func (s *onboardingService) CreateWorkflow(ctx context.Context, req *models.Crea
 		AssignedBuddyID:        req.AssignedBuddyID,
 		AssignedManagerID:      req.AssignedManagerID,
 		Notes:                  req.Notes,
-		CreatedBy:              &createdBy,
+		CreatedBy:              createdBy,
 		CreatedAt:              now,
 		UpdatedAt:              now,
 	}

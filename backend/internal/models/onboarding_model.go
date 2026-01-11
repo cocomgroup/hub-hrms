@@ -30,7 +30,7 @@ type NewHireOnboarding struct {
 	Notes                  string     `json:"notes,omitempty" db:"notes"`
 	CreatedAt              time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt              time.Time  `json:"updated_at" db:"updated_at"`
-	CreatedBy              *uuid.UUID `json:"created_by,omitempty" db:"created_by"`
+	CreatedBy              uuid.UUID `json:"created_by,omitempty" db:"created_by"`
 	
 	// Nested data - AI-powered features unique to onboarding
 	Tasks                  []*OnboardingTask        `json:"tasks,omitempty"`

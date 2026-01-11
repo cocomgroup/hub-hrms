@@ -82,6 +82,14 @@ func (m *MockEmployeeRepository) GetByEmail(ctx context.Context, email string) (
 	return args.Get(0).(*models.Employee), args.Error(1)
 }
 
+func (m *MockEmployeeRepository) GetByUserID(ctx context.Context, userID uuid.UUID) (*models.Employee, error) {
+	args := m.Called(ctx, userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*models.Employee), args.Error(1)
+}
+
 func (m *MockEmployeeRepository) Create(ctx context.Context, emp *models.Employee) error {
 	args := m.Called(ctx, emp)
 	return args.Error(0)
@@ -542,8 +550,21 @@ func TestAuthService_Login(t *testing.T) {
 			mockUserRepo := new(MockUserRepository)
 			mockEmpRepo := new(MockEmployeeRepository)
 			repos := &repository.Repositories{
-				User:     mockUserRepo,
-				Employee: mockEmpRepo,
+				User:            mockUserRepo,
+				Employee:        mockEmpRepo,
+				Applicant:       nil,
+				Onboarding:      nil,
+				Workflow:        nil,
+				Timesheet:       nil,
+				PTO:             nil,
+				Benefits:        nil,
+				Payroll:         nil,
+				Recruiting:      nil,
+				Organization:    nil,
+				Project:         nil,
+				Compensation:    nil,
+				BankInfo:        nil,
+				BackgroundCheck: nil,
 			}
 
 			tt.setupMocks(mockUserRepo, mockEmpRepo)
