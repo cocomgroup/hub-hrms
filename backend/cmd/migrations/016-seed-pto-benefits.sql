@@ -37,7 +37,7 @@ SELECT
 FROM employees e
 WHERE e.email = 'emily.davis@company.com';
 
-INSERT INTO pto_requests (employee_id, pto_type, start_date, end_date, days_requested, reason, status, reviewed_by, reviewed_at)
+INSERT INTO pto_requests (employee_id, pto_type, start_date, end_date, days_requested, reason, status, reviewed_at)
 SELECT 
     e.id,
     'sick',
@@ -46,11 +46,9 @@ SELECT
     2.0,
     'Flu recovery',
     'approved',
-    e.manager_id,
     CURRENT_DATE - INTERVAL '5 days'
 FROM employees e
-WHERE e.email = 'james.miller@company.com'
-  AND e.manager_id IS NOT NULL;
+WHERE e.email = 'james.miller@company.com';
 
 -- Sample additional PTO requests
 INSERT INTO pto_requests (employee_id, pto_type, start_date, end_date, days_requested, reason, status)

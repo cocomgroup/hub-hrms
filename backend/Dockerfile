@@ -28,6 +28,9 @@ WORKDIR /app
 # Copy binary from builder
 COPY --from=builder /app/server .
 
+# Copy migration files from builder
+COPY --from=builder /app/cmd/migrations ./cmd/migrations
+
 # Create non-root user
 RUN adduser -D -g '' appuser
 USER appuser
