@@ -8,7 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"hub-hrms/backend/internal/models"
-	"hub-hrms/backend/internal/service"
+	"hub-hrms/backend/internal/services"
 )
 
 // ============================================================================
@@ -20,7 +20,7 @@ import (
 // ============================================================================
 
 // RegisterTimesheetRoutes registers simplified timesheet routes
-func RegisterTimesheetRoutes(r chi.Router, services *service.Services) {
+func RegisterTimesheetRoutes(r chi.Router, services *services.Services) {
 	r.Route("/timesheet", func(r chi.Router) {
 		// Apply auth middleware to all timesheet routes
 		r.Use(authMiddleware(services))
@@ -55,7 +55,7 @@ func RegisterTimesheetRoutes(r chi.Router, services *service.Services) {
 // TIME ENTRY HANDLERS (Daily)
 // ============================================================================
 
-func getTimeEntriesHandler(services *service.Services) http.HandlerFunc {
+func getTimeEntriesHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		employeeID, err := getEmployeeIDFromContext(r.Context())
 		if err != nil {
@@ -103,7 +103,7 @@ func getTimeEntriesHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func createTimeEntryHandler(services *service.Services) http.HandlerFunc {
+func createTimeEntryHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		employeeID, err := getEmployeeIDFromContext(r.Context())
 		if err != nil {
@@ -127,7 +127,7 @@ func createTimeEntryHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func getTimeEntryHandler(services *service.Services) http.HandlerFunc {
+func getTimeEntryHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		entryID, err := uuid.Parse(chi.URLParam(r, "id"))
 		if err != nil {
@@ -145,7 +145,7 @@ func getTimeEntryHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func updateTimeEntryHandler(services *service.Services) http.HandlerFunc {
+func updateTimeEntryHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		employeeID, err := getEmployeeIDFromContext(r.Context())
 		if err != nil {
@@ -175,7 +175,7 @@ func updateTimeEntryHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func deleteTimeEntryHandler(services *service.Services) http.HandlerFunc {
+func deleteTimeEntryHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		employeeID, err := getEmployeeIDFromContext(r.Context())
 		if err != nil {
@@ -198,7 +198,7 @@ func deleteTimeEntryHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func bulkCreateTimeEntriesHandler(services *service.Services) http.HandlerFunc {
+func bulkCreateTimeEntriesHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		employeeID, err := getEmployeeIDFromContext(r.Context())
 		if err != nil {
@@ -226,7 +226,7 @@ func bulkCreateTimeEntriesHandler(services *service.Services) http.HandlerFunc {
 // TIMESHEET HANDLERS (Weekly)
 // ============================================================================
 
-func getWeeklySummaryHandler(services *service.Services) http.HandlerFunc {
+func getWeeklySummaryHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		employeeID, err := getEmployeeIDFromContext(r.Context())
 		if err != nil {
@@ -269,7 +269,7 @@ func getWeeklySummaryHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func submitTimesheetHandler(services *service.Services) http.HandlerFunc {
+func submitTimesheetHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		employeeID, err := getEmployeeIDFromContext(r.Context())
 		if err != nil {
@@ -293,7 +293,7 @@ func submitTimesheetHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func getEmployeeTimesheetsHandler(services *service.Services) http.HandlerFunc {
+func getEmployeeTimesheetsHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		employeeID, err := getEmployeeIDFromContext(r.Context())
 		if err != nil {
@@ -315,7 +315,7 @@ func getEmployeeTimesheetsHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func getTimesheetHandler(services *service.Services) http.HandlerFunc {
+func getTimesheetHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		timesheetID, err := uuid.Parse(chi.URLParam(r, "id"))
 		if err != nil {
@@ -337,7 +337,7 @@ func getTimesheetHandler(services *service.Services) http.HandlerFunc {
 // MANAGER HANDLERS
 // ============================================================================
 
-func getPendingTimesheetsHandler(services *service.Services) http.HandlerFunc {
+func getPendingTimesheetsHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Get manager ID from context (assuming it's the employee ID)
 		managerID, err := getEmployeeIDFromContext(r.Context())
@@ -360,7 +360,7 @@ func getPendingTimesheetsHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func approveTimesheetHandler(services *service.Services) http.HandlerFunc {
+func approveTimesheetHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		managerID, err := getEmployeeIDFromContext(r.Context())
 		if err != nil {
@@ -396,7 +396,7 @@ func approveTimesheetHandler(services *service.Services) http.HandlerFunc {
 
 // getAvailableProjectsHandler returns projects the employee is assigned to
 // NOTE: This is READ-ONLY. Project creation/management is in /api/projects
-func getAvailableProjectsHandler(services *service.Services) http.HandlerFunc {
+func getAvailableProjectsHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		employeeID, err := getEmployeeIDFromContext(r.Context())
 		if err != nil {

@@ -1,0 +1,435 @@
+# Hub-HRMS GraphQL Schema
+# This schema matches the queries expected by hr-recruiting gateway
+
+# =============================================================================
+# QUERIES
+# =============================================================================
+
+type Query {
+  """Get list of jobs with optional filtering"""
+  jobs(filters: JobFilters, limit: Int, offset: Int): [Job!]!
+  
+  """Get a single job by ID"""
+  job(id: ID!): Job
+  
+  """Get list of applications with optional filtering"""
+  applications(filters: ApplicationFilters, limit: Int, offset: Int): [Application!]!
+  
+  """Get a single application by ID"""
+  application(id: ID!): Application
+  
+  """Get a candidate profile by ID"""
+  candidate(id: ID!): Candidate
+  
+  """Get recruitment metrics for a date range"""
+  recruitmentMetrics(dateRange: DateRangeInput!): RecruitmentMetrics!
+  
+  """Get job performance metrics"""
+  jobPerformance(jobId: ID!): JobPerformance!
+  
+  """Get application pipeline status breakdown"""
+  applicationPipeline(jobId: ID): [PipelineStage!]!
+}
+
+# =============================================================================
+# MUTATIONS
+# =============================================================================
+
+type Mutation {
+  """Submit a new job application"""
+  submitApplication(input: ApplicationInput!): Application!
+  
+  """Increment job view count"""
+  incrementJobView(id: ID!): Job!
+  
+  """Update application status"""
+  updateApplicationStatus(id: ID!, status: ApplicationStatus!, note: String): Application!
+  
+  """Bulk update application status"""
+  bulkUpdateApplicationStatus(ids: [ID!]!, status: ApplicationStatus!): [Application!]!
+  
+  """Add a note to an application"""
+  addApplicationNote(applicationId: ID!, content: String!, isInternal: Boolean): ApplicationNote!
+  
+  """Score/re-score an application using AI"""
+  scoreApplication(applicationId: ID!): AIScore!
+  
+  """Create a new job posting"""
+  createJob(input: JobInput!): Job!
+  
+  """Update an existing job"""
+  updateJob(id: ID!, input: JobInput!): Job!
+  
+  """Publish a job (make it visible)"""
+  publishJob(id: ID!): Job!
+  
+  """Close a job (stop accepting applications)"""
+  closeJob(id: ID!): Job!
+  
+  """Delete a job"""
+  deleteJob(id: ID!): Boolean!
+  
+  """Generate job description using AI"""
+  generateJobDescription(input: JobDescriptionInput!): JobDescriptionOutput!
+  
+  """Update candidate profile"""
+  updateCandidateProfile(id: ID!, input: CandidateProfileInput!): Candidate!
+}
+
+# =============================================================================
+# JOB TYPES
+# =============================================================================
+
+type Job {
+  id: ID!
+  title: String!
+  department: String!
+  location: String!
+  employmentType: String!
+  experienceLevel: String
+  salaryRange: SalaryRange
+  description: String
+  requirements: String
+  responsibilities: String
+  benefits: String
+  skills: [String!]
+  status: String!
+  postedDate: String
+  closingDate: String
+  applicationCount: Int!
+  viewCount: Int!
+  remoteWork: Boolean
+  urgentHiring: Boolean
+  createdBy: User
+  createdAt: String!
+  updatedAt: String!
+}
+
+type SalaryRange {
+  min: Float
+  max: Float
+  currency: String
+}
+
+type User {
+  id: ID!
+  name: String!
+  email: String
+}
+
+# =============================================================================
+# APPLICATION TYPES
+# =============================================================================
+
+type Application {
+  id: ID!
+  job: Job!
+  candidate: Candidate!
+  status: String!
+  appliedDate: String!
+  lastUpdated: String!
+  resumeUrl: String
+  coverLetter: String
+  linkedinUrl: String
+  portfolioUrl: String
+  yearsOfExperience: Int
+  currentLocation: String
+  willingToRelocate: Boolean
+  expectedSalary: Float
+  availability: String
+  aiScore: AIScore
+  notes: [ApplicationNote!]
+  timeline: [TimelineEvent!]
+}
+
+type ApplicationNote {
+  id: ID!
+  author: User!
+  content: String!
+  createdAt: String!
+  isInternal: Boolean!
+}
+
+type TimelineEvent {
+  id: ID!
+  type: String!
+  description: String!
+  performedBy: User
+  timestamp: String!
+}
+
+# =============================================================================
+# CANDIDATE TYPES
+# =============================================================================
+
+type Candidate {
+  id: ID!
+  firstName: String!
+  lastName: String!
+  email: String!
+  phone: String
+  location: String
+  headline: String
+  summary: String
+  resumeUrl: String
+  linkedinUrl: String
+  portfolioUrl: String
+  githubUrl: String
+  skills: [String!]
+  experience: [WorkExperience!]
+  education: [Education!]
+  certifications: [Certification!]
+  languages: [Language!]
+  applications: [Application!]
+  availability: String
+  expectedSalary: Float
+  preferredLocations: [String!]
+  remotePreference: String
+  createdAt: String!
+  updatedAt: String!
+}
+
+type WorkExperience {
+  company: String!
+  title: String!
+  startDate: String!
+  endDate: String
+  current: Boolean!
+  description: String
+  achievements: [String!]
+}
+
+type Education {
+  institution: String!
+  degree: String!
+  field: String!
+  startDate: String!
+  endDate: String
+  gpa: Float
+}
+
+type Certification {
+  name: String!
+  issuer: String!
+  issueDate: String!
+  expiryDate: String
+  credentialId: String
+}
+
+type Language {
+  language: String!
+  proficiency: String!
+}
+
+# =============================================================================
+# AI SCORING TYPES
+# =============================================================================
+
+type AIScore {
+  overall: Float!
+  insights: String
+  strengths: [String!]
+  concerns: [String!]
+  recommendation: String!
+  generatedAt: String!
+}
+
+# =============================================================================
+# ANALYTICS TYPES
+# =============================================================================
+
+type RecruitmentMetrics {
+  totalJobs: Int!
+  activeJobs: Int!
+  totalApplications: Int!
+  avgApplicationsPerJob: Float!
+  avgTimeToHire: Float
+  conversionRates: ConversionRates
+  topPerformingJobs: [JobPerformance!]
+  applicationsByStatus: [StatusBreakdown!]
+  applicationTrend: [TrendPoint!]
+  sourceBreakdown: [SourceBreakdown!]
+}
+
+type ConversionRates {
+  viewToApply: Float!
+  applyToScreen: Float!
+  screenToInterview: Float!
+  interviewToOffer: Float!
+  offerToAccept: Float!
+}
+
+type JobPerformance {
+  job: Job!
+  views: Int!
+  applications: Int!
+  conversionRate: Float!
+  avgTimeToFill: Float
+}
+
+type StatusBreakdown {
+  status: String!
+  count: Int!
+  percentage: Float!
+}
+
+type TrendPoint {
+  date: String!
+  value: Int!
+}
+
+type SourceBreakdown {
+  source: String!
+  count: Int!
+  percentage: Float!
+}
+
+type PipelineStage {
+  status: String!
+  count: Int!
+  applications: [Application!]!
+}
+
+# =============================================================================
+# INPUT TYPES
+# =============================================================================
+
+input JobFilters {
+  department: String
+  status: String
+  employmentType: String
+  remoteWork: Boolean
+  experienceLevel: String
+  location: String
+}
+
+input ApplicationFilters {
+  jobId: ID
+  status: String
+  dateFrom: String
+  dateTo: String
+  minScore: Float
+}
+
+input ApplicationInput {
+  jobId: ID!
+  firstName: String!
+  lastName: String!
+  email: String!
+  phone: String
+  resumeUrl: String
+  coverLetter: String
+  linkedinUrl: String
+  portfolioUrl: String
+  yearsOfExperience: Int
+  currentLocation: String
+  willingToRelocate: Boolean
+  expectedSalary: Float
+  availability: String
+}
+
+input JobInput {
+  title: String!
+  department: String!
+  location: String!
+  employmentType: String!
+  experienceLevel: String
+  salaryMin: Float
+  salaryMax: Float
+  salaryCurrency: String
+  description: String
+  requirements: String
+  responsibilities: String
+  benefits: String
+  skills: [String!]
+  remoteWork: Boolean
+  urgentHiring: Boolean
+}
+
+input JobDescriptionInput {
+  title: String!
+  department: String!
+  experienceLevel: String!
+  keyResponsibilities: [String!]
+  requiredSkills: [String!]
+}
+
+input CandidateProfileInput {
+  firstName: String
+  lastName: String
+  email: String
+  phone: String
+  location: String
+  headline: String
+  summary: String
+  linkedinUrl: String
+  portfolioUrl: String
+  githubUrl: String
+  skills: [String!]
+  availability: String
+  expectedSalary: Float
+  preferredLocations: [String!]
+  remotePreference: String
+}
+
+input DateRangeInput {
+  from: String!
+  to: String!
+}
+
+# =============================================================================
+# ENUMS
+# =============================================================================
+
+enum ApplicationStatus {
+  NEW
+  SCREENING
+  PHONE_SCREEN
+  TECHNICAL_INTERVIEW
+  ONSITE_INTERVIEW
+  OFFER
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+}
+
+enum JobStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+  ARCHIVED
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  TEMPORARY
+  INTERNSHIP
+}
+
+enum ExperienceLevel {
+  ENTRY
+  JUNIOR
+  MID
+  SENIOR
+  LEAD
+  PRINCIPAL
+}
+
+enum RemoteWorkType {
+  ONSITE
+  REMOTE
+  HYBRID
+}
+
+# =============================================================================
+# AI TYPES
+# =============================================================================
+
+type JobDescriptionOutput {
+  description: String!
+  requirements: String!
+  responsibilities: String!
+  suggestedSkills: [String!]!
+}

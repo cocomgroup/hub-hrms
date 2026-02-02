@@ -1,0 +1,389 @@
+{
+  "info": {
+    "name": "Hub-HRMS Recruiting API",
+    "description": "Complete GraphQL API testing collection for hub-hrms recruiting functionality",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "jobId",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "applicationId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": ["{{baseUrl}}"],
+          "path": ["health"]
+        }
+      }
+    },
+    {
+      "name": "Queries",
+      "item": [
+        {
+          "name": "Get All Jobs",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query GetJobs($limit: Int, $filters: JobFilters) {\n  jobs(limit: $limit, filters: $filters) {\n    id\n    title\n    department\n    location\n    employmentType\n    experienceLevel\n    salaryRange {\n      min\n      max\n      currency\n    }\n    description\n    skills\n    status\n    postedDate\n    applicationCount\n    viewCount\n    remoteWork\n    urgentHiring\n  }\n}",
+                "variables": "{\n  \"limit\": 10,\n  \"filters\": {\n    \"status\": \"PUBLISHED\"\n  }\n}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            }
+          }
+        },
+        {
+          "name": "Get Single Job",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query GetJob($jobId: ID!) {\n  job(id: $jobId) {\n    id\n    title\n    department\n    location\n    employmentType\n    experienceLevel\n    salaryRange {\n      min\n      max\n      currency\n    }\n    description\n    requirements\n    responsibilities\n    benefits\n    skills\n    status\n    postedDate\n    closingDate\n    applicationCount\n    viewCount\n    remoteWork\n    urgentHiring\n    createdBy {\n      id\n      name\n      email\n    }\n    createdAt\n    updatedAt\n  }\n}",
+                "variables": "{\n  \"jobId\": \"{{jobId}}\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            }
+          }
+        },
+        {
+          "name": "Filter Jobs by Department",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query FilterJobs($filters: JobFilters) {\n  jobs(filters: $filters, limit: 20) {\n    id\n    title\n    department\n    location\n    employmentType\n    remoteWork\n  }\n}",
+                "variables": "{\n  \"filters\": {\n    \"department\": \"Engineering\",\n    \"remoteWork\": true\n  }\n}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            }
+          }
+        },
+        {
+          "name": "Get Applications",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query GetApplications($filters: ApplicationFilters, $limit: Int) {\n  applications(filters: $filters, limit: $limit) {\n    id\n    status\n    appliedDate\n    job {\n      id\n      title\n      department\n    }\n    candidate {\n      id\n      firstName\n      lastName\n      email\n      phone\n    }\n    yearsOfExperience\n    expectedSalary\n    aiScore {\n      overall\n      recommendation\n    }\n  }\n}",
+                "variables": "{\n  \"filters\": {\n    \"jobId\": \"{{jobId}}\"\n  },\n  \"limit\": 50\n}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            }
+          }
+        },
+        {
+          "name": "Get Single Application",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "query GetApplication($appId: ID!) {\n  application(id: $appId) {\n    id\n    status\n    appliedDate\n    lastUpdated\n    job {\n      id\n      title\n      department\n    }\n    candidate {\n      id\n      firstName\n      lastName\n      email\n      phone\n      location\n      resumeUrl\n      linkedinUrl\n      skills\n    }\n    coverLetter\n    yearsOfExperience\n    expectedSalary\n    availability\n    aiScore {\n      overall\n      insights\n      strengths\n      concerns\n      recommendation\n      generatedAt\n    }\n    notes {\n      id\n      author {\n        name\n      }\n      content\n      createdAt\n      isInternal\n    }\n    timeline {\n      id\n      type\n      description\n      performedBy {\n        name\n      }\n      timestamp\n    }\n  }\n}",
+                "variables": "{\n  \"appId\": \"{{applicationId}}\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Mutations",
+      "item": [
+        {
+          "name": "Submit Application",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.data && response.data.submitApplication) {",
+                  "        pm.collectionVariables.set('applicationId', response.data.submitApplication.id);",
+                  "        console.log('Application ID saved:', response.data.submitApplication.id);",
+                  "    }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation SubmitApplication($input: ApplicationInput!) {\n  submitApplication(input: $input) {\n    id\n    status\n    appliedDate\n    job {\n      id\n      title\n      department\n    }\n    candidate {\n      id\n      firstName\n      lastName\n      email\n      phone\n    }\n    coverLetter\n    yearsOfExperience\n    expectedSalary\n    aiScore {\n      overall\n      insights\n      strengths\n      concerns\n      recommendation\n      generatedAt\n    }\n  }\n}",
+                "variables": "{\n  \"input\": {\n    \"jobId\": \"{{jobId}}\",\n    \"firstName\": \"John\",\n    \"lastName\": \"Doe\",\n    \"email\": \"john.doe@example.com\",\n    \"phone\": \"+1-555-0100\",\n    \"resumeUrl\": \"https://example.com/resumes/john-doe.pdf\",\n    \"coverLetter\": \"I am excited to apply for this position. I have 5 years of experience in software engineering and I believe I would be a great fit for your team.\",\n    \"linkedinUrl\": \"https://linkedin.com/in/johndoe\",\n    \"portfolioUrl\": \"https://johndoe.dev\",\n    \"yearsOfExperience\": 5,\n    \"currentLocation\": \"San Francisco, CA\",\n    \"willingToRelocate\": true,\n    \"expectedSalary\": 130000,\n    \"availability\": \"2 weeks notice\"\n  }\n}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            }
+          }
+        },
+        {
+          "name": "Increment Job View",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation IncrementJobView($jobId: ID!) {\n  incrementJobView(id: $jobId) {\n    id\n    title\n    viewCount\n  }\n}",
+                "variables": "{\n  \"jobId\": \"{{jobId}}\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            }
+          }
+        },
+        {
+          "name": "Update Application Status",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation UpdateApplicationStatus($appId: ID!, $status: ApplicationStatus!, $note: String) {\n  updateApplicationStatus(id: $appId, status: $status, note: $note) {\n    id\n    status\n    lastUpdated\n    notes {\n      id\n      content\n      createdAt\n    }\n  }\n}",
+                "variables": "{\n  \"appId\": \"{{applicationId}}\",\n  \"status\": \"SCREENING\",\n  \"note\": \"Moving to screening phase after initial review\"\n}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            }
+          }
+        },
+        {
+          "name": "Add Application Note",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation AddNote($appId: ID!, $content: String!, $isInternal: Boolean) {\n  addApplicationNote(applicationId: $appId, content: $content, isInternal: $isInternal) {\n    id\n    content\n    author {\n      id\n      name\n    }\n    createdAt\n    isInternal\n  }\n}",
+                "variables": "{\n  \"appId\": \"{{applicationId}}\",\n  \"content\": \"Candidate has strong technical background. Schedule phone screen.\",\n  \"isInternal\": true\n}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            }
+          }
+        },
+        {
+          "name": "Create Job",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "graphql",
+              "graphql": {
+                "query": "mutation CreateJob($input: JobInput!) {\n  createJob(input: $input) {\n    id\n    title\n    department\n    location\n    status\n    createdAt\n  }\n}",
+                "variables": "{\n  \"input\": {\n    \"title\": \"Senior Backend Engineer\",\n    \"department\": \"Engineering\",\n    \"location\": \"Remote\",\n    \"employmentType\": \"FULL_TIME\",\n    \"experienceLevel\": \"SENIOR\",\n    \"salaryMin\": 140000,\n    \"salaryMax\": 200000,\n    \"salaryCurrency\": \"USD\",\n    \"description\": \"We are looking for a senior backend engineer to join our team.\",\n    \"requirements\": \"5+ years of experience with Go, PostgreSQL, and distributed systems.\",\n    \"responsibilities\": \"Design and build scalable backend services.\",\n    \"benefits\": \"Competitive salary, health insurance, 401k matching.\",\n    \"skills\": [\"Go\", \"PostgreSQL\", \"Docker\", \"Kubernetes\"],\n    \"remoteWork\": true,\n    \"urgentHiring\": false\n  }\n}"
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/graphql",
+              "host": ["{{baseUrl}}"],
+              "path": ["graphql"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Workflows",
+      "item": [
+        {
+          "name": "Complete Application Flow",
+          "item": [
+            {
+              "name": "1. Browse Jobs",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "graphql",
+                  "graphql": {
+                    "query": "query { jobs(limit: 10) { id title department } }"
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/graphql",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["graphql"]
+                }
+              }
+            },
+            {
+              "name": "2. View Job Details",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "graphql",
+                  "graphql": {
+                    "query": "query GetJob($jobId: ID!) { job(id: $jobId) { id title description requirements } }",
+                    "variables": "{ \"jobId\": \"{{jobId}}\" }"
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/graphql",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["graphql"]
+                }
+              }
+            },
+            {
+              "name": "3. Track View",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "graphql",
+                  "graphql": {
+                    "query": "mutation IncrementView($jobId: ID!) { incrementJobView(id: $jobId) { id viewCount } }",
+                    "variables": "{ \"jobId\": \"{{jobId}}\" }"
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/graphql",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["graphql"]
+                }
+              }
+            },
+            {
+              "name": "4. Submit Application",
+              "request": {
+                "method": "POST",
+                "header": [],
+                "body": {
+                  "mode": "graphql",
+                  "graphql": {
+                    "query": "mutation SubmitApp($input: ApplicationInput!) { submitApplication(input: $input) { id status } }",
+                    "variables": "{ \"input\": { \"jobId\": \"{{jobId}}\", \"firstName\": \"Test\", \"lastName\": \"User\", \"email\": \"test@example.com\" } }"
+                  }
+                },
+                "url": {
+                  "raw": "{{baseUrl}}/graphql",
+                  "host": ["{{baseUrl}}"],
+                  "path": ["graphql"]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

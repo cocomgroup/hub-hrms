@@ -8,7 +8,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"hub-hrms/backend/internal/models"
-	"hub-hrms/backend/internal/service"
+	svc "hub-hrms/backend/internal/services"
 )
 
 // getRoleFromContext extracts role from JWT claims
@@ -22,7 +22,7 @@ func getRoleFromContext(r *http.Request) string {
 }
 
 // RegisterBankInfoRoutes registers all bank info routes
-func RegisterBankInfoRoutes(r chi.Router, services *service.Services) {
+func RegisterBankInfoRoutes(r chi.Router, services *svc.Services) {
 	r.Route("/bank-info", func(r chi.Router) {
 		r.Use(authMiddleware(services))
 		
@@ -45,7 +45,7 @@ func RegisterBankInfoRoutes(r chi.Router, services *service.Services) {
 }
 
 // createBankInfoHandler handles creating new bank information
-func createBankInfoHandler(services *service.Services) http.HandlerFunc {
+func createBankInfoHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Get user ID from context
 		userID, err := getUserIDFromContext(r.Context())
@@ -95,11 +95,11 @@ func createBankInfoHandler(services *service.Services) http.HandlerFunc {
 		// Create bank info
 		bankInfo, err := services.BankInfo.CreateBankInfo(r.Context(), &req, userID)
 		if err != nil {
-			if err == service.ErrInvalidRoutingNumber {
+			if err == svc.ErrInvalidRoutingNumber {
 				respondError(w, http.StatusBadRequest, "routing number must be exactly 9 digits")
 				return
 			}
-			if err == service.ErrInvalidAccountNumber {
+			if err == svc.ErrInvalidAccountNumber {
 				respondError(w, http.StatusBadRequest, "account number must be between 8 and 17 digits")
 				return
 			}
@@ -113,7 +113,7 @@ func createBankInfoHandler(services *service.Services) http.HandlerFunc {
 }
 
 // getBankInfoHandler retrieves bank information by ID
-func getBankInfoHandler(services *service.Services) http.HandlerFunc {
+func getBankInfoHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
 		id, err := uuid.Parse(idStr)
@@ -124,7 +124,7 @@ func getBankInfoHandler(services *service.Services) http.HandlerFunc {
 		
 		bankInfo, err := services.BankInfo.GetBankInfo(r.Context(), id)
 		if err != nil {
-			if err == service.ErrBankInfoNotFound {
+			if err == svc.ErrBankInfoNotFound {  
 				respondError(w, http.StatusNotFound, "bank information not found")
 				return
 			}
@@ -160,7 +160,7 @@ func getBankInfoHandler(services *service.Services) http.HandlerFunc {
 }
 
 // getBankInfoByEmployeeHandler retrieves all bank information for an employee
-func getBankInfoByEmployeeHandler(services *service.Services) http.HandlerFunc {
+func getBankInfoByEmployeeHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		employeeIDStr := chi.URLParam(r, "employeeId")
 		employeeID, err := uuid.Parse(employeeIDStr)
@@ -196,7 +196,7 @@ func getBankInfoByEmployeeHandler(services *service.Services) http.HandlerFunc {
 }
 
 // updateBankInfoHandler handles updating bank information
-func updateBankInfoHandler(services *service.Services) http.HandlerFunc {
+func updateBankInfoHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
 		id, err := uuid.Parse(idStr)
@@ -239,7 +239,7 @@ func updateBankInfoHandler(services *service.Services) http.HandlerFunc {
 }
 
 // deleteBankInfoHandler handles soft deleting bank information
-func deleteBankInfoHandler(services *service.Services) http.HandlerFunc {
+func deleteBankInfoHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
 		id, err := uuid.Parse(idStr)
@@ -275,7 +275,7 @@ func deleteBankInfoHandler(services *service.Services) http.HandlerFunc {
 }
 
 // setPrimaryBankInfoHandler sets a bank account as primary
-func setPrimaryBankInfoHandler(services *service.Services) http.HandlerFunc {
+func setPrimaryBankInfoHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
 		id, err := uuid.Parse(idStr)
@@ -313,7 +313,7 @@ func setPrimaryBankInfoHandler(services *service.Services) http.HandlerFunc {
 }
 
 // verifyBankInfoHandler marks bank information as verified
-func verifyBankInfoHandler(services *service.Services) http.HandlerFunc {
+func verifyBankInfoHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Only admins/HR can verify
 		role := getRoleFromContext(r)
@@ -344,7 +344,7 @@ func verifyBankInfoHandler(services *service.Services) http.HandlerFunc {
 }
 
 // listBankInfoHandler lists all bank information (admin/HR only)
-func listBankInfoHandler(services *service.Services) http.HandlerFunc {
+func listBankInfoHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Only admins/HR can list all
 		role := getRoleFromContext(r)

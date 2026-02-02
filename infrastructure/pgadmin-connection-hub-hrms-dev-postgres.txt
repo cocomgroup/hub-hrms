@@ -1,0 +1,23 @@
+﻿PgAdmin4 Connection Configuration
+Generated: 2026-01-17 12:26:08
+
+RDS Instance: hub-hrms-dev-postgres
+Region: us-east-1
+
+CONNECTION DETAILS:
+  Host: hub-hrms-dev-postgres.cqxc6o2kin1t.us-east-1.rds.amazonaws.com
+  Port: 5432
+  Database: hrmsdb
+  Username: postgres
+  Engine: postgres 16.6
+  Publicly Accessible: False
+
+NETWORK:
+  VPC: vpc-06c4297d11e6c94f8
+  Security Groups: sg-03ad2dd82498eb1f9
+  Your IP: 64.67.230.105
+
+PGADMIN SETTINGS:
+  SSL Mode: Require
+  Save Password: Yes
+

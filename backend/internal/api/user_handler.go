@@ -8,11 +8,11 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"hub-hrms/backend/internal/models"
-	"hub-hrms/backend/internal/service"
+	"hub-hrms/backend/internal/services"
 )
 
 // RegisterUserRoutes registers all user management routes
-func RegisterUserRoutes(r chi.Router, services *service.Services) {
+func RegisterUserRoutes(r chi.Router, services *services.Services) {
 	r.Route("/users", func(r chi.Router) {
 		// Apply auth middleware to all user routes
 		r.Use(authMiddleware(services))
@@ -53,7 +53,7 @@ type ResetPasswordRequest struct {
 // ===========================================
 
 // createUserHandler creates a new user with encrypted password
-func createUserHandler(services *service.Services) http.HandlerFunc {
+func createUserHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Only admins can create users
 		// TODO: Add role check middleware
@@ -134,7 +134,7 @@ func createUserHandler(services *service.Services) http.HandlerFunc {
 }
 
 // listUsersHandler lists all users with optional search and role filter
-func listUsersHandler(services *service.Services) http.HandlerFunc {
+func listUsersHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Get query parameters
 		search := r.URL.Query().Get("search")
@@ -157,7 +157,7 @@ func listUsersHandler(services *service.Services) http.HandlerFunc {
 }
 
 // getUserHandler gets a specific user by ID
-func getUserHandler(services *service.Services) http.HandlerFunc {
+func getUserHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
 		id, err := uuid.Parse(idStr)
@@ -179,7 +179,7 @@ func getUserHandler(services *service.Services) http.HandlerFunc {
 }
 
 // updateUserHandler updates a user
-func updateUserHandler(services *service.Services) http.HandlerFunc {
+func updateUserHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
 		id, err := uuid.Parse(idStr)
@@ -237,7 +237,7 @@ func updateUserHandler(services *service.Services) http.HandlerFunc {
 }
 
 // deleteUserHandler deletes a user
-func deleteUserHandler(services *service.Services) http.HandlerFunc {
+func deleteUserHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
 		id, err := uuid.Parse(idStr)
@@ -257,7 +257,7 @@ func deleteUserHandler(services *service.Services) http.HandlerFunc {
 }
 
 // resetPasswordHandler resets a user's password
-func resetPasswordHandler(services *service.Services) http.HandlerFunc {
+func resetPasswordHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
 		id, err := uuid.Parse(idStr)

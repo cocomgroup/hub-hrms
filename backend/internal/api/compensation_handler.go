@@ -8,11 +8,11 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"hub-hrms/backend/internal/models"
-	"hub-hrms/backend/internal/service"
+	"hub-hrms/backend/internal/services"
 )
 
 // RegisterCompensationRoutes registers all compensation-related routes
-func RegisterCompensationRoutes(r chi.Router, services *service.Services) {
+func RegisterCompensationRoutes(r chi.Router, services *services.Services) {
 	r.Route("/compensation", func(r chi.Router) {
 		r.Use(authMiddleware(services))
 
@@ -43,7 +43,7 @@ func RegisterCompensationRoutes(r chi.Router, services *service.Services) {
 // === COMPENSATION PLANS HANDLERS ===
 
 // createPlanHandler creates a new compensation plan
-func createPlanHandler(services *service.Services) http.HandlerFunc {
+func createPlanHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req models.CreateCompensationPlanRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -63,7 +63,7 @@ func createPlanHandler(services *service.Services) http.HandlerFunc {
 }
 
 // getPlanHandler retrieves a compensation plan by ID
-func getPlanHandler(services *service.Services) http.HandlerFunc {
+func getPlanHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
 		id, err := uuid.Parse(idStr)
@@ -83,7 +83,7 @@ func getPlanHandler(services *service.Services) http.HandlerFunc {
 }
 
 // getAllPlansHandler retrieves all compensation plans
-func getAllPlansHandler(services *service.Services) http.HandlerFunc {
+func getAllPlansHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		plans, err := services.Compensation.GetAllPlans(r.Context())
 		if err != nil {
@@ -97,7 +97,7 @@ func getAllPlansHandler(services *service.Services) http.HandlerFunc {
 }
 
 // getPlansByEmployeeHandler retrieves all compensation plans for an employee
-func getPlansByEmployeeHandler(services *service.Services) http.HandlerFunc {
+func getPlansByEmployeeHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		employeeIDStr := chi.URLParam(r, "employee_id")
 		employeeID, err := uuid.Parse(employeeIDStr)
@@ -117,7 +117,7 @@ func getPlansByEmployeeHandler(services *service.Services) http.HandlerFunc {
 }
 
 // getActivePlanHandler retrieves the active compensation plan for an employee
-func getActivePlanHandler(services *service.Services) http.HandlerFunc {
+func getActivePlanHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		employeeIDStr := chi.URLParam(r, "employee_id")
 		employeeID, err := uuid.Parse(employeeIDStr)
@@ -137,7 +137,7 @@ func getActivePlanHandler(services *service.Services) http.HandlerFunc {
 }
 
 // updatePlanHandler updates a compensation plan
-func updatePlanHandler(services *service.Services) http.HandlerFunc {
+func updatePlanHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
 		id, err := uuid.Parse(idStr)
@@ -163,7 +163,7 @@ func updatePlanHandler(services *service.Services) http.HandlerFunc {
 }
 
 // deletePlanHandler deletes a compensation plan
-func deletePlanHandler(services *service.Services) http.HandlerFunc {
+func deletePlanHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
 		id, err := uuid.Parse(idStr)
@@ -182,7 +182,7 @@ func deletePlanHandler(services *service.Services) http.HandlerFunc {
 }
 
 // getTotalCompensationHandler calculates total annual compensation for an employee
-func getTotalCompensationHandler(services *service.Services) http.HandlerFunc {
+func getTotalCompensationHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		employeeIDStr := chi.URLParam(r, "employee_id")
 		employeeID, err := uuid.Parse(employeeIDStr)
@@ -206,7 +206,7 @@ func getTotalCompensationHandler(services *service.Services) http.HandlerFunc {
 // === BONUS HANDLERS ===
 
 // createBonusHandler creates a new bonus
-func createBonusHandler(services *service.Services) http.HandlerFunc {
+func createBonusHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req models.CreateBonusRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -226,7 +226,7 @@ func createBonusHandler(services *service.Services) http.HandlerFunc {
 }
 
 // getBonusHandler retrieves a bonus by ID
-func getBonusHandler(services *service.Services) http.HandlerFunc {
+func getBonusHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
 		id, err := uuid.Parse(idStr)
@@ -246,7 +246,7 @@ func getBonusHandler(services *service.Services) http.HandlerFunc {
 }
 
 // getAllBonusesHandler retrieves all bonuses
-func getAllBonusesHandler(services *service.Services) http.HandlerFunc {
+func getAllBonusesHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		bonuses, err := services.Compensation.GetAllBonuses(r.Context())
 		if err != nil {
@@ -260,7 +260,7 @@ func getAllBonusesHandler(services *service.Services) http.HandlerFunc {
 }
 
 // getBonusesByEmployeeHandler retrieves all bonuses for an employee
-func getBonusesByEmployeeHandler(services *service.Services) http.HandlerFunc {
+func getBonusesByEmployeeHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		employeeIDStr := chi.URLParam(r, "employee_id")
 		employeeID, err := uuid.Parse(employeeIDStr)
@@ -280,7 +280,7 @@ func getBonusesByEmployeeHandler(services *service.Services) http.HandlerFunc {
 }
 
 // getBonusesByStatusHandler retrieves bonuses by status
-func getBonusesByStatusHandler(services *service.Services) http.HandlerFunc {
+func getBonusesByStatusHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		status := chi.URLParam(r, "status")
 
@@ -295,7 +295,7 @@ func getBonusesByStatusHandler(services *service.Services) http.HandlerFunc {
 }
 
 // updateBonusHandler updates a bonus
-func updateBonusHandler(services *service.Services) http.HandlerFunc {
+func updateBonusHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
 		id, err := uuid.Parse(idStr)
@@ -321,7 +321,7 @@ func updateBonusHandler(services *service.Services) http.HandlerFunc {
 }
 
 // approveBonusHandler approves a bonus
-func approveBonusHandler(services *service.Services) http.HandlerFunc {
+func approveBonusHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
 		id, err := uuid.Parse(idStr)
@@ -348,7 +348,7 @@ func approveBonusHandler(services *service.Services) http.HandlerFunc {
 }
 
 // markBonusPaidHandler marks a bonus as paid
-func markBonusPaidHandler(services *service.Services) http.HandlerFunc {
+func markBonusPaidHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
 		id, err := uuid.Parse(idStr)
@@ -368,7 +368,7 @@ func markBonusPaidHandler(services *service.Services) http.HandlerFunc {
 }
 
 // deleteBonusHandler deletes a bonus
-func deleteBonusHandler(services *service.Services) http.HandlerFunc {
+func deleteBonusHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
 		id, err := uuid.Parse(idStr)
@@ -387,7 +387,7 @@ func deleteBonusHandler(services *service.Services) http.HandlerFunc {
 }
 
 // getPendingBonusesHandler retrieves all pending bonuses
-func getPendingBonusesHandler(services *service.Services) http.HandlerFunc {
+func getPendingBonusesHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		bonuses, err := services.Compensation.GetPendingBonuses(r.Context())
 		if err != nil {

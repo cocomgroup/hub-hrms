@@ -10,11 +10,11 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"hub-hrms/backend/internal/models"
-	"hub-hrms/backend/internal/service"
+	"hub-hrms/backend/internal/services"
 )
 
 // RegisterPTORoutes registers all PTO-related routes
-func RegisterPTORoutes(r chi.Router, services *service.Services) {
+func RegisterPTORoutes(r chi.Router, services *services.Services) {
 	r.Route("/pto", func(r chi.Router) {
 		r.Use(authMiddleware(services))
 		
@@ -33,7 +33,7 @@ func RegisterPTORoutes(r chi.Router, services *service.Services) {
 }
 
 // getPTOBalanceHandler gets the PTO balance for the current employee
-func getPTOBalanceHandler(services *service.Services) http.HandlerFunc {
+func getPTOBalanceHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		employeeID, err := getEmployeeIDFromContext(r.Context())
 		if err != nil {
@@ -70,7 +70,7 @@ func getPTOBalanceHandler(services *service.Services) http.HandlerFunc {
 }
 
 // getPTORequestsHandler gets all PTO requests for the current employee
-func getPTORequestsHandler(services *service.Services) http.HandlerFunc {
+func getPTORequestsHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		employeeID, err := getEmployeeIDFromContext(r.Context())
 		if err != nil {
@@ -89,7 +89,7 @@ func getPTORequestsHandler(services *service.Services) http.HandlerFunc {
 }
 
 // createPTORequestHandler creates a new PTO request
-func createPTORequestHandler(services *service.Services) http.HandlerFunc {
+func createPTORequestHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		employeeID, err := getEmployeeIDFromContext(r.Context())
 		if err != nil {
@@ -162,7 +162,7 @@ func createPTORequestHandler(services *service.Services) http.HandlerFunc {
 }
 
 // getPTORequestHandler gets a specific PTO request
-func getPTORequestHandler(services *service.Services) http.HandlerFunc {
+func getPTORequestHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
 		id, err := uuid.Parse(idStr)
@@ -198,7 +198,7 @@ func getPTORequestHandler(services *service.Services) http.HandlerFunc {
 }
 
 // reviewPTORequestHandler reviews (approves/denies) a PTO request
-func reviewPTORequestHandler(services *service.Services) http.HandlerFunc {
+func reviewPTORequestHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
 		requestID, err := uuid.Parse(idStr)
@@ -242,7 +242,7 @@ func reviewPTORequestHandler(services *service.Services) http.HandlerFunc {
 }
 
 // getPendingPTORequestsHandler gets all pending PTO requests (for managers)
-func getPendingPTORequestsHandler(services *service.Services) http.HandlerFunc {
+func getPendingPTORequestsHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// TODO: Verify user has manager/HR role
 

@@ -13,14 +13,18 @@ import (
     "strings"
 
 	"hub-hrms/backend/internal/api"
-    "hub-hrms/backend/internal/db"
 	"hub-hrms/backend/internal/config"
+    "hub-hrms/backend/internal/db"
+	"hub-hrms/backend/internal/graphql"
 	"hub-hrms/backend/internal/repository"
-	"hub-hrms/backend/internal/service"
+	"hub-hrms/backend/internal/services"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
+	"github.com/99designs/gqlgen/graphql/handler"
+	"github.com/99designs/gqlgen/graphql/playground"
+	_ "github.com/lib/pq"
 )
 
 func main() {
@@ -63,11 +67,17 @@ func main() {
     var dbPool = database.GetPool() 
 	repos := repository.NewRepositories(dbPool)
 
+	// Initialize GraphQL
+	resolver := &graphql.Resolver{DB: database.GetDB()}
+	gqlServer := handler.NewDefaultServer(
+		graphql.NewExecutableSchema(graphql.Config{Resolvers: resolver}),
+	)
+
 	// Initialize services
-	services := service.NewServices(repos, cfg)
+	services := services.NewServices(repos, cfg)
 
 	// Initialize HTTP server
-	router := setupRouter(services, cfg)
+	router := setupRouter(services, gqlServer, cfg)
 
 	server := &http.Server{
 		Addr:         fmt.Sprintf(":%s", cfg.Port),
@@ -103,15 +113,15 @@ func main() {
 	log.Println("Server exited")
 }
 
-func setupRouter(services *service.Services, cfg *config.Config) *chi.Mux {
+func setupRouter(services *services.Services, gqlServer *handler.Server, cfg *config.Config) *chi.Mux {
 	r := chi.NewRouter()
 
 	// Middleware
-	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
-	r.Use(middleware.Logger)
-	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(60 * time.Second))
+	r.Use(chimiddleware.RequestID)
+	r.Use(chimiddleware.RealIP)
+	r.Use(chimiddleware.Logger)
+	r.Use(chimiddleware.Recoverer)
+	r.Use(chimiddleware.Timeout(60 * time.Second))
 
 	// CORS
 	r.Use(cors.Handler(cors.Options{
@@ -123,6 +133,12 @@ func setupRouter(services *service.Services, cfg *config.Config) *chi.Mux {
 		MaxAge:           300,
 	}))
 
+	// Health check (root level)
+    r.Get("/health", healthCheckHandler)
+
+	// GraphQL endpoints
+	r.Handle("/graphql", gqlServer)
+	r.Handle("/playground", playground.Handler("GraphQL Playground", "/graphql"))
 
 	// API routes
 	r.Route("/api", func(r chi.Router) {
@@ -229,11 +245,12 @@ func runMigrations(database *db.Postgres) error {
 		"011-create-organizations.sql",
         "012-create-compensation.sql",
 		"013-create-bankinfo.sql",
-        "014-seed-employees.sql",
-        "015-seed-organizations.sql",
-        "016-seed-pto-benefits.sql",
-        //"017-seed-recruiting.sql",
-        "018-seed-users.sql",
+		"014-create-api-keys.sql",
+        "015-seed-employees.sql",
+        "016-seed-organizations.sql",
+        "017-seed-pto-benefits.sql",
+        "018-seed-recruiting.sql",
+        "019-seed-users.sql",
 	}
 
 	log.Printf("Running %d database migrations from %s/", len(migrationFiles), migrationsDir)

@@ -1,0 +1,46 @@
+# gqlgen configuration for Hub-HRMS GraphQL API
+
+# Schema location
+schema:
+  - internal/graphql/schema.graphql
+
+# Generated executable code
+exec:
+  filename: internal/graphql/generated.go
+  package: graphql
+
+# Generated models
+model:
+  filename: internal/graphql/models_gen.go
+  package: graphql
+
+# Resolver configuration - using single-file layout to use existing resolver.go
+resolver:
+  layout: single-file
+  dir: internal/graphql
+  package: graphql
+  filename: resolver.go
+
+# Autobind - let gqlgen discover existing types
+autobind:
+  - hub-hrms/backend/internal/graphql
+
+# Skip runtime error on unknown fields
+omit_slice_element_pointers: false
+
+# Model overrides and custom scalars
+models:
+  ID:
+    model:
+      - github.com/99designs/gqlgen/graphql.ID
+      - github.com/99designs/gqlgen/graphql.Int
+      - github.com/99designs/gqlgen/graphql.Int64
+      - github.com/99designs/gqlgen/graphql/introspection.Type
+  
+  # Tell gqlgen that Application needs a resolver for nested fields
+  Application:
+    fields:
+      job:
+        resolver: true
+      candidate:
+        resolver: true

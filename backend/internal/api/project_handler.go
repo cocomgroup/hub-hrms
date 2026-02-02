@@ -9,11 +9,11 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"hub-hrms/backend/internal/models"
-	"hub-hrms/backend/internal/service"
+	svc "hub-hrms/backend/internal/services"
 )
 
 // RegisterProjectRoutes registers all project management routes
-func RegisterProjectRoutes(r chi.Router, services *service.Services) {
+func RegisterProjectRoutes(r chi.Router, services *svc.Services) {
 	r.Route("/projects", func(r chi.Router) {
 		r.Use(authMiddleware(services))
 		
@@ -51,7 +51,7 @@ func RegisterProjectRoutes(r chi.Router, services *service.Services) {
 }
 
 // createProjectHandler creates a new project
-func createProjectHandler(services *service.Services) http.HandlerFunc {
+func createProjectHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Get user ID from context (created_by)
 		userID, err := getUserIDFromContext(r.Context())
@@ -99,7 +99,7 @@ func createProjectHandler(services *service.Services) http.HandlerFunc {
 			log.Printf("ERROR: CreateProject failed: %v", err)
 			log.Printf("ERROR: Error type: %T", err)
 			
-			if err == service.ErrInvalidManager {
+			if err == svc.ErrInvalidManager {
 				log.Printf("ERROR: Invalid manager provided")
 				respondError(w, http.StatusBadRequest, "invalid manager")
 				return
@@ -118,7 +118,7 @@ func createProjectHandler(services *service.Services) http.HandlerFunc {
 
 
 // listProjectsHandler lists all projects with optional filters
-func listProjectsHandler(services *service.Services) http.HandlerFunc {
+func listProjectsHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		status := r.URL.Query().Get("status")
 		managerIDStr := r.URL.Query().Get("manager_id")
@@ -144,7 +144,7 @@ func listProjectsHandler(services *service.Services) http.HandlerFunc {
 }
 
 // getProjectHandler gets a project by ID with details
-func getProjectHandler(services *service.Services) http.HandlerFunc {
+func getProjectHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
 		id, err := uuid.Parse(idStr)
@@ -164,7 +164,7 @@ func getProjectHandler(services *service.Services) http.HandlerFunc {
 }
 
 // updateProjectHandler updates a project
-func updateProjectHandler(services *service.Services) http.HandlerFunc {
+func updateProjectHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
 		id, err := uuid.Parse(idStr)
@@ -181,11 +181,11 @@ func updateProjectHandler(services *service.Services) http.HandlerFunc {
 
 		project, err := services.Project.UpdateProject(r.Context(), id, &req)
 		if err != nil {
-			if err == service.ErrProjectNotFound {
+			if err == svc.ErrProjectNotFound {
 				respondError(w, http.StatusNotFound, "project not found")
 				return
 			}
-			if err == service.ErrInvalidManager {
+			if err == svc.ErrInvalidManager {
 				respondError(w, http.StatusBadRequest, "invalid manager")
 				return
 			}
@@ -198,7 +198,7 @@ func updateProjectHandler(services *service.Services) http.HandlerFunc {
 }
 
 // deleteProjectHandler deletes a project
-func deleteProjectHandler(services *service.Services) http.HandlerFunc {
+func deleteProjectHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
 		id, err := uuid.Parse(idStr)
@@ -218,7 +218,7 @@ func deleteProjectHandler(services *service.Services) http.HandlerFunc {
 
 // assignProjectMemberHandler assigns an employee to a project
 // assignProjectMemberHandler assigns an employee to a project
-func assignProjectMemberHandler(services *service.Services) http.HandlerFunc {
+func assignProjectMemberHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		projectID, err := uuid.Parse(chi.URLParam(r, "projectID"))
 		if err != nil {
@@ -272,7 +272,7 @@ func assignProjectMemberHandler(services *service.Services) http.HandlerFunc {
 }
 
 // removeProjectMemberHandler removes an employee from a project
-func removeProjectMemberHandler(services *service.Services) http.HandlerFunc {
+func removeProjectMemberHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		projectIDStr := chi.URLParam(r, "id")
 		employeeIDStr := chi.URLParam(r, "employeeId")
@@ -298,7 +298,7 @@ func removeProjectMemberHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func revokeProjectMemberHandler(services *service.Services) http.HandlerFunc {
+func revokeProjectMemberHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		projectID, err := uuid.Parse(chi.URLParam(r, "projectID"))
 		if err != nil {
@@ -325,7 +325,7 @@ func revokeProjectMemberHandler(services *service.Services) http.HandlerFunc {
 }
 
 // getProjectMembersHandler gets all members of a project
-func getProjectMembersHandler(services *service.Services) http.HandlerFunc {
+func getProjectMembersHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		projectID, err := uuid.Parse(chi.URLParam(r, "projectID"))
 		if err != nil {
@@ -349,7 +349,7 @@ func getProjectMembersHandler(services *service.Services) http.HandlerFunc {
 }
 
 // getEmployeeProjectsHandler gets all projects for an employee
-func getEmployeeProjectsHandler(services *service.Services) http.HandlerFunc {
+func getEmployeeProjectsHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		employeeID, err := uuid.Parse(chi.URLParam(r, "employeeID"))
 		if err != nil {
@@ -373,7 +373,7 @@ func getEmployeeProjectsHandler(services *service.Services) http.HandlerFunc {
 }
 
 // assignEmployeeToManagerHandler assigns an employee to a manager
-func assignEmployeeToManagerHandler(services *service.Services) http.HandlerFunc {
+func assignEmployeeToManagerHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req models.AssignManagerRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

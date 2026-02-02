@@ -1,0 +1,507 @@
+# CloudFormation Additions for Hub-HRMS Stack
+# Add Bastion Host and SES Email Service
+
+# ==================================================
+# PARAMETERS TO ADD (add to Parameters section)
+# ==================================================
+
+  # Bastion Host Configuration
+  BastionKeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: EC2 Key Pair for SSH access to bastion host
+    
+  BastionInstanceType:
+    Type: String
+    Default: t3.micro
+    AllowedValues:
+      - t3.micro
+      - t3.small
+      - t3.medium
+    Description: Bastion host instance type
+    
+  BastionAllowedCIDR:
+    Type: String
+    Default: 0.0.0.0/0
+    Description: CIDR block allowed to SSH into bastion (restrict to your IP for security)
+    AllowedPattern: (\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})/(\d{1,2})
+    ConstraintDescription: Must be a valid CIDR block (e.g., 1.2.3.4/32)
+    
+  EnableBastion:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: Enable bastion host for database access
+    
+  # SES Configuration
+  SESFromEmail:
+    Type: String
+    Description: Email address to send emails from (must be verified in SES)
+    Default: noreply@yourdomain.com
+    
+  SESReplyToEmail:
+    Type: String
+    Description: Reply-to email address
+    Default: support@yourdomain.com
+    
+  SESConfigurationSetName:
+    Type: String
+    Default: hub-hrms-emails
+    Description: SES configuration set name
+    
+  EnableSES:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: Enable SES email service
+
+# ==================================================
+# CONDITIONS TO ADD (add to Conditions section)
+# ==================================================
+
+  UseBastion: !Equals [!Ref EnableBastion, 'true']
+  UseSES: !Equals [!Ref EnableSES, 'true']
+
+# ==================================================
+# RESOURCES TO ADD (add after existing resources)
+# ==================================================
+
+  # ==========================================
+  # Bastion Host
+  # ==========================================
+  
+  BastionSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: UseBastion
+    Properties:
+      GroupDescription: Security group for bastion host
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref BastionAllowedCIDR
+          Description: Allow SSH from specified CIDR
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-bastion-sg
+        - Key: Environment
+          Value: !Ref Environment
+
+  BastionHostRole:
+    Type: AWS::IAM::Role
+    Condition: UseBastion
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-bastion-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-bastion-role
+        - Key: Environment
+          Value: !Ref Environment
+
+  BastionInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Condition: UseBastion
+    Properties:
+      InstanceProfileName: !Sub ${AWS::StackName}-bastion-profile
+      Roles:
+        - !Ref BastionHostRole
+
+  BastionHost:
+    Type: AWS::EC2::Instance
+    Condition: UseBastion
+    Properties:
+      InstanceType: !Ref BastionInstanceType
+      KeyName: !Ref BastionKeyName
+      IamInstanceProfile: !Ref BastionInstanceProfile
+      ImageId: !Sub '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64}}'
+      SubnetId: !Ref PublicSubnet1
+      SecurityGroupIds:
+        - !Ref BastionSecurityGroup
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          # Update system
+          yum update -y
+          
+          # Install PostgreSQL client
+          yum install -y postgresql15
+          
+          # Install useful tools
+          yum install -y htop tmux vim git
+          
+          # Configure CloudWatch agent
+          yum install -y amazon-cloudwatch-agent
+          
+          # Create .pgpass file template for postgres connections
+          cat > /home/ec2-user/.pgpass_template << 'EOF'
+          # PostgreSQL password file
+          # Format: hostname:port:database:username:password
+          # Example: ${DBInstance.Endpoint.Address}:5432:*:${DBUsername}:YOUR_PASSWORD_HERE
+          EOF
+          chown ec2-user:ec2-user /home/ec2-user/.pgpass_template
+          
+          # Create helpful scripts
+          cat > /home/ec2-user/connect-rds.sh << 'EOF'
+          #!/bin/bash
+          # Connect to RDS PostgreSQL
+          echo "Connecting to RDS..."
+          psql -h ${DBInstance.Endpoint.Address} \
+               -p 5432 \
+               -U ${DBUsername} \
+               -d ${DBName}
+          EOF
+          chmod +x /home/ec2-user/connect-rds.sh
+          chown ec2-user:ec2-user /home/ec2-user/connect-rds.sh
+          
+          # Setup motd
+          cat > /etc/update-motd.d/50-hub-hrms << 'EOF'
+          #!/bin/bash
+          echo ""
+          echo "=========================================="
+          echo "  Hub-HRMS Bastion Host"
+          echo "=========================================="
+          echo "Environment: ${Environment}"
+          echo "Stack: ${AWS::StackName}"
+          echo ""
+          echo "RDS Endpoint: ${DBInstance.Endpoint.Address}"
+          echo "Database: ${DBName}"
+          echo ""
+          echo "Scripts:"
+          echo "  ./connect-rds.sh - Connect to PostgreSQL"
+          echo ""
+          echo "=========================================="
+          echo ""
+          EOF
+          chmod +x /etc/update-motd.d/50-hub-hrms
+          
+          # Signal success
+          /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource BastionHost --region ${AWS::Region}
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-bastion
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Purpose
+          Value: Database Access
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT10M
+
+  BastionEIP:
+    Type: AWS::EC2::EIP
+    Condition: UseBastion
+    Properties:
+      Domain: vpc
+      InstanceId: !Ref BastionHost
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-bastion-eip
+
+  # Update RDS Security Group to allow bastion access
+  RDSSecurityGroupIngressBastion:
+    Type: AWS::EC2::SecurityGroupIngress
+    Condition: UseBastion
+    Properties:
+      GroupId: !Ref RDSSecurityGroup
+      IpProtocol: tcp
+      FromPort: 5432
+      ToPort: 5432
+      SourceSecurityGroupId: !Ref BastionSecurityGroup
+      Description: Allow PostgreSQL from bastion host
+
+  # ==========================================
+  # SES Email Service
+  # ==========================================
+  
+  SESConfigurationSet:
+    Type: AWS::SES::ConfigurationSet
+    Condition: UseSES
+    Properties:
+      Name: !Ref SESConfigurationSetName
+
+  SESConfigurationSetEventDestination:
+    Type: AWS::SES::ConfigurationSetEventDestination
+    Condition: UseSES
+    Properties:
+      ConfigurationSetName: !Ref SESConfigurationSet
+      EventDestination:
+        Name: CloudWatchDestination
+        Enabled: true
+        MatchingEventTypes:
+          - send
+          - reject
+          - bounce
+          - complaint
+          - delivery
+          - open
+          - click
+        CloudWatchDestination:
+          DimensionConfigurations:
+            - DimensionName: ses:configuration-set
+              DimensionValueSource: messageTag
+              DefaultDimensionValue: !Ref SESConfigurationSetName
+
+  # SNS Topic for SES bounce/complaint notifications
+  SESNotificationTopic:
+    Type: AWS::SNS::Topic
+    Condition: UseSES
+    Properties:
+      TopicName: !Sub ${AWS::StackName}-ses-notifications
+      DisplayName: Hub-HRMS SES Email Notifications
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-ses-topic
+        - Key: Environment
+          Value: !Ref Environment
+
+  SESNotificationTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Condition: UseSES
+    Properties:
+      Topics:
+        - !Ref SESNotificationTopic
+      PolicyDocument:
+        Version: '2012-10-09'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ses.amazonaws.com
+            Action:
+              - SNS:Publish
+            Resource: !Ref SESNotificationTopic
+
+  # Email identity (domain or email)
+  # Note: This creates the identity but you must verify it manually
+  # For production, use domain identity; for development, use email identity
+  SESEmailIdentity:
+    Type: AWS::SES::EmailIdentity
+    Condition: UseSES
+    Properties:
+      EmailIdentity: !Ref SESFromEmail
+      ConfigurationSetAttributes:
+        ConfigurationSetName: !Ref SESConfigurationSet
+
+  # IAM Policy for ECS tasks to send emails
+  SESSendEmailPolicy:
+    Type: AWS::IAM::Policy
+    Condition: UseSES
+    Properties:
+      PolicyName: SESSendEmailPolicy
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - ses:SendEmail
+              - ses:SendRawEmail
+              - ses:SendTemplatedEmail
+              - ses:SendBulkTemplatedEmail
+            Resource:
+              - !Sub arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/${SESFromEmail}
+              - !Sub arn:aws:ses:${AWS::Region}:${AWS::AccountId}:configuration-set/${SESConfigurationSetName}
+          - Effect: Allow
+            Action:
+              - ses:GetSendQuota
+              - ses:GetSendStatistics
+            Resource: '*'
+      Roles:
+        - !Ref ECSTaskRole
+
+  # SES Email Templates (examples)
+  WelcomeEmailTemplate:
+    Type: AWS::SES::Template
+    Condition: UseSES
+    Properties:
+      Template:
+        TemplateName: !Sub ${AWS::StackName}-welcome-email
+        SubjectPart: Welcome to Hub-HRMS
+        TextPart: |
+          Hello {{name}},
+          
+          Welcome to Hub-HRMS! Your account has been created successfully.
+          
+          Username: {{username}}
+          
+          Please log in and change your password at your earliest convenience.
+          
+          Best regards,
+          Hub-HRMS Team
+        HtmlPart: |
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <style>
+              body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+              .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+              .header { background-color: #4CAF50; color: white; padding: 20px; text-align: center; }
+              .content { padding: 20px; background-color: #f9f9f9; }
+              .footer { padding: 20px; text-align: center; font-size: 12px; color: #666; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <div class="header">
+                <h1>Welcome to Hub-HRMS</h1>
+              </div>
+              <div class="content">
+                <p>Hello {{name}},</p>
+                <p>Welcome to Hub-HRMS! Your account has been created successfully.</p>
+                <p><strong>Username:</strong> {{username}}</p>
+                <p>Please log in and change your password at your earliest convenience.</p>
+                <p>Best regards,<br>Hub-HRMS Team</p>
+              </div>
+              <div class="footer">
+                <p>&copy; 2024 Hub-HRMS. All rights reserved.</p>
+              </div>
+            </div>
+          </body>
+          </html>
+
+  PasswordResetTemplate:
+    Type: AWS::SES::Template
+    Condition: UseSES
+    Properties:
+      Template:
+        TemplateName: !Sub ${AWS::StackName}-password-reset
+        SubjectPart: Hub-HRMS Password Reset Request
+        TextPart: |
+          Hello {{name}},
+          
+          You requested a password reset for your Hub-HRMS account.
+          
+          Reset Code: {{reset_code}}
+          
+          This code will expire in {{expiry_minutes}} minutes.
+          
+          If you didn't request this reset, please ignore this email.
+          
+          Best regards,
+          Hub-HRMS Team
+        HtmlPart: |
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <style>
+              body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+              .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+              .header { background-color: #f44336; color: white; padding: 20px; text-align: center; }
+              .content { padding: 20px; background-color: #f9f9f9; }
+              .code { background-color: #fff; border: 2px solid #4CAF50; padding: 15px; text-align: center; font-size: 24px; font-weight: bold; margin: 20px 0; }
+              .footer { padding: 20px; text-align: center; font-size: 12px; color: #666; }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <div class="header">
+                <h1>Password Reset Request</h1>
+              </div>
+              <div class="content">
+                <p>Hello {{name}},</p>
+                <p>You requested a password reset for your Hub-HRMS account.</p>
+                <div class="code">{{reset_code}}</div>
+                <p>This code will expire in {{expiry_minutes}} minutes.</p>
+                <p>If you didn't request this reset, please ignore this email.</p>
+                <p>Best regards,<br>Hub-HRMS Team</p>
+              </div>
+              <div class="footer">
+                <p>&copy; 2024 Hub-HRMS. All rights reserved.</p>
+              </div>
+            </div>
+          </body>
+          </html>
+
+  # CloudWatch Dashboard for SES metrics
+  SESDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Condition: UseSES
+    Properties:
+      DashboardName: !Sub ${AWS::StackName}-ses-metrics
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "properties": {
+                "metrics": [
+                  ["AWS/SES", "Send", {"stat": "Sum"}],
+                  [".", "Delivery", {"stat": "Sum"}],
+                  [".", "Bounce", {"stat": "Sum"}],
+                  [".", "Complaint", {"stat": "Sum"}],
+                  [".", "Reject", {"stat": "Sum"}]
+                ],
+                "period": 300,
+                "stat": "Sum",
+                "region": "${AWS::Region}",
+                "title": "SES Email Metrics"
+              }
+            }
+          ]
+        }
+
+# ==================================================
+# OUTPUTS TO ADD (add to Outputs section)
+# ==================================================
+
+  BastionHostPublicIP:
+    Condition: UseBastion
+    Description: Bastion host public IP address
+    Value: !Ref BastionEIP
+    Export:
+      Name: !Sub ${AWS::StackName}-bastion-ip
+
+  BastionHostId:
+    Condition: UseBastion
+    Description: Bastion host instance ID
+    Value: !Ref BastionHost
+    Export:
+      Name: !Sub ${AWS::StackName}-bastion-id
+
+  BastionSSHCommand:
+    Condition: UseBastion
+    Description: SSH command to connect to bastion
+    Value: !Sub 'ssh -i ${BastionKeyName}.pem ec2-user@${BastionEIP}'
+
+  BastionRDSTunnelCommand:
+    Condition: UseBastion
+    Description: SSH tunnel command for RDS access via bastion
+    Value: !Sub 'ssh -i ${BastionKeyName}.pem -L 5432:${DBInstance.Endpoint.Address}:5432 ec2-user@${BastionEIP} -N'
+
+  SESConfigurationSetName:
+    Condition: UseSES
+    Description: SES configuration set name
+    Value: !Ref SESConfigurationSet
+    Export:
+      Name: !Sub ${AWS::StackName}-ses-config-set
+
+  SESFromEmail:
+    Condition: UseSES
+    Description: SES from email address
+    Value: !Ref SESFromEmail
+    Export:
+      Name: !Sub ${AWS::StackName}-ses-from-email
+
+  SESNotificationTopicArn:
+    Condition: UseSES
+    Description: SNS topic ARN for SES notifications
+    Value: !Ref SESNotificationTopic
+    Export:
+      Name: !Sub ${AWS::StackName}-ses-topic-arn
+
+  SESDashboardURL:
+    Condition: UseSES
+    Description: CloudWatch dashboard for SES metrics
+    Value: !Sub 'https://console.aws.amazon.com/cloudwatch/home?region=${AWS::Region}#dashboards:name=${AWS::StackName}-ses-metrics'

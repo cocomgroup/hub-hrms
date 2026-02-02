@@ -16,11 +16,11 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"hub-hrms/backend/internal/models"
-	"hub-hrms/backend/internal/service"
+	"hub-hrms/backend/internal/services"
 )
 
 // RegisterRecruitingRoutesComplete registers all recruiting-related routes including new endpoints
-func RegisterRecruitingRoutes(r chi.Router, services *service.Services) {
+func RegisterRecruitingRoutes(r chi.Router, services *services.Services) {
 	r.Route("/recruiting", func(r chi.Router) {
 		// Apply auth middleware to all recruiting routes
 		r.Use(authMiddleware(services))
@@ -86,7 +86,7 @@ func RegisterRecruitingRoutes(r chi.Router, services *service.Services) {
 
 // Dashboard Handlers
 
-func getRecruitingStatsHandler(services *service.Services) http.HandlerFunc {
+func getRecruitingStatsHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, err := getUserIDFromContext(r.Context())
 		if err != nil {
@@ -105,7 +105,7 @@ func getRecruitingStatsHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func getRecruitingDashboardHandler(services *service.Services) http.HandlerFunc {
+func getRecruitingDashboardHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, err := getUserIDFromContext(r.Context())
 		if err != nil {
@@ -126,7 +126,7 @@ func getRecruitingDashboardHandler(services *service.Services) http.HandlerFunc 
 
 // Provider Handlers
 
-func listProvidersHandler(services *service.Services) http.HandlerFunc {
+func listProvidersHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, err := getUserIDFromContext(r.Context())
 		if err != nil {
@@ -145,7 +145,7 @@ func listProvidersHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func createProviderHandler(services *service.Services) http.HandlerFunc {
+func createProviderHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, err := getUserIDFromContext(r.Context())
 		if err != nil {
@@ -184,7 +184,7 @@ func createProviderHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func getProviderHandler(services *service.Services) http.HandlerFunc {
+func getProviderHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, err := getUserIDFromContext(r.Context())
 		if err != nil {
@@ -210,7 +210,7 @@ func getProviderHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func updateProviderHandler(services *service.Services) http.HandlerFunc {
+func updateProviderHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, err := getUserIDFromContext(r.Context())
 		if err != nil {
@@ -242,7 +242,7 @@ func updateProviderHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func deleteProviderHandler(services *service.Services) http.HandlerFunc {
+func deleteProviderHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, err := getUserIDFromContext(r.Context())
 		if err != nil {
@@ -268,7 +268,7 @@ func deleteProviderHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func testProviderConnectionHandler(services *service.Services) http.HandlerFunc {
+func testProviderConnectionHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, err := getUserIDFromContext(r.Context())
 		if err != nil {
@@ -317,7 +317,7 @@ func testProviderConnectionHandler(services *service.Services) http.HandlerFunc 
 
 // Applicant Handlers
 
-func listApplicantsHandler(services *service.Services) http.HandlerFunc {
+func listApplicantsHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, err := getUserIDFromContext(r.Context())
 		if err != nil {
@@ -352,7 +352,7 @@ func listApplicantsHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func getApplicantLeaderboardHandler(services *service.Services) http.HandlerFunc {
+func getApplicantLeaderboardHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, err := getUserIDFromContext(r.Context())
 		if err != nil {
@@ -371,7 +371,7 @@ func getApplicantLeaderboardHandler(services *service.Services) http.HandlerFunc
 	}
 }
 
-func analyzeCandidateHandler(services *service.Services) http.HandlerFunc {
+func analyzeCandidateHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, err := getUserIDFromContext(r.Context())
 		if err != nil {
@@ -397,7 +397,7 @@ func analyzeCandidateHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func updateCandidateStatusHandler(services *service.Services) http.HandlerFunc {
+func updateCandidateStatusHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, err := getUserIDFromContext(r.Context())
 		if err != nil {
@@ -434,7 +434,7 @@ func updateCandidateStatusHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func closeJobPostingHandler(services *service.Services) http.HandlerFunc {
+func closeJobPostingHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, err := getUserIDFromContext(r.Context())
 		if err != nil {
@@ -468,7 +468,7 @@ func closeJobPostingHandler(services *service.Services) http.HandlerFunc {
 
 // Interview Handlers
 
-func scheduleInterviewHandler(services *service.Services) http.HandlerFunc {
+func scheduleInterviewHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, err := getUserIDFromContext(r.Context())
 		if err != nil {
@@ -507,7 +507,7 @@ func scheduleInterviewHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func updateInterviewHandler(services *service.Services) http.HandlerFunc {
+func updateInterviewHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, err := getUserIDFromContext(r.Context())
 		if err != nil {
@@ -539,7 +539,7 @@ func updateInterviewHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func getInterviewsByCandidateHandler(services *service.Services) http.HandlerFunc {
+func getInterviewsByCandidateHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, err := getUserIDFromContext(r.Context())
 		if err != nil {
@@ -565,7 +565,7 @@ func getInterviewsByCandidateHandler(services *service.Services) http.HandlerFun
 	}
 }
 
-func listJobPostingsHandler(services *service.Services) http.HandlerFunc {
+func listJobPostingsHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, err := getUserIDFromContext(r.Context())
 		if err != nil {
@@ -586,7 +586,7 @@ func listJobPostingsHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func createJobPostingHandler(services *service.Services) http.HandlerFunc {
+func createJobPostingHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID, err := getUserIDFromContext(r.Context())
 		if err != nil {
@@ -611,7 +611,7 @@ func createJobPostingHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func getJobPostingHandler(services *service.Services) http.HandlerFunc {
+func getJobPostingHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, err := getUserIDFromContext(r.Context())
 		if err != nil {
@@ -637,7 +637,7 @@ func getJobPostingHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func updateJobPostingHandler(services *service.Services) http.HandlerFunc {
+func updateJobPostingHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, err := getUserIDFromContext(r.Context())
 		if err != nil {
@@ -669,7 +669,7 @@ func updateJobPostingHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func deleteJobPostingHandler(services *service.Services) http.HandlerFunc {
+func deleteJobPostingHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, err := getUserIDFromContext(r.Context())
 		if err != nil {
@@ -695,7 +695,7 @@ func deleteJobPostingHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func uploadJobHandler(services *service.Services) http.HandlerFunc {
+func uploadJobHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Get user ID from context
 		userID, err := getUserIDFromContext(r.Context())
@@ -1043,7 +1043,7 @@ func parseJobFromText(content string) (models.JobUploadRequest, error) {
 }
 
 
-func postToJobBoardsHandler(services *service.Services) http.HandlerFunc {
+func postToJobBoardsHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID, err := getUserIDFromContext(r.Context())
 		if err != nil {
@@ -1077,7 +1077,7 @@ func postToJobBoardsHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func getCandidatesByJobHandler(services *service.Services) http.HandlerFunc {
+func getCandidatesByJobHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, err := getUserIDFromContext(r.Context())
 		if err != nil {
@@ -1107,7 +1107,7 @@ func getCandidatesByJobHandler(services *service.Services) http.HandlerFunc {
 
 // Candidates Handlers
 
-func createCandidateHandler(services *service.Services) http.HandlerFunc {
+func createCandidateHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, err := getUserIDFromContext(r.Context())
 		if err != nil {
@@ -1132,7 +1132,7 @@ func createCandidateHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func getCandidateHandler(services *service.Services) http.HandlerFunc {
+func getCandidateHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, err := getUserIDFromContext(r.Context())
 		if err != nil {
@@ -1158,7 +1158,7 @@ func getCandidateHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func updateCandidateHandler(services *service.Services) http.HandlerFunc {
+func updateCandidateHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, err := getUserIDFromContext(r.Context())
 		if err != nil {
@@ -1190,7 +1190,7 @@ func updateCandidateHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func deleteCandidateHandler(services *service.Services) http.HandlerFunc {
+func deleteCandidateHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, err := getUserIDFromContext(r.Context())
 		if err != nil {
@@ -1218,7 +1218,7 @@ func deleteCandidateHandler(services *service.Services) http.HandlerFunc {
 
 // Email Handlers
 
-func generateEmailHandler(services *service.Services) http.HandlerFunc {
+func generateEmailHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, err := getUserIDFromContext(r.Context())
 		if err != nil {
@@ -1243,7 +1243,7 @@ func generateEmailHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func sendEmailHandler(services *service.Services) http.HandlerFunc {
+func sendEmailHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		userID, err := getUserIDFromContext(r.Context())
 		if err != nil {
@@ -1269,7 +1269,7 @@ func sendEmailHandler(services *service.Services) http.HandlerFunc {
 }
 
 // uploadApplicantResumeHandler handles resume file uploads
-func uploadApplicantResumeHandler(services *service.Services) http.HandlerFunc {
+func uploadApplicantResumeHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Parse multipart form (10 MB max)
 		if err := r.ParseMultipartForm(10 << 20); err != nil {

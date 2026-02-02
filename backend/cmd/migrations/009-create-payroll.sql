@@ -191,7 +191,8 @@ WHERE ec.end_date IS NULL OR ec.end_date > CURRENT_DATE
 ORDER BY e.last_name, e.first_name;
 
 -- View: Pay Stub Summary with Employee Info
-CREATE OR REPLACE VIEW v_pay_stub_summary AS
+DROP VIEW IF EXISTS v_pay_stub_summary CASCADE;
+CREATE VIEW v_pay_stub_summary AS
 SELECT 
     ps.*,
     e.first_name,
@@ -291,4 +292,4 @@ CREATE TRIGGER update_form_1099_updated_at
     FOR EACH ROW
     EXECUTE PROCEDURE update_updated_at_column();
 
-COMMIT;
+-- COMMIT; -- No transaction was started

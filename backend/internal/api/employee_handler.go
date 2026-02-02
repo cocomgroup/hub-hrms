@@ -11,11 +11,11 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"hub-hrms/backend/internal/models"
-	"hub-hrms/backend/internal/service"
+	"hub-hrms/backend/internal/services"
 )
 
 // RegisterEmployeeRoutes registers employee routes
-func RegisterEmployeeRoutes(r chi.Router, services *service.Services) {
+func RegisterEmployeeRoutes(r chi.Router, services *services.Services) {
 	r.Route("/employees", func(r chi.Router) {
 		r.Use(authMiddleware(services))
 
@@ -35,7 +35,7 @@ func RegisterEmployeeRoutes(r chi.Router, services *service.Services) {
 }
 
 // Employee handlers
-func listEmployeesHandler(services *service.Services) http.HandlerFunc {
+func listEmployeesHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		filters := make(map[string]interface{})
 		status := r.URL.Query().Get("status")
@@ -53,7 +53,7 @@ func listEmployeesHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func createEmployeeHandler(services *service.Services) http.HandlerFunc {
+func createEmployeeHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Read and log the raw body for debugging
 		bodyBytes, err := io.ReadAll(r.Body)
@@ -145,7 +145,7 @@ func createEmployeeHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func getEmployeeHandler(services *service.Services) http.HandlerFunc {
+func getEmployeeHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
 		id, err := uuid.Parse(idStr)
@@ -164,7 +164,7 @@ func getEmployeeHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func updateEmployeeHandler(services *service.Services) http.HandlerFunc {
+func updateEmployeeHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
 		id, err := uuid.Parse(idStr)
@@ -295,7 +295,7 @@ func updateEmployeeHandler(services *service.Services) http.HandlerFunc {
 }
 
 // The handler remains the same, but add logging for debugging:
-func getManagerTeamHandler(services *service.Services) http.HandlerFunc {
+func getManagerTeamHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("=== getManagerTeamHandler START ===")
 		

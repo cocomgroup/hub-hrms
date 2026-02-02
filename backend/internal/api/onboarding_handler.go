@@ -9,11 +9,11 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"hub-hrms/backend/internal/models"
-	"hub-hrms/backend/internal/service"
+	svc "hub-hrms/backend/internal/services"
 )
 
 // RegisterOnboardingRoutes registers all onboarding-related routes
-func RegisterOnboardingRoutes(r chi.Router, services *service.Services) {
+func RegisterOnboardingRoutes(r chi.Router, services *svc.Services) {
 	r.Route("/onboarding", func(r chi.Router) {
 		r.Use(authMiddleware(services))
 		
@@ -59,7 +59,7 @@ func RegisterOnboardingRoutes(r chi.Router, services *service.Services) {
 // ============================================================================
 
 // getOnboardingDashboardHandler returns dashboard overview for managers
-func getOnboardingDashboardHandler(services *service.Services) http.HandlerFunc {
+func getOnboardingDashboardHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		filters := make(map[string]interface{})
 		
@@ -91,7 +91,7 @@ func getOnboardingDashboardHandler(services *service.Services) http.HandlerFunc 
 // ============================================================================
 
 // createOnboardingWorkflowHandler creates a new onboarding workflow
-func createOnboardingWorkflowHandler(services *service.Services) http.HandlerFunc {
+func createOnboardingWorkflowHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req models.CreateWorkflowRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -125,7 +125,7 @@ func createOnboardingWorkflowHandler(services *service.Services) http.HandlerFun
 }
 
 // getOnboardingWorkflowHandler retrieves a specific workflow with all details
-func getOnboardingWorkflowHandler(services *service.Services) http.HandlerFunc {
+func getOnboardingWorkflowHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := uuid.Parse(chi.URLParam(r, "id"))
 		if err != nil {
@@ -145,7 +145,7 @@ func getOnboardingWorkflowHandler(services *service.Services) http.HandlerFunc {
 }
 
 // getOnboardingWorkflowByEmployeeHandler retrieves workflow for a specific employee
-func getOnboardingWorkflowByEmployeeHandler(services *service.Services) http.HandlerFunc {
+func getOnboardingWorkflowByEmployeeHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		employeeID, err := uuid.Parse(chi.URLParam(r, "employeeId"))
 		if err != nil {
@@ -165,7 +165,7 @@ func getOnboardingWorkflowByEmployeeHandler(services *service.Services) http.Han
 }
 
 // listOnboardingWorkflowsHandler lists workflows with optional filters
-func listOnboardingWorkflowsHandler(services *service.Services) http.HandlerFunc {
+func listOnboardingWorkflowsHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		filters := make(map[string]interface{})
 		
@@ -198,7 +198,7 @@ func listOnboardingWorkflowsHandler(services *service.Services) http.HandlerFunc
 }
 
 // updateOnboardingWorkflowHandler updates a workflow
-func updateOnboardingWorkflowHandler(services *service.Services) http.HandlerFunc {
+func updateOnboardingWorkflowHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := uuid.Parse(chi.URLParam(r, "id"))
 		if err != nil {
@@ -224,7 +224,7 @@ func updateOnboardingWorkflowHandler(services *service.Services) http.HandlerFun
 }
 
 // deleteOnboardingWorkflowHandler deletes a workflow (soft delete recommended)
-func deleteOnboardingWorkflowHandler(services *service.Services) http.HandlerFunc {
+func deleteOnboardingWorkflowHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := uuid.Parse(chi.URLParam(r, "id"))
 		if err != nil {
@@ -249,7 +249,7 @@ func deleteOnboardingWorkflowHandler(services *service.Services) http.HandlerFun
 // ============================================================================
 
 // createOnboardingTaskHandler creates a new task
-func createOnboardingTaskHandler(services *service.Services) http.HandlerFunc {
+func createOnboardingTaskHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req models.CreateTaskRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -269,7 +269,7 @@ func createOnboardingTaskHandler(services *service.Services) http.HandlerFunc {
 }
 
 // getOnboardingTaskHandler retrieves a specific task
-func getOnboardingTaskHandler(services *service.Services) http.HandlerFunc {
+func getOnboardingTaskHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := uuid.Parse(chi.URLParam(r, "id"))
 		if err != nil {
@@ -289,7 +289,7 @@ func getOnboardingTaskHandler(services *service.Services) http.HandlerFunc {
 }
 
 // updateOnboardingTaskHandler updates a task
-func updateOnboardingTaskHandler(services *service.Services) http.HandlerFunc {
+func updateOnboardingTaskHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := uuid.Parse(chi.URLParam(r, "id"))
 		if err != nil {
@@ -315,7 +315,7 @@ func updateOnboardingTaskHandler(services *service.Services) http.HandlerFunc {
 }
 
 // completeOnboardingTaskHandler marks a task as complete
-func completeOnboardingTaskHandler(services *service.Services) http.HandlerFunc {
+func completeOnboardingTaskHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		taskID, err := uuid.Parse(chi.URLParam(r, "id"))
 		if err != nil {
@@ -348,7 +348,7 @@ func completeOnboardingTaskHandler(services *service.Services) http.HandlerFunc 
 }
 
 // deleteOnboardingTaskHandler deletes a task
-func deleteOnboardingTaskHandler(services *service.Services) http.HandlerFunc {
+func deleteOnboardingTaskHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := uuid.Parse(chi.URLParam(r, "id"))
 		if err != nil {
@@ -368,7 +368,7 @@ func deleteOnboardingTaskHandler(services *service.Services) http.HandlerFunc {
 }
 
 // listTasksByOnboardingWorkflowHandler lists all tasks for a workflow
-func listTasksByOnboardingWorkflowHandler(services *service.Services) http.HandlerFunc {
+func listTasksByOnboardingWorkflowHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		workflowID, err := uuid.Parse(chi.URLParam(r, "workflowId"))
 		if err != nil {
@@ -392,7 +392,7 @@ func listTasksByOnboardingWorkflowHandler(services *service.Services) http.Handl
 // ============================================================================
 
 // onboardingAIChatHandler handles AI chat interactions
-func onboardingAIChatHandler(services *service.Services) http.HandlerFunc {
+func onboardingAIChatHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req models.AIInteractionRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -420,7 +420,7 @@ func onboardingAIChatHandler(services *service.Services) http.HandlerFunc {
 }
 
 // listOnboardingInteractionsHandler lists AI interactions for a workflow
-func listOnboardingInteractionsHandler(services *service.Services) http.HandlerFunc {
+func listOnboardingInteractionsHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		workflowID, err := uuid.Parse(chi.URLParam(r, "workflowId"))
 		if err != nil {
@@ -452,7 +452,7 @@ func listOnboardingInteractionsHandler(services *service.Services) http.HandlerF
 // ============================================================================
 
 // listOnboardingTemplatesHandler lists available templates
-func listOnboardingTemplatesHandler(services *service.Services) http.HandlerFunc {
+func listOnboardingTemplatesHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		department := r.URL.Query().Get("department")
 		roleType := r.URL.Query().Get("role_type")
@@ -469,7 +469,7 @@ func listOnboardingTemplatesHandler(services *service.Services) http.HandlerFunc
 }
 
 // getOnboardingTemplateHandler retrieves a specific template with items
-func getOnboardingTemplateHandler(services *service.Services) http.HandlerFunc {
+func getOnboardingTemplateHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := uuid.Parse(chi.URLParam(r, "id"))
 		if err != nil {
@@ -493,7 +493,7 @@ func getOnboardingTemplateHandler(services *service.Services) http.HandlerFunc {
 // ============================================================================
 
 // createOnboardingMilestoneHandler creates a new milestone
-func createOnboardingMilestoneHandler(services *service.Services) http.HandlerFunc {
+func createOnboardingMilestoneHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req models.CreateMilestoneRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -513,7 +513,7 @@ func createOnboardingMilestoneHandler(services *service.Services) http.HandlerFu
 }
 
 // listOnboardingMilestonesHandler lists milestones for a workflow
-func listOnboardingMilestonesHandler(services *service.Services) http.HandlerFunc {
+func listOnboardingMilestonesHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		workflowID, err := uuid.Parse(chi.URLParam(r, "workflowId"))
 		if err != nil {
@@ -533,7 +533,7 @@ func listOnboardingMilestonesHandler(services *service.Services) http.HandlerFun
 }
 
 // completeOnboardingMilestoneHandler marks a milestone as complete
-func completeOnboardingMilestoneHandler(services *service.Services) http.HandlerFunc {
+func completeOnboardingMilestoneHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := uuid.Parse(chi.URLParam(r, "id"))
 		if err != nil {
@@ -557,7 +557,7 @@ func completeOnboardingMilestoneHandler(services *service.Services) http.Handler
 // ============================================================================
 
 // getOnboardingStatisticsHandler retrieves statistics for a workflow
-func getOnboardingStatisticsHandler(services *service.Services) http.HandlerFunc {
+func getOnboardingStatisticsHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		workflowID, err := uuid.Parse(chi.URLParam(r, "workflowId"))
 		if err != nil {

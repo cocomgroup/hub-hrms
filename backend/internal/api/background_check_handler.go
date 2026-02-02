@@ -12,11 +12,11 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"hub-hrms/backend/internal/models"
-	"hub-hrms/backend/internal/service"
+	"hub-hrms/backend/internal/services"
 )
 
 // RegisterBackgroundCheckRoutes registers all background check routes
-func RegisterBackgroundCheckRoutes(r chi.Router, services *service.Services) {
+func RegisterBackgroundCheckRoutes(r chi.Router, services *services.Services) {
 	r.Route("/background-checks", func(r chi.Router) {
 		r.Use(authMiddleware(services))
 		
@@ -55,7 +55,7 @@ type ConsentInfo struct {
 }
 
 // initiateCheckHandler handles POST /api/v1/background-checks
-func initiateCheckHandler(services *service.Services) http.HandlerFunc {
+func initiateCheckHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("=== initiateCheckHandler START ===")
 
@@ -125,7 +125,7 @@ func initiateCheckHandler(services *service.Services) http.HandlerFunc {
 }
 
 // getCheckHandler handles GET /api/v1/background-checks/{id}
-func getCheckHandler(services *service.Services) http.HandlerFunc {
+func getCheckHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("=== getCheckHandler START ===")
 		
@@ -147,7 +147,7 @@ func getCheckHandler(services *service.Services) http.HandlerFunc {
 }
 
 // cancelCheckHandler handles POST /api/v1/background-checks/{id}/cancel
-func cancelCheckHandler(services *service.Services) http.HandlerFunc {
+func cancelCheckHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("=== cancelCheckHandler START ===")
 		
@@ -170,7 +170,7 @@ func cancelCheckHandler(services *service.Services) http.HandlerFunc {
 }
 
 // getEmployeeChecksHandler handles GET /api/v1/employees/{employeeId}/background-checks
-func getEmployeeChecksHandler(services *service.Services) http.HandlerFunc {
+func getEmployeeChecksHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("=== getEmployeeChecksHandler START ===")
 		
@@ -206,7 +206,7 @@ type CreatePackageRequest struct {
 }
 
 // createPackageHandler handles POST /api/v1/background-checks/packages
-func createPackageHandler(services *service.Services) http.HandlerFunc {
+func createPackageHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("=== createPackageHandler START ===")
 
@@ -260,7 +260,7 @@ func createPackageHandler(services *service.Services) http.HandlerFunc {
 }
 
 // listPackagesHandler handles GET /api/v1/background-checks/packages
-func listPackagesHandler(services *service.Services) http.HandlerFunc {
+func listPackagesHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("=== listPackagesHandler START ===")
 
@@ -283,7 +283,7 @@ func listPackagesHandler(services *service.Services) http.HandlerFunc {
 }
 
 // handleWebhookHandler handles POST /webhooks/background-checks/{provider}
-func handleWebhookHandler(services *service.Services) http.HandlerFunc {
+func handleWebhookHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("=== handleWebhookHandler START ===")
 		

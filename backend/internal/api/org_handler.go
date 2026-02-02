@@ -3,7 +3,7 @@ package api
 import (
 	"encoding/json"
 	"hub-hrms/backend/internal/models"
-	"hub-hrms/backend/internal/service"
+	svc "hub-hrms/backend/internal/services"
 	"net/http"
 	"log"
 
@@ -12,7 +12,7 @@ import (
 )
 
 // RegisterOrganizationRoutes registers organization endpoints
-func RegisterOrganizationRoutes(r chi.Router, services *service.Services) {
+func RegisterOrganizationRoutes(r chi.Router, services *svc.Services) {
 	r.Route("/organizations", func(r chi.Router) {
 		r.Use(authMiddleware(services))
 		
@@ -53,7 +53,7 @@ func RegisterOrganizationRoutes(r chi.Router, services *service.Services) {
 	})
 }
 
-func createOrganizationHandler(services *service.Services) http.HandlerFunc {
+func createOrganizationHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req models.CreateOrganizationRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -69,7 +69,7 @@ func createOrganizationHandler(services *service.Services) http.HandlerFunc {
 		
 		org, err := services.Organization.CreateOrganization(r.Context(), &req, userID)
 		if err != nil {
-			if err == service.ErrOrganizationExists {
+			if err == svc.ErrOrganizationExists {
 				respondError(w, http.StatusConflict, "organization code already exists")
 				return
 			}
@@ -81,7 +81,7 @@ func createOrganizationHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func getOrganizationHandler(services *service.Services) http.HandlerFunc {
+func getOrganizationHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
 		id, err := uuid.Parse(idStr)
@@ -92,7 +92,7 @@ func getOrganizationHandler(services *service.Services) http.HandlerFunc {
 		
 		org, err := services.Organization.GetOrganization(r.Context(), id)
 		if err != nil {
-			if err == service.ErrOrganizationNotFound {
+			if err == svc.ErrOrganizationNotFound {
 				respondError(w, http.StatusNotFound, "organization not found")
 				return
 			}
@@ -104,7 +104,7 @@ func getOrganizationHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func listOrganizationsHandler(services *service.Services) http.HandlerFunc {
+func listOrganizationsHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		filters := make(map[string]interface{})
 		
@@ -139,7 +139,7 @@ func listOrganizationsHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func updateOrganizationHandler(services *service.Services) http.HandlerFunc {
+func updateOrganizationHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
 		id, err := uuid.Parse(idStr)
@@ -156,11 +156,11 @@ func updateOrganizationHandler(services *service.Services) http.HandlerFunc {
 		
 		org, err := services.Organization.UpdateOrganization(r.Context(), id, &req)
 		if err != nil {
-			if err == service.ErrOrganizationNotFound {
+			if err == svc.ErrOrganizationNotFound {
 				respondError(w, http.StatusNotFound, "organization not found")
 				return
 			}
-			if err == service.ErrCircularReference {
+			if err == svc.ErrCircularReference {
 				respondError(w, http.StatusBadRequest, "circular reference detected")
 				return
 			}
@@ -172,7 +172,7 @@ func updateOrganizationHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func deleteOrganizationHandler(services *service.Services) http.HandlerFunc {
+func deleteOrganizationHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
 		id, err := uuid.Parse(idStr)
@@ -183,7 +183,7 @@ func deleteOrganizationHandler(services *service.Services) http.HandlerFunc {
 		
 		err = services.Organization.DeleteOrganization(r.Context(), id)
 		if err != nil {
-			if err == service.ErrCannotDeleteOrg {
+			if err == svc.ErrCannotDeleteOrg {
 				respondError(w, http.StatusBadRequest, "cannot delete organization with employees or children")
 				return
 			}
@@ -195,7 +195,7 @@ func deleteOrganizationHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func getOrganizationHierarchyHandler(services *service.Services) http.HandlerFunc {
+func getOrganizationHierarchyHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var rootID *uuid.UUID
 		if rootIDStr := r.URL.Query().Get("root_id"); rootIDStr != "" {
@@ -217,7 +217,7 @@ func getOrganizationHierarchyHandler(services *service.Services) http.HandlerFun
 	}
 }
 
-func assignEmployeeHandler(services *service.Services) http.HandlerFunc {
+func assignEmployeeHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
 		orgID, err := uuid.Parse(idStr)
@@ -241,11 +241,11 @@ func assignEmployeeHandler(services *service.Services) http.HandlerFunc {
 		
 		err = services.Organization.AssignEmployee(r.Context(), orgID, &req, userID)
 		if err != nil {
-			if err == service.ErrOrganizationNotFound {
+			if err == svc.ErrOrganizationNotFound {
 				respondError(w, http.StatusNotFound, "organization not found")
 				return
 			}
-			if err == service.ErrEmployeeNotFound {
+			if err == svc.ErrEmployeeNotFound {
 				respondError(w, http.StatusNotFound, "employee not found")
 				return
 			}
@@ -257,7 +257,7 @@ func assignEmployeeHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func bulkAssignEmployeesHandler(services *service.Services) http.HandlerFunc {
+func bulkAssignEmployeesHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
 		orgID, err := uuid.Parse(idStr)
@@ -280,7 +280,7 @@ func bulkAssignEmployeesHandler(services *service.Services) http.HandlerFunc {
 		
 		err = services.Organization.BulkAssignEmployees(r.Context(), orgID, &req, userID)
 		if err != nil {
-			if err == service.ErrOrganizationNotFound {
+			if err == svc.ErrOrganizationNotFound {
 				respondError(w, http.StatusNotFound, "organization not found")
 				return
 			}
@@ -295,7 +295,7 @@ func bulkAssignEmployeesHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func unassignEmployeeHandler(services *service.Services) http.HandlerFunc {
+func unassignEmployeeHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		orgIDStr := chi.URLParam(r, "id")
 		orgID, err := uuid.Parse(orgIDStr)
@@ -321,7 +321,7 @@ func unassignEmployeeHandler(services *service.Services) http.HandlerFunc {
 	}
 }
 
-func getOrganizationEmployeesHandler(services *service.Services) http.HandlerFunc {
+func getOrganizationEmployeesHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
 		orgID, err := uuid.Parse(idStr)
@@ -340,7 +340,7 @@ func getOrganizationEmployeesHandler(services *service.Services) http.HandlerFun
 	}
 }
 
-func getOrganizationStatsHandler(services *service.Services) http.HandlerFunc {
+func getOrganizationStatsHandler(services *svc.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		idStr := chi.URLParam(r, "id")
 		orgID, err := uuid.Parse(idStr)

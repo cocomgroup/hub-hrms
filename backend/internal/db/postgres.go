@@ -2,9 +2,11 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/stdlib"
 )
 
 type Postgres struct {
@@ -31,6 +33,13 @@ func NewPostgres(connString string) (*Postgres, error) {
 
 func (p *Postgres) GetPool() *pgxpool.Pool { 
 	return p.pool
+}
+
+// GetDB returns a *sql.DB for compatibility with code expecting database/sql
+func (p *Postgres) GetDB() *sql.DB {
+	// Register and open using pgx stdlib
+	db := stdlib.OpenDB(*p.pool.Config().ConnConfig)
+	return db
 }
 
 func (p *Postgres) Close() {

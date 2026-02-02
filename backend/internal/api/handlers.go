@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"hub-hrms/backend/internal/models"
-	"hub-hrms/backend/internal/service"
+	"hub-hrms/backend/internal/services"
 	"log"
 	"net/http"
 	"strings"
@@ -16,13 +16,13 @@ import (
 )
 
 // RegisterAuthRoutes registers authentication routes
-func RegisterAuthRoutes(r chi.Router, services *service.Services) {
+func RegisterAuthRoutes(r chi.Router, services *services.Services) {
 	r.Post("/auth/login", loginHandler(services))
 }
 
 
 // Middleware - FIXED VERSION
-func authMiddleware(services *service.Services) func(http.Handler) http.Handler {
+func authMiddleware(services *services.Services) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
@@ -73,7 +73,7 @@ func authMiddleware(services *service.Services) func(http.Handler) http.Handler 
 }
 
 // Auth handlers
-func loginHandler(services *service.Services) http.HandlerFunc {
+func loginHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req models.LoginRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

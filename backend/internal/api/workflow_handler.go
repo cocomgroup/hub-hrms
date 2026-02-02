@@ -7,14 +7,14 @@ import (
 	"time"
 
 	"hub-hrms/backend/internal/models"
-	"hub-hrms/backend/internal/service"
+	"hub-hrms/backend/internal/services"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
 
 // RegisterWorkflowRoutes registers workflow management routes
-func RegisterWorkflowRoutes(r chi.Router, services *service.Services) {
+func RegisterWorkflowRoutes(r chi.Router, services *services.Services) {
 	r.Route("/workflows", func(r chi.Router) {
 		// Add auth middleware to all workflow routes
 		r.Use(authMiddleware(services))
@@ -39,7 +39,7 @@ func RegisterWorkflowRoutes(r chi.Router, services *service.Services) {
 }
 
 // getWorkflowStatsHandler returns workflow statistics
-func getWorkflowStatsHandler(services *service.Services) http.HandlerFunc {
+func getWorkflowStatsHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		
@@ -102,7 +102,7 @@ func getWorkflowStatsHandler(services *service.Services) http.HandlerFunc {
 }
 
 // listWorkflowTemplatesHandler lists all workflow templates
-func listWorkflowTemplatesHandler(services *service.Services) http.HandlerFunc {
+func listWorkflowTemplatesHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		activeOnly := r.URL.Query().Get("active") == "true"
@@ -128,7 +128,7 @@ func listWorkflowTemplatesHandler(services *service.Services) http.HandlerFunc {
 }
 
 // createWorkflowTemplateHandler creates a new workflow template
-func createWorkflowTemplateHandler(services *service.Services) http.HandlerFunc {
+func createWorkflowTemplateHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		
@@ -205,7 +205,7 @@ func createWorkflowTemplateHandler(services *service.Services) http.HandlerFunc 
 }
 
 // getWorkflowTemplateHandler retrieves a specific template
-func getWorkflowTemplateHandler(services *service.Services) http.HandlerFunc {
+func getWorkflowTemplateHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		idStr := chi.URLParam(r, "id")
@@ -227,7 +227,7 @@ func getWorkflowTemplateHandler(services *service.Services) http.HandlerFunc {
 }
 
 // updateWorkflowTemplateHandler updates a template
-func updateWorkflowTemplateHandler(services *service.Services) http.HandlerFunc {
+func updateWorkflowTemplateHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		idStr := chi.URLParam(r, "id")
@@ -310,7 +310,7 @@ func updateWorkflowTemplateHandler(services *service.Services) http.HandlerFunc 
 }
 
 // deleteWorkflowTemplateHandler deletes a template
-func deleteWorkflowTemplateHandler(services *service.Services) http.HandlerFunc {
+func deleteWorkflowTemplateHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		idStr := chi.URLParam(r, "id")
@@ -331,7 +331,7 @@ func deleteWorkflowTemplateHandler(services *service.Services) http.HandlerFunc 
 }
 
 // toggleWorkflowTemplateHandler toggles template active status
-func toggleWorkflowTemplateHandler(services *service.Services) http.HandlerFunc {
+func toggleWorkflowTemplateHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		idStr := chi.URLParam(r, "id")
@@ -367,7 +367,7 @@ func toggleWorkflowTemplateHandler(services *service.Services) http.HandlerFunc 
 }
 
 // getRecentAssignmentsHandler gets recent workflow assignments
-func getRecentAssignmentsHandler(services *service.Services) http.HandlerFunc {
+func getRecentAssignmentsHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		
@@ -438,7 +438,7 @@ func getRecentAssignmentsHandler(services *service.Services) http.HandlerFunc {
 }
 
 // assignWorkflowHandler assigns a workflow template to an employee
-func assignWorkflowHandler(services *service.Services) http.HandlerFunc {
+func assignWorkflowHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		ctx := r.Context()
 		

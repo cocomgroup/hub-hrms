@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/mock"
 
 	"hub-hrms/backend/internal/models"
-	"hub-hrms/backend/internal/service"
+	"hub-hrms/backend/internal/services"
 )
 
 // Mock Services
@@ -171,7 +171,7 @@ func TestLoginHandler(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockAuthSvc := new(MockAuthService)
-			services := &service.Services{Auth: mockAuthSvc}
+			services := &services.Services{Auth: mockAuthSvc}
 
 			tt.setupMocks(mockAuthSvc)
 
@@ -268,7 +268,7 @@ func TestAuthMiddleware(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockAuthSvc := new(MockAuthService)
-			services := &service.Services{Auth: mockAuthSvc}
+			services := &services.Services{Auth: mockAuthSvc}
 
 			tt.setupMocks(mockAuthSvc)
 
@@ -435,7 +435,7 @@ func TestRespondError(t *testing.T) {
 
 func TestAuthFlow_Integration(t *testing.T) {
 	mockAuthSvc := new(MockAuthService)
-	services := &service.Services{Auth: mockAuthSvc}
+	services := &services.Services{Auth: mockAuthSvc}
 
 	r := chi.NewRouter()
 	RegisterAuthRoutes(r, services)
@@ -483,7 +483,7 @@ func TestAuthFlow_Integration(t *testing.T) {
 
 func BenchmarkLoginHandler(b *testing.B) {
 	mockAuthSvc := new(MockAuthService)
-	services := &service.Services{Auth: mockAuthSvc}
+	services := &services.Services{Auth: mockAuthSvc}
 
 	mockAuthSvc.On("Login", mock.Anything, mock.AnythingOfType("*models.LoginRequest")).
 		Return(&models.LoginResponse{
@@ -514,7 +514,7 @@ func BenchmarkLoginHandler(b *testing.B) {
 
 func BenchmarkAuthMiddleware(b *testing.B) {
 	mockAuthSvc := new(MockAuthService)
-	services := &service.Services{Auth: mockAuthSvc}
+	services := &services.Services{Auth: mockAuthSvc}
 
 	userID := uuid.New()
 	validClaims := jwt.MapClaims{

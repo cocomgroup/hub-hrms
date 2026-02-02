@@ -9,11 +9,11 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-	"hub-hrms/backend/internal/service"
+	"hub-hrms/backend/internal/services"
 )
 
 // RegisterAIRoutes registers AI-related routes
-func RegisterAIRoutes(r chi.Router, services *service.Services) {
+func RegisterAIRoutes(r chi.Router, services *services.Services) {
 	r.Route("/ai", func(r chi.Router) {
 		r.Use(authMiddleware(services))
 		r.Post("/generate-job-description", generateJobDescriptionHandler(services))
@@ -67,7 +67,7 @@ type AnthropicResponse struct {
 	Role    string                  `json:"role"`
 }
 
-func generateJobDescriptionHandler(services *service.Services) http.HandlerFunc {
+func generateJobDescriptionHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		_, err := getUserIDFromContext(r.Context())
 		if err != nil {

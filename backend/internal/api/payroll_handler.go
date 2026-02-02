@@ -7,11 +7,11 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"hub-hrms/backend/internal/models"
-	"hub-hrms/backend/internal/service"
+	"hub-hrms/backend/internal/services"
 )
 
 // RegisterPayrollRoutes registers all payroll-related routes
-func RegisterPayrollRoutes(r chi.Router, services *service.Services) {
+func RegisterPayrollRoutes(r chi.Router, services *services.Services) {
 	r.Route("/payroll", func(r chi.Router) {
 		r.Use(authMiddleware(services))
 		
@@ -35,7 +35,7 @@ func RegisterPayrollRoutes(r chi.Router, services *service.Services) {
 // ===============================
 
 // createPayrollPeriodHandler creates a new payroll period
-func createPayrollPeriodHandler(services *service.Services) http.HandlerFunc {
+func createPayrollPeriodHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req models.PayrollPeriodRequest
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -54,7 +54,7 @@ func createPayrollPeriodHandler(services *service.Services) http.HandlerFunc {
 }
 
 // listPayrollPeriodsHandler lists all payroll periods
-func listPayrollPeriodsHandler(services *service.Services) http.HandlerFunc {
+func listPayrollPeriodsHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		periods, err := services.Payroll.ListPayrollPeriods(r.Context())
 		if err != nil {
@@ -71,7 +71,7 @@ func listPayrollPeriodsHandler(services *service.Services) http.HandlerFunc {
 }
 
 // getPayrollPeriodHandler gets a specific payroll period
-func getPayrollPeriodHandler(services *service.Services) http.HandlerFunc {
+func getPayrollPeriodHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		periodIDStr := chi.URLParam(r, "periodID")
 		periodID, err := uuid.Parse(periodIDStr)
@@ -91,7 +91,7 @@ func getPayrollPeriodHandler(services *service.Services) http.HandlerFunc {
 }
 
 // updatePayrollPeriodHandler updates a payroll period
-func updatePayrollPeriodHandler(services *service.Services) http.HandlerFunc {
+func updatePayrollPeriodHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		periodIDStr := chi.URLParam(r, "periodID")
 		periodID, err := uuid.Parse(periodIDStr)
@@ -117,7 +117,7 @@ func updatePayrollPeriodHandler(services *service.Services) http.HandlerFunc {
 }
 
 // processPayrollHandler processes payroll for a period
-func processPayrollHandler(services *service.Services) http.HandlerFunc {
+func processPayrollHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		periodIDStr := chi.URLParam(r, "periodID")
 		periodID, err := uuid.Parse(periodIDStr)
@@ -141,7 +141,7 @@ func processPayrollHandler(services *service.Services) http.HandlerFunc {
 // ===============================
 
 // getPayStubHandler gets a specific pay stub
-func getPayStubHandler(services *service.Services) http.HandlerFunc {
+func getPayStubHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		payStubIDStr := chi.URLParam(r, "payStubID")
 		payStubID, err := uuid.Parse(payStubIDStr)
@@ -161,7 +161,7 @@ func getPayStubHandler(services *service.Services) http.HandlerFunc {
 }
 
 // getEmployeePayStubsHandler gets all pay stubs for an employee
-func getEmployeePayStubsHandler(services *service.Services) http.HandlerFunc {
+func getEmployeePayStubsHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		employeeIDStr := chi.URLParam(r, "employeeID")
 		employeeID, err := uuid.Parse(employeeIDStr)
@@ -185,7 +185,7 @@ func getEmployeePayStubsHandler(services *service.Services) http.HandlerFunc {
 }
 
 // getPayStubsByPeriodHandler gets all pay stubs for a payroll period
-func getPayStubsByPeriodHandler(services *service.Services) http.HandlerFunc {
+func getPayStubsByPeriodHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		periodIDStr := chi.URLParam(r, "periodID")
 		periodID, err := uuid.Parse(periodIDStr)
@@ -209,7 +209,7 @@ func getPayStubsByPeriodHandler(services *service.Services) http.HandlerFunc {
 }
 
 // downloadPayStubPDFHandler generates and downloads a pay stub PDF
-func downloadPayStubPDFHandler(services *service.Services) http.HandlerFunc {
+func downloadPayStubPDFHandler(services *services.Services) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		payStubIDStr := chi.URLParam(r, "payStubID")
 		payStubID, err := uuid.Parse(payStubIDStr)

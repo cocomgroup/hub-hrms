@@ -15,6 +15,11 @@ CREATE TABLE IF NOT EXISTS job_postings (
     requirements TEXT[] DEFAULT '{}',
     responsibilities TEXT[] DEFAULT '{}',
     benefits TEXT[] DEFAULT '{}',
+    experience_level VARCHAR(50),
+    skills TEXT[] DEFAULT '{}',
+    view_count INTEGER DEFAULT 0,
+    remote_work BOOLEAN DEFAULT FALSE,
+    urgent_hiring BOOLEAN DEFAULT FALSE,
     status VARCHAR(20) NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'active', 'closed', 'filled')),
     posted_date TIMESTAMP,
     closed_date TIMESTAMP,
@@ -24,11 +29,49 @@ CREATE TABLE IF NOT EXISTS job_postings (
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
+ALTER TABLE job_postings 
+ADD COLUMN IF NOT EXISTS experience_level VARCHAR(50),
+ADD COLUMN IF NOT EXISTS skills TEXT[] DEFAULT '{}',
+ADD COLUMN IF NOT EXISTS view_count INTEGER DEFAULT 0,
+ADD COLUMN IF NOT EXISTS remote_work BOOLEAN DEFAULT FALSE,
+ADD COLUMN IF NOT EXISTS urgent_hiring BOOLEAN DEFAULT FALSE,
+DROP COLUMN IF EXISTS willing_to_relocate;
+
+
+ALTER TABLE job_postings DROP CONSTRAINT IF EXISTS job_postings_employment_type_check;
+
+-- Add new constraint that accepts both formats
+ALTER TABLE job_postings 
+ADD CONSTRAINT job_postings_employment_type_check 
+CHECK (employment_type IN (
+    'full-time', 'part-time', 'contract', 'internship',
+    'FULL_TIME', 'PART_TIME', 'CONTRACT', 'INTERNSHIP', 'TEMPORARY'
+));
+
+-- Update status constraint to accept GraphQL status values
+ALTER TABLE job_postings DROP CONSTRAINT IF EXISTS job_postings_status_check;
+
+ALTER TABLE job_postings 
+ADD CONSTRAINT job_postings_status_check 
+CHECK (status IN (
+    'draft', 'active', 'closed', 'filled',
+    'DRAFT', 'PUBLISHED', 'CLOSED', 'ARCHIVED'
+));
 
 CREATE INDEX IF NOT EXISTS idx_job_postings_status ON job_postings(status);
 CREATE INDEX IF NOT EXISTS idx_job_postings_department ON job_postings(department);
 CREATE INDEX IF NOT EXISTS idx_job_postings_created_at ON job_postings(created_at DESC);
+-- Create index on new columns
+CREATE INDEX IF NOT EXISTS idx_job_postings_remote_work ON job_postings(remote_work);
+CREATE INDEX IF NOT EXISTS idx_job_postings_experience_level ON job_postings(experience_level);
+CREATE INDEX IF NOT EXISTS idx_job_postings_view_count ON job_postings(view_count DESC);
 
+-- Add comments
+COMMENT ON COLUMN job_postings.experience_level IS 'Required experience level: ENTRY, JUNIOR, MID, SENIOR, LEAD, PRINCIPAL';
+COMMENT ON COLUMN job_postings.skills IS 'Array of required skills for the position';
+COMMENT ON COLUMN job_postings.view_count IS 'Number of times this job posting has been viewed';
+COMMENT ON COLUMN job_postings.remote_work IS 'Whether remote work is available';
+COMMENT ON COLUMN job_postings.urgent_hiring IS 'Whether this is an urgent hire';
 COMMENT ON COLUMN job_postings.providers IS 'Array of provider IDs where this job is posted';
 COMMENT ON COLUMN job_postings.salary_currency IS 'ISO 4217 currency code for salary (USD, EUR, GBP, etc.)';
 
@@ -63,7 +106,7 @@ COMMENT ON COLUMN recruiting_providers.applicants_total IS 'Total number of appl
 -- Candidates Table
 CREATE TABLE IF NOT EXISTS candidates (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    job_posting_id UUID NOT NULL REFERENCES job_postings(id) ON DELETE CASCADE,
+    job_posting_id UUID REFERENCES job_postings(id) ON DELETE CASCADE,
     first_name VARCHAR(100) NOT NULL,
     last_name VARCHAR(100) NOT NULL,
     email VARCHAR(255) NOT NULL,
@@ -79,11 +122,45 @@ CREATE TABLE IF NOT EXISTS candidates (
     weaknesses TEXT[] DEFAULT '{}',
     experience_years INTEGER,
     skills TEXT[] DEFAULT '{}',
+    location VARCHAR(255),
+    headline VARCHAR(500),
+    summary TEXT,
+    github_url TEXT,
+    availability VARCHAR(100),
+    expected_salary DECIMAL(12,2),
+    preferred_locations TEXT[] DEFAULT '{}',
+    remote_preference VARCHAR(50),
+    willing_to_relocate BOOLEAN DEFAULT FALSE,
     applied_date TIMESTAMP NOT NULL DEFAULT NOW(),
     notes TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
+-- Update candidates table to make job_posting_id nullable since we might have candidate profiles without applications
+ALTER TABLE candidates ALTER COLUMN job_posting_id DROP NOT NULL;
+
+-- Add columns to candidates table that GraphQL expects
+ALTER TABLE candidates 
+ADD COLUMN IF NOT EXISTS location VARCHAR(255),
+ADD COLUMN IF NOT EXISTS headline VARCHAR(500),
+ADD COLUMN IF NOT EXISTS summary TEXT,
+ADD COLUMN IF NOT EXISTS github_url TEXT,
+ADD COLUMN IF NOT EXISTS availability VARCHAR(100),
+ADD COLUMN IF NOT EXISTS expected_salary DECIMAL(12,2),
+ADD COLUMN IF NOT EXISTS preferred_locations TEXT[] DEFAULT '{}',
+ADD COLUMN IF NOT EXISTS remote_preference VARCHAR(50),
+ADD COLUMN IF NOT EXISTS willing_to_relocate BOOLEAN DEFAULT FALSE;
+
+-- Update candidates table status values to match GraphQL
+ALTER TABLE candidates DROP CONSTRAINT IF EXISTS candidates_status_check;
+
+ALTER TABLE candidates 
+ADD CONSTRAINT candidates_status_check 
+CHECK (status IN (
+    'new', 'screening', 'interview', 'offered', 'rejected', 'hired',
+    'NEW', 'SCREENING', 'PHONE_SCREEN', 'TECHNICAL_INTERVIEW', 
+    'ONSITE_INTERVIEW', 'OFFER', 'ACCEPTED', 'REJECTED', 'WITHDRAWN'
+));
 
 CREATE INDEX IF NOT EXISTS idx_candidates_job_posting ON candidates(job_posting_id);
 CREATE INDEX IF NOT EXISTS idx_candidates_status ON candidates(status);
@@ -233,6 +310,26 @@ ORDER BY c.applied_date DESC, i.scheduled_at DESC;
 -- GRANT SELECT ON recruiting_pipeline_summary TO hrms_user;
 -- GRANT SELECT ON candidate_interview_history TO hrms_user;
 
+-- Update view to work with new columns
+DROP VIEW IF EXISTS recruiting_pipeline_summary CASCADE;
+CREATE VIEW recruiting_pipeline_summary AS
+SELECT 
+    jp.id as job_id,
+    jp.title as job_title,
+    jp.department,
+    jp.status as job_status,
+    COUNT(c.id) as total_candidates,
+    COUNT(CASE WHEN c.status IN ('new', 'NEW') THEN 1 END) as new_candidates,
+    COUNT(CASE WHEN c.status IN ('screening', 'SCREENING', 'PHONE_SCREEN') THEN 1 END) as screening_candidates,
+    COUNT(CASE WHEN c.status IN ('interview', 'TECHNICAL_INTERVIEW', 'ONSITE_INTERVIEW') THEN 1 END) as interview_candidates,
+    COUNT(CASE WHEN c.status IN ('offered', 'OFFER') THEN 1 END) as offered_candidates,
+    COUNT(CASE WHEN c.status IN ('hired', 'ACCEPTED') THEN 1 END) as hired_candidates,
+    AVG(c.score) as avg_candidate_score
+FROM job_postings jp
+LEFT JOIN candidates c ON jp.id = c.job_posting_id
+GROUP BY jp.id, jp.title, jp.department, jp.status;
+
+
 -- Add comments
 COMMENT ON TABLE job_postings IS 'Job openings and their details';
 COMMENT ON TABLE candidates IS 'Job applicants and their information';
@@ -241,3 +338,13 @@ COMMENT ON TABLE job_board_postings IS 'Tracking of job postings on external job
 COMMENT ON TABLE candidate_emails IS 'Communication history with candidates';
 COMMENT ON VIEW recruiting_pipeline_summary IS 'Summary of recruiting pipeline by job';
 COMMENT ON VIEW candidate_interview_history IS 'Complete interview history for all candidates';
+
+-- Success message
+DO $$
+BEGIN
+    RAISE NOTICE 'Migration completed successfully!';
+    RAISE NOTICE 'Added columns: experience_level, skills, view_count, remote_work, urgent_hiring to job_postings';
+    RAISE NOTICE 'Added columns: location, headline, summary, github_url, availability, expected_salary, preferred_locations, remote_preference to candidates';
+    RAISE NOTICE 'Updated status and employment_type constraints to accept GraphQL values';
+    RAISE NOTICE 'Inserted 3 sample job postings for testing';
+END $$;

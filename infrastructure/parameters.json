@@ -1,0 +1,66 @@
+[
+  {
+    "ParameterKey": "Environment",
+    "UsePreviousValue": true
+  },
+  {
+    "ParameterKey": "DBUsername",
+    "UsePreviousValue": true
+  },
+  {
+    "ParameterKey": "DBPassword",
+    "UsePreviousValue": true
+  },
+  {
+    "ParameterKey": "DBName",
+    "UsePreviousValue": true
+  },
+  {
+    "ParameterKey": "JWTSecret",
+    "UsePreviousValue": true
+  },
+  {
+    "ParameterKey": "BankInfoEncryptionKey",
+    "UsePreviousValue": true
+  },
+  {
+    "ParameterKey": "BackendImageURI",
+    "ParameterValue": "684039303263.dkr.ecr.us-east-1.amazonaws.com/hub-hrms-dev-backend:latest"
+  },
+  {
+    "ParameterKey": "FrontendImageURI",
+    "ParameterValue": "684039303263.dkr.ecr.us-east-1.amazonaws.com/hub-hrms-dev-frontend:latest"
+  },
+  {
+    "ParameterKey": "BastionKeyName",
+    "ParameterValue": "hub-hrms-bastion"
+  },
+  {
+    "ParameterKey": "BastionInstanceType",
+    "ParameterValue": "t3.micro"
+  },
+  {
+    "ParameterKey": "BastionAllowedCIDR",
+    "ParameterValue": "64.67.230.105/32"
+  },
+  {
+    "ParameterKey": "EnableBastion",
+    "ParameterValue": "true"
+  },
+  {
+    "ParameterKey": "SESFromEmail",
+    "ParameterValue": "noreply@ycocomgroup.com"
+  },
+  {
+    "ParameterKey": "SESReplyToEmail",
+    "ParameterValue": "support@ycocomgroup.com"
+  },
+  {
+    "ParameterKey": "SESConfigurationSetName",
+    "ParameterValue": "hub-hrms-emails"
+  },
+  {
+    "ParameterKey": "EnableSES",
+    "ParameterValue": "true"
+  }
+]
